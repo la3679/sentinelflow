@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-25T22:20Z                                                                                                                                |
+| Last updated UTC     | 2026-08-25T23:10Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 1 complete; Phase 2 not started                                                                                                   |
-| Current phase        | Phase 1 — monorepo and developer foundation (complete, pending merge)                                                                            |
-| Current task         | Phase 1 gate met; merging PR #2, then Phase 2                                                                                                    |
+| Overall status       | active — Phase 1 merged to `main`; Phase 2 not started                                                                                           |
+| Current phase        | Phase 1 — complete and merged via PR #2                                                                                                          |
+| Current task         | Phase 2 — contracts, domain, and database                                                                                                        |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `chore/phase-1-foundation`                                                                                                                       |
+| Working branch       | `main` — Phase 2 branches from here                                                                                                              |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PR              | [#2](https://github.com/la3679/sentinelflow/pull/2) — draft, all six workflows green                                                             |
+| Open PRs             | four Dependabot major dev-dependency bumps, #9-#12 — see below                                                                                   |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -186,20 +186,44 @@ evaluation choice · 0011 SSE versus WebSockets · 0012 authentication · 0013 o
 - **CI is not path-filtered**, so every push runs every component. Deliberate (ADR-0002); revisit
   when runtime justifies job-level change detection.
 
+## Open Dependabot pull requests
+
+Four, all **major** dev-dependency bumps, deliberately kept out of the grouped minor/patch pull
+request so each gets its own review and its own CI run:
+
+| PR  | Bump                         | Note                                                   |
+| --- | ---------------------------- | ------------------------------------------------------ |
+| #9  | `@types/node` 22 → 26        | Low risk; the project targets Node 24+, so 22 is stale |
+| #10 | `globals` 15 → 17            | Low risk, ESLint configuration only                    |
+| #11 | `@vitejs/plugin-react` 5 → 6 | Needs a build and browser check                        |
+| #12 | `eslint` 9 → 10              | Major; flat-config changes likely, review carefully    |
+
+Each needs the same two steps: the lockfile workflow regenerates `bun.lock` on push, then
+`gh pr close <n> && gh pr reopen <n>` re-triggers CI — a push made with the default `GITHUB_TOKEN`
+cannot start workflow runs. See
+[`docs/operations/BRANCH_PROTECTION.md`](docs/operations/BRANCH_PROTECTION.md).
+
+Three earlier Dependabot pull requests were **closed with reasons** rather than merged, because
+each would have broken a recorded decision: Temurin 25 → 26 (not an LTS, ADR-0003), Python
+3.13 → 3.14 (joblib, ADR-0004), and nginx 1.30 stable → 1.31 mainline (verified by digest).
+`.github/dependabot.yml` now carries ignore rules naming each decision, so none will be proposed
+again.
+
 ## Blockers and required user input
 
 None.
 
 ## Next three actions
 
-1. **Merge PR #2.** Mark it ready for review, confirm all nine required checks are green on the
-   head commit, merge with a merge commit (not a squash — the phase history is the point), then
-   verify `main` and delete the branch.
-2. **Begin Phase 2 — contracts and domain.** Write ADR-0006 (event schema and versioning) and
-   ADR-0007 (Flyway and money representation) _before_ the schema, then create `contracts/` with
-   the OpenAPI baseline and the transaction/risk event schemas.
+1. **Write ADR-0006 (event schema and versioning) and ADR-0007 (Flyway and money representation)
+   before any schema exists.** Both constrain everything Phases 2 and 3 build, and both are far
+   cheaper to decide now than to reverse later.
+2. **Create `contracts/`** with the OpenAPI baseline and the transaction and risk event schemas,
+   plus CI validation of them. This is the first real content in that directory, which is why it
+   has not existed until now.
 3. **Add the first Flyway migrations and their Testcontainers PostgreSQL tests.** Real PostgreSQL,
-   never H2. Set a JaCoCo and a pytest coverage threshold once there is real behaviour to measure.
+   never H2. Set a JaCoCo threshold and a pytest `fail_under` once there is behaviour worth
+   measuring.
 
 ## Session startup commands
 

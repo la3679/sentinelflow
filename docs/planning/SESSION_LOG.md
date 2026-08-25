@@ -165,3 +165,43 @@ None.
 
 Merge PR #2, then Phase 2: ADR-0006 and ADR-0007 before any schema, then `contracts/`, the first
 Flyway migrations, and their Testcontainers PostgreSQL tests.
+
+### Post-merge — Dependabot's first run
+
+Phase 1 merged as [#2](https://github.com/la3679/sentinelflow/pull/2). Dependabot then acted on
+its new configuration within a minute and opened four pull requests, three of which would have
+broken a recorded decision:
+
+- **Temurin 25 → 26.** Java 26 is not an LTS release; ADR-0003 pins 25 LTS on purpose.
+- **Python 3.13 → 3.14.** ADR-0004 and R-2026-08-25-06 pin exactly 3.13 because joblib declares
+  support only through it. It would also have put the image ahead of `pyproject.toml` and broken
+  `uv sync --frozen`.
+- **nginx 1.30.4 → 1.31.3.** nginx uses even minors for stable and odd for mainline, so this is a
+  move to mainline. Verified by digest rather than assumed: `1.30.4-alpine3.24` and
+  `stable-alpine3.24` resolve to the same image.
+
+All three were closed with the reason stated on the pull request, and `dependabot.yml` now carries
+ignore rules that name the decision each one protects. Patch updates still flow, which is where
+security fixes actually arrive.
+
+The fourth revealed something structural. Dependabot edits `apps/web/package.json` and never
+regenerates `bun.lock` — and specifically does not for a Bun workspace
+([dependabot-core#11602](https://github.com/dependabot/dependabot-core/issues/11602),
+[#14223](https://github.com/dependabot/dependabot-core/issues/14223)). Every npm pull request it
+opens therefore fails at `bun install --frozen-lockfile`. A probe confirmed Bun is _not_ a separate
+`package-ecosystem`: GitHub folded it into `npm_and_yarn`, so the declaration was already right and
+only the lockfile handling is missing.
+
+Dropping `--frozen-lockfile` would have made the red go away and quietly destroyed the
+reproducibility the phase gate had just tested. Instead a workflow regenerates the lockfile and
+pushes it onto the Dependabot branch — the only workflow in this repository with `contents: write`,
+gated on the Dependabot actor.
+
+It then produced its own lesson. The workflow's comment claimed the lockfile commit re-runs CI. It
+does not: a push made with the default `GITHUB_TOKEN` cannot start workflow runs, so the pull
+request ended up correct and with **zero checks**, which a required-checks ruleset reads as blocked.
+`gh pr close && gh pr reopen` fixes it, verified by running it — all ten checks then passed,
+including a `vite` 8.1.5 → 8.2.2 bump. The comment was corrected, because an inaccurate comment in
+the one workflow holding write access is worse than none.
+
+Four major dev-dependency bumps (#9–#12) remain open by design, each awaiting its own review.
