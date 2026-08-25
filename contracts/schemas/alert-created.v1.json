@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelflow.example/schemas/alert-created.v1.json",
+  "title": "alert.created payload, v1",
+  "description": "Published on `alert.created.v1` when an assessment opens an alert for human review.\n\nKeyed by ALERT id, not account (ADR-0006): an alert's transitions must be ordered with respect to each other and have no ordering relationship with any other alert.\n\nAn alert is a workflow, not a row. This event is where that workflow begins.",
+
+  "type": "object",
+  "properties": {
+    "alertId": { "$ref": "common.v1.json#/$defs/uuid" },
+    "alertReference": { "$ref": "common.v1.json#/$defs/alertReference" },
+    "assessmentId": { "$ref": "common.v1.json#/$defs/uuid" },
+    "transactionId": { "$ref": "common.v1.json#/$defs/uuid" },
+    "accountId": {
+      "$ref": "common.v1.json#/$defs/uuid",
+      "description": "Carried for correlation. NOT the partition key on this topic."
+    },
+
+    "status": {
+      "$ref": "common.v1.json#/$defs/alertStatus",
+      "description": "Always NEW on creation. Constrained rather than merely documented, so a producer bug cannot emit a created event in a later state.",
+      "const": "NEW"
+    },
+    "priority": { "$ref": "common.v1.json#/$defs/alertPriority" },
+    "riskBand": { "$ref": "common.v1.json#/$defs/riskBand" },
+    "finalScore": { "$ref": "common.v1.json#/$defs/score" },
+
+    "summary": {
+      "type": "string",
+      "description": "Short analyst-facing description of why this alert exists. Never contains raw payload data.",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "topReasonCode": {
+      "$ref": "common.v1.json#/$defs/reasonCode",
+      "description": "The single largest contributor, duplicated from the assessment so a queue view can render a row without joining."
+    },
+
+    "createdAt": { "$ref": "common.v1.json#/$defs/timestamp" }
+  },
+
+  "required": [
+    "alertId",
+    "alertReference",
+    "assessmentId",
+    "transactionId",
+    "accountId",
+    "status",
+    "priority",
+    "riskBand",
+    "finalScore",
+    "summary",
+    "topReasonCode",
+    "createdAt"
+  ],
+
+  "additionalProperties": false
+}

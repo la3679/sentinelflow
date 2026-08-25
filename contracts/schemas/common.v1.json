@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelflow.example/schemas/common.v1.json",
+  "title": "SentinelFlow shared primitives, v1",
+  "description": "Types reused across every SentinelFlow contract. Defined once so that a change to how money or an identifier is represented is a single edit rather than a search. Binding rules live in ADR-0007.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "A UUIDv7. Time-ordered so inserts append to an index rather than scattering across it. See ADR-0007.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "examples": ["01936b2a-7c4f-7000-8000-2f9c1d4e5a6b"]
+    },
+
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "An instant in UTC, ISO 8601 with an explicit offset. Stored as timestamptz. See ADR-0007.",
+      "examples": ["2026-08-25T21:14:07.123456Z"]
+    },
+
+    "money": {
+      "type": "string",
+      "description": "A decimal amount as a STRING, never a JSON number. JSON.parse produces a double, so a JSON number is silently rounded by every JavaScript consumer before application code sees it. Scale is at most 4 to match NUMERIC(19,4). Always paired with a currency. See ADR-0007.",
+      "pattern": "^-?(0|[1-9][0-9]{0,14})(\\.[0-9]{1,4})?$",
+      "examples": ["1234.56", "0.0001", "-45.00"]
+    },
+
+    "currency": {
+      "type": "string",
+      "description": "ISO 4217 alphabetic code. Never implicit: an amount without a currency is not money, it is a number that looks like money.",
+      "pattern": "^[A-Z]{3}$",
+      "examples": ["USD", "EUR", "GBP", "BHD"]
+    },
+
+    "amount": {
+      "type": "object",
+      "description": "A monetary value. The only shape in which an amount ever appears in a SentinelFlow contract.",
+      "properties": {
+        "value": { "$ref": "#/$defs/money" },
+        "currency": { "$ref": "#/$defs/currency" }
+      },
+      "required": ["value", "currency"],
+      "additionalProperties": false
+    },
+
+    "countryCode": {
+      "type": "string",
+      "description": "ISO 3166-1 alpha-2.",
+      "pattern": "^[A-Z]{2}$",
+      "examples": ["US", "GB", "DE"]
+    },
+
+    "accountReference": {
+      "type": "string",
+      "description": "Synthetic, human-readable account handle. Unique, but never a primary or foreign key.",
+      "pattern": "^ACC-[0-9]{6}$",
+      "examples": ["ACC-000123"]
+    },
+
+    "merchantReference": {
+      "type": "string",
+      "description": "Synthetic, human-readable merchant handle.",
+      "pattern": "^MER-[0-9]{4}$",
+      "examples": ["MER-0042"]
+    },
+
+    "transactionReference": {
+      "type": "string",
+      "description": "Synthetic, human-readable transaction handle.",
+      "pattern": "^TXN-[0-9]{6}$",
+      "examples": ["TXN-000517"]
+    },
+
+    "alertReference": {
+      "type": "string",
+      "description": "Synthetic, human-readable alert handle.",
+      "pattern": "^ALT-[0-9]{4}$",
+      "examples": ["ALT-0007"]
+    },
+
+    "riskBand": {
+      "type": "string",
+      "description": "The banding a final score falls into. Ordered least to most severe.",
+      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    },
+
+    "score": {
+      "type": "number",
+      "description": "A risk score from 0 to 100 inclusive. A JSON number is correct here: this is a computed measure, not money, and a rounding difference in the last place changes nothing a decision depends on.",
+      "minimum": 0,
+      "maximum": 100
+    },
+
+    "alertStatus": {
+      "type": "string",
+      "description": "Alert lifecycle state. Valid transitions are defined by the API, not by this enum - listing a state here does not make every transition into it legal.",
+      "enum": [
+        "NEW",
+        "IN_REVIEW",
+        "ESCALATED",
+        "CONFIRMED_SUSPICIOUS",
+        "DISMISSED_FALSE_POSITIVE",
+        "CLOSED"
+      ]
+    },
+
+    "alertPriority": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH", "URGENT"]
+    },
+
+    "transactionChannel": {
+      "type": "string",
+      "enum": ["CARD_PRESENT", "CARD_NOT_PRESENT", "ONLINE_TRANSFER", "ATM", "DIRECT_DEBIT"]
+    },
+
+    "transactionType": {
+      "type": "string",
+      "enum": ["PURCHASE", "REFUND", "TRANSFER", "WITHDRAWAL", "DEPOSIT"]
+    },
+
+    "reasonCode": {
+      "type": "object",
+      "description": "One contributing factor behind a score, with how much it contributed. Reason codes are what make an assessment explainable to an analyst who has to defend a decision later.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Stable machine-readable identifier. Never renamed once emitted - a renamed code silently breaks every historical query.",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+          "examples": ["VELOCITY_1H_EXCEEDED", "UNUSUAL_MERCHANT_CATEGORY"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation for an analyst.",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "contribution": {
+          "type": "number",
+          "description": "Points this factor contributed to the final score. May be negative where a factor reduces risk.",
+          "minimum": -100,
+          "maximum": 100
+        },
+        "source": {
+          "type": "string",
+          "description": "Whether this came from a deterministic rule or from the model.",
+          "enum": ["RULE", "MODEL"]
+        }
+      },
+      "required": ["code", "description", "contribution", "source"],
+      "additionalProperties": false
+    },
+
+    "version": {
+      "type": "string",
+      "description": "A model, feature, or policy version. Semantic-version-like, compared as an opaque string rather than parsed.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "examples": ["1.0.0", "2.3.1"]
+    }
+  }
+}

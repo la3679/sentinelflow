@@ -23,7 +23,7 @@ SCORING := apps/scoring
 
 .PHONY: help bootstrap up down logs ps reset-demo seed replay \
         build test test-web test-api test-scoring test-integration test-e2e \
-        lint format format-check security smoke docs-check clean
+        lint format format-check security smoke docs-check contracts-check clean
 
 ## ---------------------------------------------------------------------------
 ## Help
@@ -147,6 +147,9 @@ smoke: ## Verify the running stack actually serves
 docs-check: ## Check documentation formatting, links, and placeholders
 	@$(BUN) run format:check
 	@$(BUN) scripts/dev/check-docs.mjs
+
+contracts-check: ## Validate OpenAPI, AsyncAPI, and the event schemas
+	@$(BUN) scripts/dev/check-contracts.mjs
 
 ## ---------------------------------------------------------------------------
 ## Housekeeping

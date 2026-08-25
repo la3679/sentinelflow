@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelflow.example/schemas/event-envelope.v1.json",
+  "title": "SentinelFlow event envelope, v1",
+  "description": "The outer structure every SentinelFlow event carries, on every topic, without exception. Everything here is transport and provenance; the event-specific body is `payload`. Defined in ADR-0006.\n\nThis schema is versioned as a whole and separately from payloads: `schemaVersion` describes the payload contract for a given `eventType`, not this envelope. Changing the envelope itself would mean a v2 envelope and a coordinated migration, which is exactly why it carries nothing that varies by event.",
+
+  "type": "object",
+  "properties": {
+    "eventId": {
+      "$ref": "common.v1.json#/$defs/uuid",
+      "description": "Unique identity for this event. Consumers deduplicate on it, because delivery is at-least-once and a duplicate is normal traffic rather than an incident."
+    },
+    "eventType": {
+      "type": "string",
+      "description": "What happened. Lets a consumer route and dispatch without parsing the payload.",
+      "enum": [
+        "transaction.created",
+        "risk.assessed",
+        "alert.created",
+        "alert.updated",
+        "transaction.processing.failed"
+      ]
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "description": "Version of the payload contract for this eventType. A consumer must be able to tell what it is holding before it reads it.",
+      "minimum": 1
+    },
+    "occurredAt": {
+      "$ref": "common.v1.json#/$defs/timestamp",
+      "description": "When the fact happened - NOT when it was published. Replay depends on the difference."
+    },
+    "producer": {
+      "type": "string",
+      "description": "Which service emitted this.",
+      "enum": ["sentinelflow-api", "sentinelflow-scoring"]
+    },
+    "correlationId": {
+      "$ref": "common.v1.json#/$defs/uuid",
+      "description": "Ties every event, log line and span originating from one request together. Propagated unchanged across service boundaries."
+    },
+    "traceId": {
+      "type": ["string", "null"],
+      "description": "W3C trace context trace-id, 32 lower-case hex characters, or null when no trace is active. Null rather than absent, so a consumer never has to distinguish 'not traced' from 'field forgotten'.",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "aggregateType": {
+      "type": "string",
+      "description": "The kind of entity this event is about. With aggregateId, identifies the subject without any payload knowledge.",
+      "enum": ["transaction", "assessment", "alert"]
+    },
+    "aggregateId": {
+      "$ref": "common.v1.json#/$defs/uuid",
+      "description": "Identity of the entity this event is about."
+    },
+    "payload": {
+      "type": "object",
+      "description": "The event-specific body. Its shape is defined by the schema for this eventType at this schemaVersion.\n\nNever contains a secret, a credential, a token, or personal data. Events are long-lived, replayable, and readable by anything with topic access."
+    }
+  },
+
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "occurredAt",
+    "producer",
+    "correlationId",
+    "traceId",
+    "aggregateType",
+    "aggregateId",
+    "payload"
+  ],
+
+  "additionalProperties": false
+}

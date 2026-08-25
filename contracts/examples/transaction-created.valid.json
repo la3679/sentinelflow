@@ -1,0 +1,28 @@
+{
+  "eventId": "01936b2a-7c4f-7000-8000-2f9c1d4e5a6b",
+  "eventType": "transaction.created",
+  "schemaVersion": 1,
+  "occurredAt": "2026-08-25T21:14:07.123456Z",
+  "producer": "sentinelflow-api",
+  "correlationId": "01936b2a-7c4f-7000-8000-1a2b3c4d5e6f",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "aggregateType": "transaction",
+  "aggregateId": "01936b2a-7c4f-7000-8000-9f8e7d6c5b4a",
+  "payload": {
+    "transactionId": "01936b2a-7c4f-7000-8000-9f8e7d6c5b4a",
+    "transactionReference": "TXN-000517",
+    "accountId": "01936b2a-7c4f-7000-8000-aabbccddeeff",
+    "accountReference": "ACC-000123",
+    "merchantId": "01936b2a-7c4f-7000-8000-112233445566",
+    "merchantReference": "MER-0042",
+    "merchantCategoryCode": "5812",
+    "type": "PURCHASE",
+    "channel": "CARD_NOT_PRESENT",
+    "amount": { "value": "1249.9900", "currency": "USD" },
+    "originCountry": "US",
+    "deviceReference": "DEV-4f2a91c0be73",
+    "occurredAt": "2026-08-25T21:14:06.998000Z",
+    "ingestionSource": "GENERATOR",
+    "idempotencyKey": "gen-2026-08-25-000517"
+  }
+}
