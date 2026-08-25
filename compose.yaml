@@ -1,0 +1,221 @@
+# SentinelFlow local development stack.
+#
+# One command brings up everything the project actually uses. Nothing here is
+# aspirational: every service in this file is reachable, has a health check, and
+# is depended on by something. The OpenTelemetry Collector is deliberately
+# absent until Phase 7 wires tracing - a collector that receives nothing is
+# decoration, not infrastructure.
+#
+#   docker compose up -d --wait     start and block until every service is healthy
+#   docker compose down             stop, keeping durable volumes
+#   docker compose down -v          stop and destroy data (see `make reset-demo`)
+#
+# The Makefile wraps these; run `make help`.
+
+name: sentinelflow
+
+services:
+  # -------------------------------------------------------------------------
+  # Data
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:18.6-alpine
+    container_name: sentinelflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sentinelflow}
+      POSTGRES_USER: ${POSTGRES_USER:-sentinelflow}
+      # No default. `make bootstrap` generates a local value into .env; a
+      # missing variable must fail the stack, not silently start a database
+      # with a guessable password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make bootstrap to generate local secrets}
+      # Deterministic collation, so ordering does not depend on the host locale.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # /var/lib/postgresql, not /var/lib/postgresql/data. From 18 the official
+      # image stores the cluster in a major-version subdirectory so that
+      # pg_upgrade --link can work across it, and refuses to start when a
+      # volume is mounted at the old path.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # -U and -d matter: a bare pg_isready reports the server is accepting
+      # connections before the requested database exists during first init.
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-sentinelflow} -d ${POSTGRES_DB:-sentinelflow}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  kafka:
+    image: apache/kafka:4.2.1
+    container_name: sentinelflow-kafka
+    restart: unless-stopped
+    environment:
+      # KRaft: this broker is also the controller. No ZooKeeper.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-5L6g3nShT-eMCtK--X86sw}
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # Two client listeners. Containers reach the broker as kafka:9092; a
+      # developer's Kafka CLI on the host reaches it as localhost:29092. One
+      # listener cannot serve both, because the advertised host has to resolve
+      # for whichever client reads it.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Single broker: every replication factor must be 1, or topic creation
+      # blocks waiting for replicas that will never exist.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Off. Topics are created explicitly with the partition count and
+      # retention the design calls for, never implicitly with defaults.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "${KAFKA_HOST_PORT:-29092}:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      # Asks the broker to answer an admin request rather than checking that a
+      # port is open: a listening socket appears well before the broker can
+      # serve.
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # Applications
+  # -------------------------------------------------------------------------
+  scoring:
+    build:
+      context: ./apps/scoring
+      dockerfile: Dockerfile
+    image: sentinelflow/scoring:${SENTINELFLOW_VERSION:-dev}
+    container_name: sentinelflow-scoring
+    restart: unless-stopped
+    environment:
+      SENTINELFLOW_SCORING_PORT: "8000"
+      SENTINELFLOW_SCORING_LOG_LEVEL: ${SCORING_LOG_LEVEL:-INFO}
+      SENTINELFLOW_SCORING_GIT_SHA: ${SENTINELFLOW_GIT_SHA:-unknown}
+    ports:
+      - "${SCORING_PORT:-8000}:8000"
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    image: sentinelflow/api:${SENTINELFLOW_VERSION:-dev}
+    container_name: sentinelflow-api
+    restart: unless-stopped
+    environment:
+      SENTINELFLOW_API_PORT: "8080"
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      # The API does not talk to PostgreSQL or Kafka yet - persistence lands in
+      # Phase 2 and the outbox in Phase 3. The dependencies are declared now so
+      # that startup ordering is already correct when it does, and so a broken
+      # broker surfaces at `make up` rather than three phases later.
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      scoring:
+        condition: service_healthy
+
+  web:
+    build:
+      # The repository root, not apps/web: the Bun workspace root owns the
+      # single lockfile, and a frozen install needs it.
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: sentinelflow/web:${SENTINELFLOW_VERSION:-dev}
+    container_name: sentinelflow-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-5173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    container_name: sentinelflow-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Bounded retention: this is a laptop, not a monitoring cluster.
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      api:
+        condition: service_healthy
+      scoring:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:13.2.0
+    container_name: sentinelflow-grafana
+    restart: unless-stopped
+    environment:
+      # Local development only. This stack binds to the developer's own machine
+      # and holds nothing but synthetic data; it is never a deployment target.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run make bootstrap to generate local secrets}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # No outbound calls from a local-first stack.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  kafka-data:
+  prometheus-data:
+  grafana-data:
