@@ -14,11 +14,11 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-25T23:45Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T00:15Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 1 merged to `main`; Phase 2 not started                                                                                           |
 | Current phase        | Phase 2 — contracts, domain, and database (started)                                                                                              |
-| Current task         | Phase 2 — ADRs merged; `contracts/` is next                                                                                                      |
+| Current task         | Phase 2 — ADRs and `contracts/` merged; domain and migrations next                                                                               |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -166,7 +166,9 @@ this repository. None has been measured.** Phase 9 measures them.
 scoring-service boundary · 0010 model and evaluation choice · 0011 SSE versus WebSockets · 0012
 authentication · 0013 observability · 0014 deployment strategy.
 
-**Contracts:** none yet — `contracts/` is created in Phase 2 with its first schema.
+**Contracts:** `contracts/` exists and is validated in CI — OpenAPI 3.1 for `/api/v1`,
+AsyncAPI 3.0 for the five topics, and seven JSON Schemas. `make contracts-check` compiles every
+schema, validates every example, and asserts the deliberately-invalid ones are rejected.
 
 ## Known issues and technical debt
 
@@ -216,20 +218,21 @@ None.
 
 ## Next three actions
 
-ADR-0006 and ADR-0007 are **done and merged** — they were the previous first action. Both are
-binding on everything below.
+ADR-0006, ADR-0007 and `contracts/` are **done and merged**. All three were previous next actions.
 
-1. **Create `contracts/`** — `openapi/sentinelflow-api.yaml` for the `/api/v1` surface,
-   `asyncapi/sentinelflow-events.yaml` for the five topics in ADR-0006, and
-   `schemas/` for the shared envelope and each payload. Add a CI job that validates them, and wire
-   it into `make docs-check` or a new `make contracts-check`. This is the first real content in
-   that directory, which is why it has not existed until now.
-2. **Model the domain and write the first Flyway migrations.** Entities per §9 of the build
-   standards, following ADR-0007 exactly: `NUMERIC(19,4)` money with an explicit currency column,
-   UUIDv7 primary keys, `timestamptz`, constraints in the database, `ddl-auto: validate`.
-3. **Add Testcontainers PostgreSQL tests** that run every migration from an empty database and
-   assert the constraints actually reject what they should. Real PostgreSQL, never H2. Set a JaCoCo
-   threshold once there is behaviour worth measuring.
+1. **Model the domain and write the first Flyway migrations.** Entities per §9 of the build
+   standards — customers, accounts, merchants, transactions, risk_assessments, alerts,
+   alert_actions, outbox_events, processed_events, audit_log. Follow ADR-0007 exactly:
+   `NUMERIC(19,4)` money with an explicit currency column, UUID primary keys, `timestamptz`,
+   constraints declared in the database, `ddl-auto: validate`. Shapes must match
+   `contracts/schemas/`.
+2. **Add Testcontainers PostgreSQL tests** that run every migration from an empty database and
+   assert the constraints actually reject what they should — a migration test that only checks the
+   migration applied has tested Flyway, not the schema. Real PostgreSQL, never H2. Add the
+   Testcontainers dependency (BOM-managed at 2.0.5) and a `make test-integration` that works.
+3. **Add the ER diagram and the transaction-to-alert sequence diagram** to
+   `docs/architecture/`, generated from or checked against the migrations, and set a JaCoCo
+   threshold now that there is behaviour worth measuring.
 
 ## Session startup commands
 
