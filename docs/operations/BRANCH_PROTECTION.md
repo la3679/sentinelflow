@@ -76,6 +76,21 @@ gh api repos/la3679/sentinelflow/rulesets --jq '.[] | {id, name, enforcement}'
 branch because it never reaches the ruleset evaluation. The API above is the authoritative check;
 trusting a dry run would mean believing protection is in place when it is not.
 
+## Dependabot and the Bun lockfile
+
+Dependabot edits `apps/web/package.json` but does not regenerate `bun.lock`, and specifically does
+not do so for a Bun workspace — [dependabot-core#11602](https://github.com/dependabot/dependabot-core/issues/11602)
+and [dependabot-core#14223](https://github.com/dependabot/dependabot-core/issues/14223). Every npm
+pull request it opens therefore fails at `bun install --frozen-lockfile`.
+
+`.github/workflows/dependabot-bun-lockfile.yml` regenerates the lockfile and pushes it onto the
+Dependabot branch. It is the only workflow in this repository with `contents: write`, it is gated
+on `github.actor == 'dependabot[bot]'`, and it touches nothing but `bun.lock`.
+
+The alternative — dropping `--frozen-lockfile` from CI — was rejected. A frozen install is what
+makes the build reproducible, and weakening a real guarantee to accommodate a tooling gap is the
+wrong trade.
+
 ## Interaction with Lovable
 
 Lovable responds to a rejected protected-branch push by silently diverting the change to a backup
