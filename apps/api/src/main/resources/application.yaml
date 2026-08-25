@@ -1,0 +1,52 @@
+# Default configuration for the SentinelFlow API.
+#
+# Only non-secret settings carry a value here. Anything credential-bearing is
+# read from the environment and has no default, so a missing variable fails
+# startup loudly instead of silently falling back to something insecure.
+
+spring:
+  application:
+    name: sentinelflow-api
+
+  # Reject unknown properties at startup rather than ignoring a typo in a
+  # configuration key until the behaviour it was meant to change is missed.
+  main:
+    banner-mode: "off"
+
+server:
+  port: ${SENTINELFLOW_API_PORT:8080}
+  # Give in-flight requests a chance to finish when the container is stopped;
+  # the local stack relies on this for a clean `make down`.
+  shutdown: graceful
+  error:
+    # Never leak a stack trace to a client.
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only what operations actually needs. Everything else stays closed.
+        include: health,info,prometheus
+  endpoint:
+    health:
+      # Liveness and readiness are separate concerns: a process that is up but
+      # cannot reach PostgreSQL is live and not ready.
+      probes:
+        enabled: true
+      show-details: when-authorized
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: sentinelflow-api
+
+logging:
+  level:
+    root: INFO
+    io.github.la3679.sentinelflow: INFO
