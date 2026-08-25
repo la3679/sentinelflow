@@ -9,7 +9,7 @@
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
-FROM python:3.13.15-slim-trixie AS build
+FROM python:3.14.6-slim-trixie AS build
 
 # uv is copied from its own published image rather than pip-installed, so the
 # version is pinned by digest-addressable tag instead of by whatever pip
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM python:3.13.15-slim-trixie AS runtime
+FROM python:3.14.6-slim-trixie AS runtime
 
 # Remove the interpreter's bundled installer. The application runs entirely
 # from /app/.venv, so pip and setuptools are never used at runtime - but they
