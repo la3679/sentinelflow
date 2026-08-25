@@ -45,14 +45,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const session = useSession();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  // The stored demo session only exists in the browser, so the first client
+  // render must match the server output before the gate is evaluated.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (session.hydrated && !session.signedIn) {
+    if (mounted && session.hydrated && !session.signedIn) {
       void navigate({ to: "/login" });
     }
-  }, [session.hydrated, session.signedIn, navigate]);
+  }, [mounted, session.hydrated, session.signedIn, navigate]);
 
-  if (!session.signedIn) {
+  if (!mounted || !session.signedIn) {
     return (
       <div className="min-h-screen bg-background">
         <SyntheticDataBanner />
@@ -62,6 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
     );
   }
+
 
   return (
     <div className="min-h-screen bg-background">
