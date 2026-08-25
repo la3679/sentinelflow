@@ -14,7 +14,7 @@
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
-FROM eclipse-temurin:25.0.4_7-jdk-noble AS build
+FROM eclipse-temurin:26.0.2_10-jdk-noble AS build
 
 # The Temurin image ships neither curl, wget nor unzip. Without them the Maven
 # Wrapper silently falls back to a bundled Java downloader that does not follow
@@ -47,7 +47,7 @@ RUN java -Djarmode=tools -jar target/sentinelflow-api-*.jar extract --layers --l
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM eclipse-temurin:25.0.4_7-jre-noble AS runtime
+FROM eclipse-temurin:26.0.2_10-jre-noble AS runtime
 
 # curl is here for HEALTHCHECK only. Without a health probe in the image, an
 # orchestrator can only tell that the process exists, not that it is serving.
