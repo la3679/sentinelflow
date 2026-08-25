@@ -14,18 +14,23 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-25T18:40Z                                                                                                                                |
+| Last updated UTC     | 2026-08-25T18:25Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 0 complete, Phase 1 not started                                                                                                   |
+| Overall status       | active — Phase 0 complete and merged; Phase 1 not started                                                                                        |
 | Current phase        | Phase 0 — research, product baseline, Lovable, and repository                                                                                    |
-| Current task         | Phase 0 handoff delivered; stop before Phase 1                                                                                                   |
+| Current task         | Phase 0 handoff delivered; stopped before Phase 1                                                                                                |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
-| Visibility           | see "Repository visibility" below                                                                                                                |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main`                                                                                                                                           |
-| Working branch       | `chore/phase-0-foundation`                                                                                                                       |
+| Working branch       | `main` (`chore/phase-0-foundation` merged via PR #1, branch retained)                                                                            |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` (Lovable syncs one branch at a time)                                                                                                      |
+| Local HEAD           | `35b15f6`                                                                                                                                        |
+| Remote HEAD verified | `35b15f6` — matches local                                                                                                                        |
+| Merged PR            | [#1](https://github.com/la3679/sentinelflow/pull/1) — merge commit, history preserved                                                            |
+| Latest CI on main    | both workflows **green** on `35b15f6`                                                                                                            |
+| Latest release       | none                                                                                                                                             |
 
 ### Lovable project identity
 
@@ -176,13 +181,13 @@ None.
 
 ## Next three actions
 
-1. Open the pull request from `chore/phase-0-foundation` into `main`, confirm both CI workflows
-   pass on the remote, and merge preserving history (merge commit, not squash).
-2. Begin Phase 1: restructure to the monorepo layout (`apps/web/`, `apps/api/`, `apps/scoring/`),
-   add `.editorconfig`, `.env.example`, the Maven Wrapper, the `uv` project, and `compose.yaml`
-   with PostgreSQL 18.6, Kafka 4.2.1 KRaft, Prometheus, Grafana, and the OTel Collector.
-3. Add ADR-0002 for monorepo and service boundaries, and enable `main` branch protection once the
-   CI check names exist.
+1. Begin Phase 1: restructure to the monorepo layout (`apps/web/`, `apps/api/`, `apps/scoring/`),
+   updating the CI path filters and the Lovable working directory to match.
+2. Add `.editorconfig`, `.env.example`, the Maven Wrapper for `apps/api`, the `uv` project for
+   `apps/scoring`, and `compose.yaml` with PostgreSQL 18.6, Kafka 4.2.1 KRaft, Prometheus,
+   Grafana, and the OTel Collector.
+3. Write ADR-0002 (monorepo and service boundaries) and enable `main` branch protection now that
+   the CI check names exist.
 
 ## Session startup commands
 
