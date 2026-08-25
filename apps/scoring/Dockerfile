@@ -43,6 +43,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---------------------------------------------------------------------------
 FROM python:3.13.15-slim-trixie AS runtime
 
+# Remove the interpreter's bundled installer. The application runs entirely
+# from /app/.venv, so pip and setuptools are never used at runtime - but they
+# are scanned, and the versions the base image ships carry fixable HIGH
+# advisories (GHSA-6v7p-g79w-8964 in pip's vendored msgpack, CVE-2025-47273 in
+# setuptools). Deleting an installer that a runtime image has no business
+# containing removes the finding and the capability behind it at the same time.
+RUN python -m pip uninstall --yes pip setuptools wheel >/dev/null 2>&1 || true;     rm -rf /usr/local/lib/python3.13/site-packages/pip     /usr/local/lib/python3.13/site-packages/pip-*     /usr/local/lib/python3.13/site-packages/setuptools     /usr/local/lib/python3.13/site-packages/setuptools-*     /usr/local/lib/python3.13/site-packages/pkg_resources     /usr/local/lib/python3.13/site-packages/wheel     /usr/local/lib/python3.13/site-packages/wheel-*     /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13     /usr/local/bin/wheel
+
 RUN groupadd --system --gid 10002 sentinelflow \
     && useradd --system --uid 10002 --gid sentinelflow --no-create-home --shell /usr/sbin/nologin sentinelflow
 
