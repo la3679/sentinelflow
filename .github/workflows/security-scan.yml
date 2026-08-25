@@ -21,6 +21,11 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      # gitleaks enumerates the commits of a pull request via the REST API;
+      # without this it fails with 403 "Resource not accessible by integration".
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -36,8 +41,14 @@ jobs:
     name: Dependency review
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Dependency review only applies to pull requests.
-    if: github.event_name == 'pull_request'
+    # Dependency review needs the dependency graph, which GitHub provides free
+    # on public repositories but gates behind paid Advanced Security on private
+    # ones. This job is therefore skipped while the repository is private and
+    # starts running by itself once it is public. The control is deferred, not
+    # disabled: secret scanning still runs on every event.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.repository.visibility == 'public'
     permissions:
       contents: read
       pull-requests: write
