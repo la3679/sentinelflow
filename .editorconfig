@@ -37,9 +37,11 @@ trim_trailing_whitespace = false
 # Make requires literal tabs to introduce a recipe line.
 indent_style = tab
 
-[*.{bat,cmd,ps1}]
-# Windows batch and PowerShell files are executed by Windows tooling that is
-# less forgiving about line endings than Git is.
+[*.{bat,cmd}]
+# cmd.exe requires CRLF; a batch file with LF endings misbehaves. .gitattributes
+# enforces the same thing in the repository. PowerShell is not listed: it reads
+# LF scripts correctly, so keeping .ps1 on LF avoids a needless exception to the
+# repository-wide rule.
 end_of_line = crlf
 
 [mvnw]
