@@ -1,7 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { FlaskConical } from "lucide-react";
-import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -17,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { ROLE_LABELS } from "@/domain/labels";
 import { ROLES, type Role } from "@/domain/types";
-import { mockSignIn, useAppDispatch, useSession } from "@/store";
+import { setDemoOperator, useAppDispatch } from "@/store";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -51,7 +50,6 @@ type FormValues = z.infer<typeof schema>;
 function LoginPage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const session = useSession();
 
   const {
     register,
@@ -64,14 +62,11 @@ function LoginPage() {
     defaultValues: { operatorId: "analyst.a1", role: "ANALYST" },
   });
 
-  useEffect(() => {
-    if (session.hydrated && session.signedIn) void navigate({ to: "/" });
-  }, [session.hydrated, session.signedIn, navigate]);
-
   const role = watch("role");
 
   const onSubmit = (values: FormValues) => {
-    dispatch(mockSignIn({ operatorId: values.operatorId, role: values.role }));
+    dispatch(setDemoOperator({ operatorId: values.operatorId, role: values.role }));
+    void navigate({ to: "/" });
   };
 
   return (
@@ -86,8 +81,10 @@ function LoginPage() {
           <p className="mt-4 flex items-start gap-2 rounded-md border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
             <FlaskConical aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              Demonstration sign-in only. There is no authentication, no credential check and no
-              stored token. Choose any operator ID and role to explore the synthetic dataset.
+              Demonstration entry point only. There is no authentication, no credential check, no
+              password, no token and nothing stored in the browser. Choosing an operator only
+              changes which fictional name and role the prototype displays, and a reload resets it.
+              Every screen is reachable directly without coming through here.
             </span>
           </p>
 

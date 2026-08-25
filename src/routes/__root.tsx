@@ -12,7 +12,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { makeStore } from "@/store";
-import { SessionBootstrap } from "@/store/session-bootstrap";
 import { Button } from "@/components/ui/button";
 
 function NotFoundComponent() {
@@ -126,7 +125,6 @@ function RootComponent() {
 
   return (
     <Provider store={store}>
-      <SessionBootstrap />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
     </Provider>
