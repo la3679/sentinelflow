@@ -19,21 +19,31 @@ financial transactions. It is not affiliated with any bank, financial
 institution or employer, executes no real transactions, and makes no real
 financial decisions.
 
+## Repository layout
+
+This is a polyglot monorepo. The console is one application inside it:
+
+| Path            | Application                                            |
+| --------------- | ------------------------------------------------------ |
+| `apps/web/`     | this React console — the only part Lovable should edit |
+| `apps/api/`     | Spring Boot transaction, alert and outbox service      |
+| `apps/scoring/` | FastAPI risk-scoring and model service                 |
+
 ## Ownership boundary
 
 The backend, security, authentication, authorization, risk rules and ML scoring
-are **owned outside Lovable**, in a separate Spring Boot / Kafka / PostgreSQL /
-FastAPI monorepo. Do not implement authentication, authorization enforcement,
-risk rules or model logic in this repository.
+are **owned outside Lovable**, in `apps/api/` and `apps/scoring/`. Do not
+implement authentication, authorization enforcement, risk rules or model logic
+in `apps/web/`.
 
 Role handling in this console (`ANALYST`, `ADMINISTRATOR`, `AUDITOR`) is a
 user-experience affordance only — never treat it as a security boundary.
 
 ## Mock data layer
 
-`src/mocks/` is a **temporary** deterministic fixture layer. It exists so the
+`apps/web/src/mocks/` is a **temporary** deterministic fixture layer. It exists so the
 console runs with no backend and will be deleted once the real client is wired
-up. RTK Query endpoints in `src/api/sentinelApi.ts` already declare real
+up. RTK Query endpoints in `apps/web/src/api/sentinelApi.ts` already declare real
 `/api/v1` request descriptors, so the migration is limited to replacing
 `mockBaseQuery` with `fetchBaseQuery({ baseUrl: API_BASE_URL })`.
 
@@ -49,7 +59,7 @@ up. RTK Query endpoints in `src/api/sentinelApi.ts` already declare real
 - Synthetic identifiers only (`ACC-000123`, `MER-0042`, `TXN-000517`). No
   realistic names, addresses, card numbers or personal identifiers.
 - One accessible dark theme. All colour, spacing and radius values come from the
-  tokens in `src/styles.css`; no hardcoded colour utilities in components.
+  tokens in `apps/web/src/styles.css`; no hardcoded colour utilities in components.
 - Amber/orange/red are reserved for genuine risk or operational severity. Do not
   use green as decoration where it could imply "safe" or "approved".
 - Accessibility target is WCAG 2.2 AA: landmarks, heading order, keyboard

@@ -1,0 +1,37 @@
+# Prometheus scrape configuration for the local SentinelFlow stack.
+#
+# Only targets that actually expose metrics are listed. A job pointing at a
+# service with no /metrics endpoint produces a permanently red target, which
+# trains everyone to ignore the target page.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+    project: sentinelflow
+
+# No alerting rules yet. Alerts are defined in Phase 7 alongside the dashboards
+# and runbooks that make them actionable; a rule with no runbook is a pager
+# that nobody knows how to answer.
+rule_files: []
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: sentinelflow-api
+    # Spring Boot Actuator serves Prometheus text format under /actuator.
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api:8080"]
+        labels:
+          service: sentinelflow-api
+
+  - job_name: sentinelflow-scoring
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["scoring:8000"]
+        labels:
+          service: sentinelflow-scoring

@@ -1,0 +1,55 @@
+# EditorConfig - https://editorconfig.org
+#
+# One shared answer to indentation, encoding and line endings across four
+# languages, so a contributor's editor does not silently reformat a file that
+# another toolchain owns. Prettier, Spotless and Ruff each enforce more than
+# this within their own trees; these are the settings every editor understands.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+# Java and Python conventionally use four spaces. Spotless (google-java-format,
+# AOSP) and Ruff are the enforcing authorities; these keep an editor from
+# fighting them.
+[*.java]
+indent_size = 4
+
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.md]
+# Markdown gives a hard line break its meaning through trailing spaces.
+trim_trailing_whitespace = false
+
+[Makefile]
+# Make requires literal tabs to introduce a recipe line.
+indent_style = tab
+
+[*.{bat,cmd}]
+# cmd.exe requires CRLF; a batch file with LF endings misbehaves. .gitattributes
+# enforces the same thing in the repository. PowerShell is not listed: it reads
+# LF scripts correctly, so keeping .ps1 on LF avoids a needless exception to the
+# repository-wide rule.
+end_of_line = crlf
+
+[mvnw]
+end_of_line = lf
+
+[*.{ico,png,jpg,jpeg,gif,webp,woff,woff2,jar}]
+# Binary - no text normalisation.
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset

@@ -1,0 +1,72 @@
+name: Bug report
+description: Something behaves differently from what is documented.
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SentinelFlow runs on synthetic data only. Please do not paste real
+        financial data, personal data, credentials, or tokens into this form.
+
+        If this is a security vulnerability, do not file it here. Use the
+        private advisory link on the new-issue page.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The actual behaviour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The documented or intended behaviour, and where it is stated if you know.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands or actions, starting from a clean clone where possible.
+      placeholder: |
+        1. make bootstrap
+        2. make up
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - apps/api (Spring Boot)
+        - apps/scoring (FastAPI)
+        - apps/web (console)
+        - infrastructure / compose
+        - documentation
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Docker version, and the output of `make bootstrap --check` if it runs.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Relevant output. Redact anything sensitive before pasting.
+      render: text
+    validations:
+      required: false

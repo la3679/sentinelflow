@@ -1,7 +1,9 @@
 # CLAUDE.md — SentinelFlow operating instructions
 
 Permanent instructions for every Claude session in this repository. Keep this file short.
-Detailed language and workflow rules live in [`.claude/rules/`](.claude/rules/).
+Detailed rules live in [`.claude/rules/`](.claude/rules/): [`java.md`](.claude/rules/java.md),
+[`python.md`](.claude/rules/python.md), [`frontend.md`](.claude/rules/frontend.md), and
+[`workflow.md`](.claude/rules/workflow.md). Read the one that covers what you are changing.
 
 ## What SentinelFlow is
 
@@ -66,8 +68,14 @@ progress and exact next actions → append to `docs/planning/SESSION_LOG.md` →
 correct Conventional Commit message → push → verify the remote SHA and CI → confirm no secret or
 bulk generated data was staged → only then compact or end.
 
-Run `scripts/claude/checkpoint` to gather the Git/CI facts. It never infers semantic progress —
-you must write that yourself.
+Run `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to gather the Git and CI
+facts. It never infers semantic progress — you must write that yourself.
+
+Four hooks assist: `SessionStart` injects verified Git state, `Stop` asks once per session for a
+checkpoint when work is uncommitted and this file is stale, and `PreCompact` and `SessionEnd`
+write git-ignored snapshots. They are read-only and never commit or push anything. See
+[`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md) to debug or
+disable them.
 
 ## Working with Lovable
 

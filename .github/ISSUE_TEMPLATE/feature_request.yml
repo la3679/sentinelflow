@@ -1,0 +1,57 @@
+name: Feature request
+description: Propose a capability SentinelFlow does not have.
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SentinelFlow is a deliberately bounded educational project. Proposals
+        that add a technology without a demonstrated need - another datastore,
+        an orchestrator, a graph database, an LLM - are unlikely to be accepted.
+        See the non-goals in `docs/planning/PRODUCT_REQUIREMENTS.md`.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is difficult or impossible today. Describe the problem, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What you would build, and roughly where it would live.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How someone would know this is finished and correct.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else would solve the problem, and why this is better.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - apps/api (Spring Boot)
+        - apps/scoring (FastAPI)
+        - apps/web (console)
+        - infrastructure / compose
+        - documentation
+        - crosses several
+    validations:
+      required: true

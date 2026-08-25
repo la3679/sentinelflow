@@ -1,0 +1,49 @@
+name: CI — repository
+
+# Repository-wide checks that are not owned by any single application:
+# formatting of every tracked file, and hygiene rules that apply to the tree
+# as a whole.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-repo-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: "1.4.0"
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Prettier owns Markdown, YAML, JSON, CSS, and TypeScript across every
+      # application, so this check runs once for the whole repository rather
+      # than once per component.
+      - name: Check formatting
+        run: bun run format:check
+
+      # Documentation drifting from the code is treated as a defect here, and
+      # the most common form of drift is a link to a file that was renamed or
+      # never created. This also fails on a TODO or an unfilled template
+      # placeholder left in prose.
+      - name: Check documentation links and placeholders
+        run: bun scripts/dev/check-docs.mjs

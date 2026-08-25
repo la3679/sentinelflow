@@ -324,11 +324,139 @@ deterministic, seed-based synthetic generator**. No third-party dataset is redis
 
 ---
 
+## R-2026-08-25-11 — Maven distribution and Maven Wrapper
+
+**Date (UTC):** 2026-08-25
+**Sources:** Maven Central metadata for `org.apache.maven:apache-maven` and
+`org.apache.maven.wrapper:maven-wrapper`; the Apache distribution mirror at
+`https://dlcdn.apache.org/maven/maven-3/`.
+
+**Findings:**
+
+| Component     | Latest published | Selected | Reason                             |
+| ------------- | ---------------- | -------- | ---------------------------------- |
+| Apache Maven  | `4.0.0-rc-6`     | `3.9.16` | 4.0.0 is still a release candidate |
+| Maven Wrapper | `3.3.4`          | `3.3.4`  | current                            |
+
+Maven is **not installed** on the reference machine (R-2026-08-25-01), so the wrapper is the only
+way `apps/api` builds. The wrapper is configured with `distributionType=only-script`, which keeps
+every binary out of the repository: the `mvnw` scripts download Maven on first use and nothing
+under `.mvn/wrapper/` is a jar.
+
+**Checksum verification.** `distributionSha256Sum` is set rather than omitted; without it the
+wrapper trusts whatever the distribution URL returns. The value was verified two ways:
+
+| Check                                                          | Result                                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Apache's published `.sha512` for `apache-maven-3.9.16-bin.zip` | `ed41650d…3454af3`                                                 |
+| SHA-512 computed from the artifact served by Maven Central     | `ed41650d…3454af3` — **match**                                     |
+| SHA-1 published by Maven Central                               | `18e39b27…bcf7a95` — **match**                                     |
+| SHA-256 computed from the verified artifact                    | `5af3b743dd8b876b5c45da33b676251e5f1687712644abb4ee519ca56e1d89ce` |
+| Same artifact re-fetched from `repo.maven.apache.org`          | identical SHA-256                                                  |
+
+**Decision:** Maven Wrapper 3.3.4, script-only, pinned to Maven 3.9.16 with the SHA-256 above.
+
+**Impact:** the checksum earned itself immediately. The `eclipse-temurin` base image ships neither
+curl, wget nor unzip, so inside the container build the wrapper fell back to a bundled Java
+downloader that does not follow Maven Central's redirect, saved the redirect body, and failed
+validation — presenting as a supply-chain alarm for what was a missing HTTP client. The API
+Dockerfile now installs one in its build stage.
+
+---
+
+## R-2026-08-25-12 — Container base images
+
+**Date (UTC):** 2026-08-25
+**Source:** Docker Hub registry tag listings.
+
+| Image                         | Selected tag          | Note                                                   |
+| ----------------------------- | --------------------- | ------------------------------------------------------ |
+| `eclipse-temurin` (build)     | `25.0.4_7-jdk-noble`  | newest Temurin 25 published to Docker Hub              |
+| `eclipse-temurin` (runtime)   | `25.0.4_7-jre-noble`  | JRE only — no compiler in the runtime image            |
+| `python`                      | `3.13.15-slim-trixie` | current 3.13 patch                                     |
+| `oven/bun`                    | `1.4.0-alpine`        | matches the pinned Bun in `package.json`               |
+| `nginxinc/nginx-unprivileged` | `1.30.4-alpine3.24`   | runs as uid 101 on port 8080 with no capability needed |
+
+**Discrepancy recorded rather than glossed over:** the reference machine's local JDK is
+`25.0.4.1+1` (R-2026-08-25-03), one critical-patch build **ahead** of the newest Temurin 25 image
+Adoptium has published. Both are Java 25 LTS. The container therefore builds and runs on
+`25.0.4+7` while local `./mvnw` runs on `25.0.4.1+1`. Revisit when Adoptium publishes `25.0.4.1`.
+
+**apt package versions inside images are deliberately not pinned.** The base image tag is pinned,
+which is what makes the build reproducible; pinning against a rolling distribution archive breaks
+the build the first time a security update ships. An early attempt to pin `curl=8.5.0-2ubuntu10.6`
+failed exactly that way.
+
+---
+
+## R-2026-08-25-13 — Starlette's test client now requires `httpx2`
+
+**Date (UTC):** 2026-08-25
+**Sources:** the deprecation raised by `starlette.testclient` 1.6.0; the PyPI JSON API for
+`httpx2`.
+
+**Finding:** R-2026-08-25-06 recorded `httpx` 0.28.1 as the test-client dependency. Starlette
+1.6.0 deprecates that pairing and requires **`httpx2`**, the renamed 2.x line of the same project.
+`httpx2` 2.12.0 declares support for Python 3.10–3.15, so it does not disturb the 3.13 pin.
+
+This surfaced as a **build failure rather than a warning**, because `apps/scoring` configures
+pytest with `filterwarnings = ["error"]`. That setting justified itself on its first run.
+
+**Decision:** `apps/scoring` depends on `httpx2>=2.12.0,<3` for tests. This supersedes the `httpx`
+row of R-2026-08-25-06.
+
+---
+
+## R-2026-08-25-14 — Claude Code hook and status-line schema
+
+**Date (UTC):** 2026-08-25
+**Sources:** <https://code.claude.com/docs/en/hooks>, <https://code.claude.com/docs/en/statusline>.
+Closes the Phase 1 open item.
+
+**Status-line findings.** Configured as `statusLine: { type: "command", command, padding }` in
+project settings. The command receives a JSON session object on stdin containing `model`,
+`workspace`, `cost`, `context_window` and `rate_limits`, among others.
+`context_window.used_percentage` and `context_window.remaining_percentage` are pre-calculated —
+and are **`null` early in a session and again after `/compact`** until the next API call
+repopulates them, so a status line must render an unknown state rather than a misleading `0`.
+`rate_limits` appears only for subscription sessions and each window may be independently absent.
+
+**Hook findings.**
+
+| Event          | Decision control                                    | Used here                              |
+| -------------- | --------------------------------------------------- | -------------------------------------- |
+| `SessionStart` | `hookSpecificOutput.additionalContext`, no blocking | injects verified Git state             |
+| `Stop`         | top-level `decision: "block"` with `reason`         | one checkpoint reminder per session    |
+| `PreCompact`   | top-level `decision`                                | snapshot plus a reminder; never blocks |
+| `SessionEnd`   | **none** — side effects only                        | snapshot only                          |
+| `PostCompact`  | **none** — side effects only                        | **not used**                           |
+
+Two findings that changed the design:
+
+1. **`PostCompact` cannot inject context.** It is a real event, but it has no decision control:
+   it can log, it cannot add to the context window. The post-compaction reminder is therefore
+   registered on **`SessionStart` with the `compact` matcher**, which is the supported route.
+2. **`stop_hook_active` exists** and is `true` whenever Claude Code is already continuing because
+   of a stop hook. Claude Code additionally overrides a stop hook after **8 consecutive blocks**.
+   SentinelFlow's Stop hook uses that field, plus a per-session marker file, plus that built-in
+   ceiling — three independent guards.
+
+`SessionEnd` hooks share a **1.5-second budget** across all of them, which is why the SentinelFlow
+one writes a file and returns nothing.
+
+**Decision:** implement the status line and four hooks as described, in JavaScript run by Bun
+rather than shell — `jq` is not a project prerequisite and the reference machine is Windows.
+Recorded in `docs/development/CLAUDE_CODE_SETUP.md`.
+
+---
+
 ## Open items to revalidate
 
 - [ ] Security advisories affecting the pinned versions — run the dependency and CodeQL scans in
       Phase 8 and record findings here.
-- [ ] Claude Code hook / status-line / memory schema — verify against the installed version
-      before committing `.claude/` configuration (Phase 1).
+- [x] Claude Code hook / status-line / memory schema — verified 2026-08-25 in R-2026-08-25-14 and
+      exercised locally before commit.
 - [ ] Node.js 24 present on the reference machine before the frontend gate is declared verified.
+      Still **22.19.0**; Bun runs the frontend so nothing is blocked.
 - [ ] Charting library licence re-check once the Recharts version is pinned by the lockfile.
+- [ ] Temurin `25.0.4.1` container image — not yet published by Adoptium (R-2026-08-25-12).

@@ -1,0 +1,23 @@
+# Grafana datasource provisioning.
+#
+# Provisioned as a file rather than clicked in through the UI, so a fresh
+# `make up` on a clean machine has a working datasource with no manual step and
+# no state that lives only in one developer's volume.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: sentinelflow-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    # Grafana reconciles this file on every start, so an edit here wins over a
+    # change made in the UI. That is the point: the file is the source of truth.
+    editable: false
+    jsonData:
+      # Must match the scrape_interval in infra/prometheus/prometheus.yml, or
+      # Grafana requests a step finer than the data and draws gaps.
+      timeInterval: 15s
+      httpMethod: POST

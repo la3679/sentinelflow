@@ -1,0 +1,94 @@
+name: CI — containers
+
+# Builds every image and scans it. Nothing is pushed to a registry: this proves
+# the Dockerfiles still work and that the images do not ship a fixable
+# high-severity vulnerability.
+#
+# This exists because three real defects in these Dockerfiles - a missing HTTP
+# client that broke Maven Wrapper checksum validation, a wrong entrypoint for an
+# extracted Spring Boot layout, and an editable Python install pointing at a
+# path that does not exist at runtime - were only visible when the images were
+# actually built and run. Without this workflow they would rot silently.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly published advisory against a pinned base image is
+    # noticed without waiting for someone to push.
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-containers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-scan:
+    name: Build and scan ${{ matrix.image.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      # One failing image should not hide the state of the other two.
+      fail-fast: false
+      matrix:
+        image:
+          - name: api
+            context: apps/api
+            dockerfile: apps/api/Dockerfile
+          - name: scoring
+            context: apps/scoring
+            dockerfile: apps/scoring/Dockerfile
+          # The console builds from the repository root: the Bun workspace root
+          # owns the single lockfile, and a frozen install needs it.
+          - name: web
+            context: .
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4.3.0
+
+      - name: Build image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          # Loaded into the local daemon rather than pushed, so the scan and the
+          # runtime check below operate on the exact image that was just built.
+          push: false
+          load: true
+          tags: sentinelflow-${{ matrix.image.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+
+      # An image that runs as root shares the host's uid 0 wherever a user
+      # namespace mapping is missing. Every image here declares a non-root USER;
+      # this asserts the built image actually kept it.
+      - name: Assert the image does not run as root
+        run: |
+          user="$(docker image inspect --format '{{.Config.User}}' sentinelflow-${{ matrix.image.name }}:ci)"
+          echo "USER is '${user}'"
+          if [ -z "$user" ] || [ "$user" = "root" ] || [ "$user" = "0" ]; then
+            echo "::error::sentinelflow-${{ matrix.image.name }} runs as root"
+            exit 1
+          fi
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: sentinelflow-${{ matrix.image.name }}:ci
+          format: table
+          exit-code: "1"
+          # ignore-unfixed is a deliberate policy, not a way to make the build
+          # pass: a vulnerability with no available fix cannot be acted on by
+          # bumping a base image, and failing on it would mean a permanently red
+          # pipeline that everyone learns to ignore. Anything fixable at HIGH or
+          # above fails the build.
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          vuln-type: os,library

@@ -14,49 +14,45 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-25T18:25Z                                                                                                                                |
+| Last updated UTC     | 2026-08-25T22:20Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 0 complete and merged; Phase 1 not started                                                                                        |
-| Current phase        | Phase 0 — research, product baseline, Lovable, and repository                                                                                    |
-| Current task         | Phase 0 handoff delivered; stopped before Phase 1                                                                                                |
+| Overall status       | active — Phase 1 complete; Phase 2 not started                                                                                                   |
+| Current phase        | Phase 1 — monorepo and developer foundation (complete, pending merge)                                                                            |
+| Current task         | Phase 1 gate met; merging PR #2, then Phase 2                                                                                                    |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
-| Default branch       | `main`                                                                                                                                           |
-| Working branch       | `main` (`chore/phase-0-foundation` merged via PR #1, branch retained)                                                                            |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
+| Working branch       | `chore/phase-1-foundation`                                                                                                                       |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
-| Lovable sync branch  | `main` (Lovable syncs one branch at a time)                                                                                                      |
-| Local HEAD           | `35b15f6`                                                                                                                                        |
-| Remote HEAD verified | `35b15f6` — matches local                                                                                                                        |
-| Merged PR            | [#1](https://github.com/la3679/sentinelflow/pull/1) — merge commit, history preserved                                                            |
-| Latest CI on main    | both workflows **green** on `35b15f6`                                                                                                            |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
+| Open PR              | [#2](https://github.com/la3679/sentinelflow/pull/2) — draft, all six workflows green                                                             |
 | Latest release       | none                                                                                                                                             |
 
-### Lovable project identity
+Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
+`scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
+truth rather than from a stale table.
 
-| Field             | Value                                                                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace         | `Love's Lovable` (`sPLbx3W6voC6jPB4kPG6`), plan `pro`                                                                                         |
-| Project           | `SentinelFlow`                                                                                                                                |
-| Project ID        | `e1341a35-a595-4af4-b0a5-c158ba286897`                                                                                                        |
-| Editor            | <https://lovable.dev/projects/e1341a35-a595-4af4-b0a5-c158ba286897>                                                                           |
-| GitHub connection | active, verified 2026-08-25                                                                                                                   |
-| Generation stack  | Lovable's current default: Vite 8.1.5 + TanStack Start 1.168 + TanStack Router 1.170 + React 19.2 + Tailwind 4.2 + shadcn/ui + Bun (ADR-0009) |
+### Lovable
 
-### Repository provenance — verified, not assumed
+| Field             | Value                                                                    |
+| ----------------- | ------------------------------------------------------------------------ |
+| Workspace         | `Love's Lovable` (`sPLbx3W6voC6jPB4kPG6`), plan `pro`                    |
+| Project           | `SentinelFlow` (`e1341a35-a595-4af4-b0a5-c158ba286897`)                  |
+| Editor            | <https://lovable.dev/projects/e1341a35-a595-4af4-b0a5-c158ba286897>      |
+| GitHub connection | active — **never rename, transfer, or delete the repository** (ADR-0001) |
+| Generation        | **retired in Phase 1** — the console is no longer at the repository root |
 
-| Commit                | Author                          | Meaning                                                           |
-| --------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| `0f401e5`             | `Lovable <noreply@lovable.dev>` | root commit, `template: tanstack_start_ts_current-b3e81c491308`   |
-| `1bcddae` … `11294e7` | `gpt-engineer-app[bot]`         | five generation commits                                           |
-| `afbd56d`             | `lovable <noreply@lovable.dev>` | `Add project README` — the branch point for all SentinelFlow work |
-
-Lovable's original commit and full history are preserved. Nothing was squashed or rewritten.
+Lovable has no documented support for an application outside the repository root, so moving the
+console to `apps/web/` ended its ability to regenerate or preview this project. That trade-off was
+taken deliberately and is recorded in [ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md)
+and [`docs/operations/LOVABLE_GITHUB_WORKFLOW.md`](docs/operations/LOVABLE_GITHUB_WORKFLOW.md),
+which also records the two honest routes back to a design session if one is ever wanted.
 
 ## Product status by phase
 
-- [x] **Phase 0 — research and Lovable/GitHub bootstrap**
-- [ ] Phase 1 — repository and developer foundation
+- [x] **Phase 0 — research gate and Lovable/GitHub bootstrap**
+- [x] **Phase 1 — monorepo and developer foundation**
 - [ ] Phase 2 — contracts, domain, and database
 - [ ] Phase 3 — ingestion, outbox, and Kafka
 - [ ] Phase 4 — synthetic data and scoring
@@ -67,76 +63,90 @@ Lovable's original commit and full history are preserved. Nothing was squashed o
 - [ ] Phase 9 — performance and documentation
 - [ ] Phase 10 — release
 
-## Completed this session
+## Completed since last checkpoint — Phase 1
 
-**Research gate** — ten primary-source entries in `docs/research/RESEARCH_LOG.md`. Versions
-locked: Java 25 LTS / Spring Boot 4.1.1 / Python 3.13 via uv / Node 24 / PostgreSQL 18.6 /
-Kafka 4.2.1 KRaft / Prometheus v3.14.0 / Grafana 13.2.0 / OTel Collector 0.159.0.
+**Monorepo.** The console moved from the repository root to `apps/web/`, and `apps/api` and
+`apps/scoring` were created alongside it. The root is a Bun workspace holding the single Node
+lockfile and repository-wide formatting.
 
-**Toolchain** — Temurin `jdk-25.0.4.1+1` provisioned to `%USERPROFILE%\.jdks`, SHA-256 verified
-against the Adoptium API. Bun 1.4.0 installed (the project's single package manager).
+**`apps/api`** — Spring Boot 4.1.1 on Java 25. Maven Wrapper 3.3.4, script-only so no jar enters
+the repository, pinned to Maven 3.9.16 with a SHA-256 verified against both Apache's published
+SHA-512 and Maven Central. Spotless (palantir-java-format) and JaCoCo at `verify`. Actuator
+exposes only health, info and prometheus, with liveness and readiness separate; a test asserts
+`/actuator/env` and `/actuator/beans` return 404.
 
-**Repository** — Lovable created `la3679/sentinelflow`; verified by owner, provenance, branch, and
-clone URL, then cloned and verified as the sole implementation workspace.
+**`apps/scoring`** — FastAPI on Python 3.13 exactly, managed by `uv` with a committed lock. ruff,
+`mypy --strict`, and pytest with `filterwarnings = ["error"]`. Configuration is pydantic-settings
+with `extra="forbid"`, and a test proves a typo in a variable stops startup.
 
-**Foundation audit** — `docs/frontend/FOUNDATION_AUDIT.md`. 23 checks; 18 passed as generated,
-3 authentication-scope findings and 1 dead dependency corrected, 1 check unblocked by adding the
-missing test tooling.
+**Containers.** Multi-stage images for all three, non-root, health-checked, build tools kept out
+of runtime. Three defects were found by _running_ them rather than reading them, and are recorded
+in the commit messages.
 
-**Corrections** — eight commits, listed under "Git state".
+**Local stack.** `compose.yaml` brings up PostgreSQL 18.6, Kafka 4.2.1 in KRaft, the three
+applications, Prometheus and Grafana. Health checks probe behaviour rather than ports. Grafana's
+Prometheus datasource is provisioned from a file.
 
-## Acceptance criteria status — Phase 0 gate
+**Command surface.** A `Makefile` and a native PowerShell runner, because the reference Windows
+machine has no `make`. Four platform-specific defects were found by running them; all are recorded.
 
-| Criterion                                       | Status   | Evidence                                         |
-| ----------------------------------------------- | -------- | ------------------------------------------------ |
-| Research gate complete before implementation    | **pass** | `docs/research/RESEARCH_LOG.md`, 10 entries      |
-| Repository created by Lovable and sync verified | **pass** | provenance table above                           |
-| Clone root, `origin`, branch, HEAD verified     | **pass** | `git rev-parse --show-toplevel`, `git remote -v` |
-| Lovable initial commit preserved                | **pass** | `0f401e5` is still the root commit               |
-| No secrets present                              | **pass** | gitleaks over full history, 0 leaks              |
-| Initial build succeeds                          | **pass** | `bun run build` exit 0                           |
-| State file contains exact repo/branch/SHA       | **pass** | this file                                        |
+**CI.** `ci-repo`, `ci-api`, `ci-scoring`, `ci-web`, `ci-containers`, plus the existing security
+scan. Container images are built and Trivy-scanned on every push, and CI asserts the non-root user
+against the built image.
+
+**Repository.** Community health files, issue and PR templates, CODEOWNERS, Dependabot across five
+ecosystems, the label set, milestones M0–M5, Discussions, secret scanning, push protection,
+Dependabot security updates, and a `main` ruleset.
+
+**`.claude/`.** Status line, four hooks, per-language rules, and a checkpoint helper — all verified
+against the current schema and exercised locally before commit.
+
+**Documentation.** ADR-0002, `LOVABLE_GITHUB_WORKFLOW.md`, `BRANCH_PROTECTION.md`,
+`CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
+prompt-dump into something verified, with two generated screenshots.
+
+## Acceptance criteria status — Phase 1 gate
+
+| Criterion                           | Status   | Evidence                                                                        |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------- |
+| Clean-clone bootstrap works         | **pass** | Fresh clone of `55efe6a`: bootstrap ok, frozen install ok, all three apps built |
+| Each app builds                     | **pass** | api `BUILD SUCCESS` · scoring `uv sync --frozen` · web `vite build` exit 0      |
+| Each app has a health or smoke test | **pass** | api 5/5 · scoring 6/6 · web 24/24 unit + 58/58 browser · stack smoke 23/23      |
+| CI green                            | **pass** | All six workflows passing on the branch head                                    |
+| ADR for the structural decision     | **pass** | ADR-0002                                                                        |
+| `main` protected                    | **pass** | Ruleset `21493410`, verified through the rules API                              |
 
 ## Test and verification evidence
 
-All commands run from the repository root on 2026-08-25.
+Every figure below came from a run on **2026-08-25**. Nothing here is estimated.
 
-| Command                   | Result            | Notes                                                  |
-| ------------------------- | ----------------- | ------------------------------------------------------ |
-| `bunx tsc --noEmit`       | **PASS** (exit 0) | confirms Lovable's typecheck claim independently       |
-| `bunx eslint .`           | **PASS** (exit 0) | 0 errors, 7 warnings (vendored shadcn/ui fast-refresh) |
-| `bunx prettier --check .` | **PASS**          | after `.gitattributes` normalisation                   |
-| `bun run test`            | **PASS**          | 24/24 across 5 files                                   |
-| `bun run test:coverage`   | 40.4% lines       | routes are covered by the browser tests instead        |
-| `bun run test:e2e`        | **PASS**          | 58/58 — 29 desktop + 29 tablet                         |
-| axe WCAG 2.1 A/AA         | **PASS**          | 0 violations on all 8 routes, both viewports           |
-| `bun run build`           | **PASS** (exit 0) | static output, prerendered 1 shell                     |
-| gitleaks full history     | **PASS**          | 0 leaks                                                |
+| Command                                  | Result                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `bun run format:check` (repository-wide) | **PASS**                                                            |
+| `bun scripts/dev/check-docs.mjs`         | **PASS** — 66 links across 27 files, 0 broken, 0 placeholders       |
+| `bun run lint` (web)                     | **PASS** — 0 errors, 7 warnings (vendored shadcn/ui fast-refresh)   |
+| `bun run typecheck` (web)                | **PASS** (exit 0)                                                   |
+| `bun run test` (web)                     | **PASS** — 24/24 across 5 files                                     |
+| `bun run test:coverage` (web)            | 40.4% lines (198/490) — routes covered by the browser suite instead |
+| `bun run test:e2e` (web)                 | **PASS** — 58/58 (29 desktop + 29 tablet)                           |
+| axe WCAG 2.1 A/AA                        | **PASS** — 0 violations, 8 routes, 2 viewports                      |
+| `bun run build` (web)                    | **PASS** (exit 0)                                                   |
+| `./mvnw verify` (api)                    | **PASS** — 5/5, Spotless clean, `BUILD SUCCESS`                     |
+| `uv run ruff check .` (scoring)          | **PASS**                                                            |
+| `uv run ruff format --check .` (scoring) | **PASS** — 7 files                                                  |
+| `uv run mypy` (scoring, strict)          | **PASS** — 0 issues, 6 files                                        |
+| `uv run pytest --cov` (scoring)          | **PASS** — 6/6, 83% lines                                           |
+| `docker compose up -d --wait`            | **PASS** — 7/7 healthy                                              |
+| `./scripts/smoke/smoke.sh`               | **PASS** — 23/23                                                    |
+| `sf.ps1 smoke` (PowerShell 5.1)          | **PASS** — 23/23, identical result                                  |
+| Trivy on all three images                | **PASS** — 0 fixable HIGH or CRITICAL                               |
+| gitleaks over full history               | **PASS** — 0 leaks                                                  |
+| Clean clone → bootstrap → build → test   | **PASS** — all three applications                                   |
 
-**No coverage, latency, throughput, or false-positive figure has been claimed beyond what is
-listed above, and every figure here came from an actual run.**
+Container sizes, measured: api 488 MB · scoring 233 MB · web 83 MB.
 
-## Git state
-
-- Branch: `chore/phase-0-foundation`, pushed and tracking `origin`.
-- Working tree: clean.
-- Lovable synchronization: connected; Lovable syncs `main`, which this branch has not touched.
-
-Commits this session, oldest first:
-
-| SHA       | Message                                                                    |
-| --------- | -------------------------------------------------------------------------- |
-| `c57dcee` | `chore(repo): normalize line endings via .gitattributes`                   |
-| `bfaf2d0` | `fix(web): remove persisted demo session and route gate`                   |
-| `f19cd99` | `refactor(web): render the console client-side`                            |
-| `45ee061` | `chore(web): drop unused TanStack Query dependency`                        |
-| `83c9610` | `chore(web): name the package and add a reproducible script surface`       |
-| `a59001a` | `test(web): add Vitest, Testing Library, and axe with a scope-guard suite` |
-| `2f8ab74` | `test(e2e): add Playwright browser, accessibility, and responsive checks`  |
-| `ee8bc40` | `ci(web): add quality, browser, and security workflows`                    |
-| `557a393` | `chore(repo): add Apache-2.0 licence and NOTICE`                           |
-| `938e267` | `docs: record the research gate, product baseline, and Phase 0 ADRs`       |
-| `c7fc6a6` | `docs(web): record the foundation audit and its evidence`                  |
+**No latency, throughput, false-positive, or model-accuracy figure has been claimed anywhere in
+this repository. None has been measured.** Phase 9 measures them.
 
 ## Architecture and decisions
 
@@ -145,35 +155,36 @@ Commits this session, oldest first:
 | ADR  | Decision                                                                                            |
 | ---- | --------------------------------------------------------------------------------------------------- |
 | 0001 | Lovable creates the GitHub repository; never rename, transfer, or delete it                         |
+| 0002 | One monorepo, `apps/{api,scoring,web}`, two services, CI not path-filtered                          |
 | 0003 | Java 25 LTS + Spring Boot 4.1.1; dependency versions inherited from the BOM                         |
 | 0004 | Python 3.13 via uv for `apps/scoring`                                                               |
 | 0009 | Adopt Lovable's TanStack Start foundation; render client-side so Spring Boot stays the sole backend |
 
-**Still needing an ADR:** 0002 monorepo boundaries · 0005 Kafka outbox and delivery semantics ·
-0006 event schema and versioning · 0007 Flyway and money representation · 0008 scoring-service
-boundary · 0010 model and evaluation choice · 0011 SSE versus WebSockets · 0012 authentication ·
-0013 observability · 0014 deployment strategy.
+**Still needing an ADR:** 0005 Kafka outbox and delivery semantics · 0006 event schema and
+versioning · 0007 Flyway and money representation · 0008 scoring-service boundary · 0010 model and
+evaluation choice · 0011 SSE versus WebSockets · 0012 authentication · 0013 observability ·
+0014 deployment strategy.
 
-**Contracts:** none yet — `contracts/` is created in Phase 2.
+**Contracts:** none yet — `contracts/` is created in Phase 2 with its first schema.
 
 ## Known issues and technical debt
 
-- **Node 22.19.0 on the reference machine passed its LTS end date (2026-07-28).** `engines`
-  requires Node 24. Bun runs the frontend so this has not blocked anything, but local Node should
-  be upgraded.
-- **Default `JAVA_HOME` still points at JDK 17.** JDK 25 is installed but is not the machine
-  default; `make bootstrap` must select it explicitly in Phase 1.
-- **The monorepo layout does not exist yet.** The repository root is still the web application.
-  Phase 1 moves it to `apps/web/` and adds `apps/api/` and `apps/scoring/`.
+- **Node 22.19.0 on the reference machine** passed its LTS end date (2026-07-28). `engines`
+  requires Node 24. Bun runs everything, so nothing is blocked, but local Node should be upgraded.
+- **Default `JAVA_HOME` points at JDK 17.** JDK 25 is installed at `%USERPROFILE%\.jdks`;
+  `make bootstrap` warns rather than fails, because `make up` builds the API in Docker.
+- **The published Temurin 25 image is one critical-patch build behind the local JDK.** Containers
+  build on `25.0.4+7`, local `./mvnw` runs on `25.0.4.1+1`. Both are Java 25 LTS. Revisit when
+  Adoptium publishes `25.0.4.1`.
+- **`noUnusedLocals` / `noUnusedParameters` are still `false`** in `apps/web/tsconfig.json`.
+- **Coverage thresholds are not enforced** in any component. Deliberate: a threshold set against a
+  scaffold measures how much of a scaffold is exercised. Set them in Phases 2 and 4.
 - **Google Fonts is loaded from a remote host.** Self-host in Phase 6 so the local-first stack has
   no external runtime dependency.
-- **`noUnusedLocals` / `noUnusedParameters` are `false`** in `tsconfig.json`. Enable in Phase 1.
-- **Coverage thresholds are not yet enforced.** Set in Phase 1 once a baseline exists, rather than
-  writing meaningless tests to hit a number now.
-- **Screen-reader behaviour is unverified.** axe is not a substitute for a manual NVDA/VoiceOver
-  pass. Phase 6.
-- **`main` has no branch protection.** Deliberate, per ADR-0001: Lovable diverts rejected pushes
-  to a backup branch, so strict rules go on at the end of Phase 1.
+- **Screen-reader behaviour is unverified.** axe is not a substitute for a manual pass. Phase 6.
+- **The console still renders from `src/mocks/`.** Replaced in Phase 6, once the API has endpoints.
+- **CI is not path-filtered**, so every push runs every component. Deliberate (ADR-0002); revisit
+  when runtime justifies job-level change detection.
 
 ## Blockers and required user input
 
@@ -181,13 +192,14 @@ None.
 
 ## Next three actions
 
-1. Begin Phase 1: restructure to the monorepo layout (`apps/web/`, `apps/api/`, `apps/scoring/`),
-   updating the CI path filters and the Lovable working directory to match.
-2. Add `.editorconfig`, `.env.example`, the Maven Wrapper for `apps/api`, the `uv` project for
-   `apps/scoring`, and `compose.yaml` with PostgreSQL 18.6, Kafka 4.2.1 KRaft, Prometheus,
-   Grafana, and the OTel Collector.
-3. Write ADR-0002 (monorepo and service boundaries) and enable `main` branch protection now that
-   the CI check names exist.
+1. **Merge PR #2.** Mark it ready for review, confirm all nine required checks are green on the
+   head commit, merge with a merge commit (not a squash — the phase history is the point), then
+   verify `main` and delete the branch.
+2. **Begin Phase 2 — contracts and domain.** Write ADR-0006 (event schema and versioning) and
+   ADR-0007 (Flyway and money representation) _before_ the schema, then create `contracts/` with
+   the OpenAPI baseline and the transaction/risk event schemas.
+3. **Add the first Flyway migrations and their Testcontainers PostgreSQL tests.** Real PostgreSQL,
+   never H2. Set a JaCoCo and a pytest coverage threshold once there is real behaviour to measure.
 
 ## Session startup commands
 
@@ -198,14 +210,13 @@ git remote -v
 git branch --show-current
 git status --short --branch
 git fetch --all --prune
-git log --oneline -10
-gh pr list
-gh run list --limit 5
+scripts/claude/checkpoint
 bun install --frozen-lockfile
-bun run verify
+make bootstrap
 ```
 
 ## Safe resume prompt
 
-> Read CLAUDE.md and PROJECT_STATE.md, verify Git and GitHub state, then continue the first
-> incomplete action without repeating completed work.
+> Read CLAUDE.md and PROJECT_STATE.md, verify Git and GitHub state with
+> `scripts/claude/checkpoint`, then continue the first incomplete item in "Next three actions"
+> without repeating completed work.

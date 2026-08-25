@@ -1,0 +1,10 @@
+# Code owners for SentinelFlow.
+#
+# GitHub requests a review from the owner of every changed path. The repository
+# currently has one maintainer, so a single catch-all is honest; per-directory
+# entries would only imply a review structure that does not exist.
+#
+# Ownership is not a merge gate on its own - the branch ruleset requires the CI
+# checks, and this requests the review.
+
+* @la3679

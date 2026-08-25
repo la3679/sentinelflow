@@ -1,0 +1,68 @@
+name: CI — api
+
+# Not path-filtered, for the same reason as ci-web.yml: a workflow skipped by an
+# `on: paths` filter produces no check run at all, which permanently blocks a
+# pull request when the same check is required by a ruleset. See docs/adr/0002.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-api-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "25"
+  JAVA_DISTRIBUTION: temurin
+
+defaults:
+  run:
+    working-directory: apps/api
+
+jobs:
+  verify:
+    name: Build, test, and formatting gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v6.0.0
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          # Restores ~/.m2/repository keyed on the pom, so a run that changes no
+          # dependency does not re-download the world.
+          cache: maven
+          cache-dependency-path: apps/api/pom.xml
+
+      # The wrapper downloads Maven itself and validates it against the SHA-256
+      # in .mvn/wrapper/maven-wrapper.properties. CI deliberately uses the same
+      # wrapper as a developer rather than a preinstalled Maven, so a checksum
+      # or version problem is caught here and not only on someone's laptop.
+      - name: Verify (compile, test, JaCoCo, Spotless)
+        run: ./mvnw -B --no-transfer-progress verify
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: api-coverage
+          path: apps/api/target/site/jacoco/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: api-surefire-reports
+          path: apps/api/target/surefire-reports/
+          retention-days: 7
+          if-no-files-found: ignore

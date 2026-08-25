@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    The Spring Boot parent supplies the dependency management BOM and the
+    plugin versions. Dependency versions below are deliberately absent where
+    the BOM manages them: pinning a managed version by hand is how a project
+    silently drifts out of a tested combination. See ADR-0003.
+  -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.1</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>io.github.la3679.sentinelflow</groupId>
+  <artifactId>sentinelflow-api</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>SentinelFlow API</name>
+  <description>Transaction ingestion, risk assessment and alert lifecycle service for SentinelFlow.</description>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <properties>
+    <java.version>25</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>25</maven.compiler.release>
+
+    <!-- Versions the Spring Boot BOM does not manage. See docs/research/RESEARCH_LOG.md. -->
+    <spotless-maven-plugin.version>3.10.0</spotless-maven-plugin.version>
+    <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
+    <palantir-java-format.version>2.86.0</palantir-java-format.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Bean Validation on inbound payloads. Every request DTO added from
+         Phase 2 onward is validated at the boundary, not in a service. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- Health, readiness and the Prometheus scrape endpoint. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Repackages the application into an executable jar and provides
+           `mvnw spring-boot:run` for local development. -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+
+      <!--
+        Formatting is a build gate, not a suggestion. `mvnw spotless:apply`
+        fixes; `mvnw verify` fails on a violation.
+
+        Java only. sortPom is deliberately not enabled: this pom carries the
+        reasoning for its own choices in comments, and reordering elements moves
+        those comments away from what they explain for no reviewer benefit.
+
+        palantir-java-format rather than google-java-format: google-java-format
+        reaches into jdk.compiler internals and needs a growing list of
+        add-exports JVM flags to run on a current JDK. Palantir's fork does not,
+        and produces the same 4-space, AOSP-adjacent output this repository's
+        .editorconfig already declares.
+      -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>${spotless-maven-plugin.version}</version>
+        <configuration>
+          <java>
+            <palantirJavaFormat>
+              <version>${palantir-java-format.version}</version>
+            </palantirJavaFormat>
+            <removeUnusedImports/>
+            <importOrder>
+              <order>java,javax,jakarta,org,com,</order>
+            </importOrder>
+            <licenseHeader>
+              <content>/* SPDX-License-Identifier: Apache-2.0 */</content>
+            </licenseHeader>
+          </java>
+        </configuration>
+        <executions>
+          <execution>
+            <id>spotless-check</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        JaCoCo produces the coverage report every phase gate quotes. No
+        threshold rule is configured yet: a threshold set before the service has
+        behaviour to cover only measures how much of a scaffold is exercised.
+        Phase 2 sets it against a real baseline.
+      -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
