@@ -30,3 +30,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Test output
+coverage
+test-results
+playwright-report
+blob-report
+.playwright
+.claude/runtime/

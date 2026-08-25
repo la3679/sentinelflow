@@ -39,7 +39,7 @@ import {
   useGetAlertQuery,
   useTransitionAlertMutation,
 } from "@/api/sentinelApi";
-import { useSession } from "@/store";
+import { useDemoOperator } from "@/store";
 
 export const Route = createFileRoute("/alerts/$alertId")({
   head: ({ params }) => ({
@@ -101,8 +101,8 @@ function AlertDetailPage() {
 }
 
 function AlertWorkspace({ alert }: { alert: AlertDetail }) {
-  const session = useSession();
-  const mutable = canMutate(session.role);
+  const operator = useDemoOperator();
+  const mutable = canMutate(operator.role);
   const [assignAlert, assignState] = useAssignAlertMutation();
   const [transitionAlert, transitionState] = useTransitionAlertMutation();
   const [addNote, noteState] = useAddAlertNoteMutation();
@@ -121,7 +121,7 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
     await addNote({
       alertId: alert.alertId,
       body: values.body,
-      actor: session.operatorId,
+      actor: operator.operatorId,
     }).unwrap();
     reset({ body: "" });
   };
@@ -248,10 +248,10 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel
           title="Case actions"
-          description={`Acting as ${session.operatorId} — ${ROLE_LABELS[session.role]}.`}
+          description={`Acting as ${operator.operatorId} — ${ROLE_LABELS[operator.role]}.`}
           bodyClassName="space-y-4 p-4"
         >
-          <ReadOnlyNotice role={session.role} />
+          <ReadOnlyNotice role={operator.role} />
 
           <div className="space-y-2">
             <Label htmlFor="assignee">Assignee</Label>
@@ -262,7 +262,7 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
                 void assignAlert({
                   alertId: alert.alertId,
                   assignee: value,
-                  actor: session.operatorId,
+                  actor: operator.operatorId,
                 });
               }}
             >
@@ -300,7 +300,7 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
                       void transitionAlert({
                         alertId: alert.alertId,
                         status: next,
-                        actor: session.operatorId,
+                        actor: operator.operatorId,
                       });
                     }}
                   >

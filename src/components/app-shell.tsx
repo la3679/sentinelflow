@@ -1,6 +1,6 @@
-import { Link, useNavigate } from "@tanstack/react-router";
-import { FlaskConical, LogOut } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
+import { FlaskConical, UserCog } from "lucide-react";
+import { type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { ROLE_LABELS } from "@/domain/labels";
 import { ROLES, type Role } from "@/domain/types";
-import { setRole, signOut, useAppDispatch, useSession } from "@/store";
+import { setRole, useAppDispatch, useDemoOperator } from "@/store";
 import { USING_MOCK_DATA } from "@/api/config";
 
 const NAV_ITEMS = [
@@ -42,30 +42,8 @@ export function SyntheticDataBanner() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const session = useSession();
+  const operator = useDemoOperator();
   const dispatch = useAppDispatch();
-  const navigate = useNavigate();
-  // The stored demo session only exists in the browser, so the first client
-  // render must match the server output before the gate is evaluated.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  useEffect(() => {
-    if (mounted && session.hydrated && !session.signedIn) {
-      void navigate({ to: "/login" });
-    }
-  }, [mounted, session.hydrated, session.signedIn, navigate]);
-
-  if (!mounted || !session.signedIn) {
-    return (
-      <div className="min-h-screen bg-background">
-        <SyntheticDataBanner />
-        <main className="mx-auto max-w-md px-4 py-16" role="status" aria-live="polite">
-          <p className="text-sm text-muted-foreground">Restoring your demonstration session…</p>
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -89,7 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Simulated role
               </label>
               <Select
-                value={session.role}
+                value={operator.role}
                 onValueChange={(value) => dispatch(setRole(value as Role))}
               >
                 <SelectTrigger id="role-select" className="w-56">
@@ -105,11 +83,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Select>
             </div>
             <span className="tabular hidden text-xs text-muted-foreground md:inline">
-              {session.operatorId}
+              {operator.operatorId}
             </span>
-            <Button type="button" variant="outline" size="sm" onClick={() => dispatch(signOut())}>
-              <LogOut aria-hidden="true" className="size-4" />
-              Sign out
+            <Button asChild variant="outline" size="sm">
+              <Link to="/login">
+                <UserCog aria-hidden="true" className="size-4" />
+                Change demo operator
+              </Link>
             </Button>
           </div>
         </div>

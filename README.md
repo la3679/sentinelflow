@@ -3,9 +3,11 @@
 Create a project named "SentinelFlow". This first change is ONLY the reviewed frontend foundation and design system — not the complete application. A separate Spring Boot + Kafka + PostgreSQL + Python backend is being built outside Lovable and will replace the mock data later.
 
 ## Product
+
 SentinelFlow is an independent, educational, open-source portfolio project: a transaction-risk and fraud-operations console for reviewing SYNTHETIC financial transactions. It is not affiliated with any bank, financial institution, or employer; it executes no real transactions, makes no real financial decisions, and uses only fictional synthetic data.
 
 ## Stack requirements (important)
+
 - Vite + React + TypeScript in STRICT mode (not Next.js, not TanStack Start — plain Vite SPA)
 - React Router for routing
 - Redux Toolkit + RTK Query for state and data access (please use RTK Query, not TanStack Query). RTK Query endpoints should point at a typed `/api/v1` base URL read from an env var, but for now be backed by deterministic in-memory mock fixtures behind a clearly named mock layer so the app runs with no backend.
@@ -15,7 +17,9 @@ SentinelFlow is an independent, educational, open-source portfolio project: a tr
 - No Supabase, no database, no backend, no authentication implementation, no API secrets, no cloud integrations in this change.
 
 ## Visual direction
+
 A credible, restrained, information-dense financial-operations console for extended analyst work. NOT a marketing landing page and NOT a neon "AI dashboard".
+
 - Deep navy/slate neutral dark foundation, high contrast, compact professional typography
 - Restrained semantic colors: red/amber reserved strictly for genuine risk or operational severity; do NOT use green as decoration where it could imply "safe" or "approved"
 - Consistent 8-point spacing rhythm
@@ -27,9 +31,11 @@ A credible, restrained, information-dense financial-operations console for exten
 - Ship ONE excellent accessible dark theme rather than a half-finished light/dark pair
 
 ## Accessibility — target WCAG 2.2 AA
+
 Semantic landmarks and heading order, full keyboard operation, visible focus, status communicated by more than color alone (icon + text label with every risk/status chip), screen-reader labels, proper table semantics, dialog focus management, accessible validation errors, adequate target sizes, tested contrast.
 
 ## Screens and routes
+
 1. `/login` — Sign-in: product identity, visible demo/synthetic disclaimer, accessible form with inline validation errors. Mock only — no real auth, no hardcoded token.
 2. `/` — Operations overview: transaction throughput chart, risk-band distribution, open alert counts by status, scoring latency summary, pipeline/DLQ health indicators, recent alerts table.
 3. `/transactions/live` — Live transactions: simulated streaming feed with pause/resume, filtering and search, risk-band and status chips.
@@ -43,6 +49,7 @@ Semantic landmarks and heading order, full keyboard operation, visible focus, st
 11. Dedicated 404 Not Found, 403 Forbidden, and recoverable error screens.
 
 ## Domain vocabulary to model in the mock fixtures and TypeScript types
+
 - Risk bands: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`
 - Alert statuses: `NEW`, `IN_REVIEW`, `ESCALATED`, `CONFIRMED_SUSPICIOUS`, `DISMISSED_FALSE_POSITIVE`, `CLOSED`
 - Roles: `ANALYST`, `ADMINISTRATOR`, `AUDITOR` (auditor is read-only — render mutating controls as disabled with an accessible explanation; treat this as UX only, never as security)
@@ -50,12 +57,15 @@ Semantic landmarks and heading order, full keyboard operation, visible focus, st
 - Use fictional identifiers only (e.g. account `ACC-000123`, merchant `MER-0042`). No realistic names, addresses, card numbers, or personal identifiers. Money as decimal strings with an explicit currency code — never floating-point arithmetic on amounts.
 
 ## UX completeness
+
 Every data view must have a loading/skeleton state, an empty state, an error state with retry, and pagination or bounded virtualization. No dead controls: if a control is visible it must work against the mock layer, or be clearly and visibly marked as a documented future feature.
 
 ## Code quality
+
 Small focused components, reusable design tokens, no casual `any`, no `console.log` in committed code, no invented performance, accuracy, or false-positive-reduction claims anywhere in the UI copy.
 
 ## Also include
+
 A concise root `AGENTS.md` stating that: SentinelFlow's backend, security, authorization, risk rules, and ML scoring are owned outside Lovable in a Spring Boot / Kafka / PostgreSQL / FastAPI monorepo; the mock fixture layer is temporary and will be replaced by the real `/api/v1` client; and all Lovable output is reviewed and tested before merge.
 
 Keep the change coherent, componentized, and buildable.

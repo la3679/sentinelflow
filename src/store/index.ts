@@ -3,16 +3,21 @@ import { setupListeners } from "@reduxjs/toolkit/query";
 import { useDispatch, useSelector } from "react-redux";
 
 import { sentinelApi } from "@/api/sentinelApi";
-import { sessionSlice } from "./sessionSlice";
+import { demoOperatorSlice } from "./demoOperatorSlice";
 
-export { mockSignIn, setRole, signOut, hydrateSession } from "./sessionSlice";
-export type { SessionState } from "./sessionSlice";
+export {
+  setDemoOperator,
+  setRole,
+  resetDemoOperator,
+  DEFAULT_DEMO_OPERATOR,
+} from "./demoOperatorSlice";
+export type { DemoOperatorState } from "./demoOperatorSlice";
 
 export function makeStore() {
   const store = configureStore({
     reducer: {
       [sentinelApi.reducerPath]: sentinelApi.reducer,
-      session: sessionSlice.reducer,
+      demoOperator: demoOperatorSlice.reducer,
     },
     middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(sentinelApi.middleware),
   });
@@ -28,4 +33,6 @@ export type AppDispatch = AppStore["dispatch"];
 
 export const useAppDispatch = useDispatch.withTypes<AppDispatch>();
 export const useAppSelector = useSelector.withTypes<RootState>();
-export const useSession = () => useAppSelector((state) => state.session);
+
+/** The fictional operator the prototype is being viewed as. Not an auth session. */
+export const useDemoOperator = () => useAppSelector((state) => state.demoOperator);
