@@ -1,0 +1,31 @@
+# Root build context. Only apps/web builds from here; apps/api and apps/scoring
+# build from their own directories with their own .dockerignore.
+#
+# Keeping the context small is not only about speed: anything sent to the daemon
+# can end up in an image layer.
+
+.git/
+.github/
+.claude/
+.lovable/
+
+node_modules/
+**/node_modules/
+apps/web/dist/
+apps/web/coverage/
+apps/web/test-results/
+apps/web/playwright-report/
+
+apps/api/
+apps/scoring/
+
+data/generated/
+docs/
+coverage/
+test-results/
+
+.env
+.env.*
+!.env.example
+
+*.log

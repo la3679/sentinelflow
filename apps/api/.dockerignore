@@ -1,0 +1,12 @@
+# Everything the build stage does not need. Keeping the context small is not
+# only about speed: anything sent to the daemon can end up in an image layer.
+target/
+.mvn/wrapper/maven-wrapper.jar
+*.iml
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+*.log
+README.md
