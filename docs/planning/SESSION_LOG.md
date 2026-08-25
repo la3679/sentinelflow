@@ -205,3 +205,38 @@ including a `vite` 8.1.5 → 8.2.2 bump. The comment was corrected, because an i
 the one workflow holding write access is worse than none.
 
 Four major dev-dependency bumps (#9–#12) remain open by design, each awaiting its own review.
+
+### Phase 2 begins — decisions before schema
+
+Two ADRs and the contract baseline, in that order, and all three before a single migration exists.
+
+**ADR-0007** settles money, identifiers, time, and how the schema may change. The decision most
+worth its argument is money as a **JSON string**: `JSON.parse` produces a `double`, so a JSON
+number is silently rounded by every JavaScript consumer before application code sees it. There is
+now an `examples/invalid/money-as-number.json` fixture that fails the build if that rule is ever
+relaxed.
+
+**ADR-0006** settles the event contract. The one that constrains the most is the partition key:
+transaction and risk events are keyed by **account**, not transaction, because Kafka orders only
+within a partition and velocity rules need one account's events in order. Keying by transaction
+would have spread an account across every partition and destroyed exactly the ordering the rules
+depend on. The consequence — a hot account is a hot partition — is written down rather than left to
+be discovered.
+
+Exactly-once was rejected as a goal rather than quietly claimed. It is not achievable across a
+database, a broker and an HTTP call without distributed transactions; at-least-once with idempotent
+consumers reaches the same observable outcome and is honest about how.
+
+**`contracts/`** then makes all of it enforceable. Seven JSON Schemas, an AsyncAPI document and an
+OpenAPI baseline, plus a checker wired into CI.
+
+The part that makes it a contract rather than documentation is the negative cases: the checker
+asserts that deliberately-invalid examples are **rejected**. That was verified by breaking a schema
+on purpose — deleting `const: "NEW"` from `alert-created.v1.json` makes the check exit 1 and name
+the fixture that should have failed.
+
+Two defects in the checker itself surfaced from running it. AJV registers a schema under its own
+`$id` as well as the supplied key, so a second registration collided on all seven schemas. And the
+AsyncAPI parser given only a file's contents has no base path, so every `../schemas/*.json`
+reference failed to resolve; it needs `fromFile`. Both are the same lesson as Phase 1's ten: reading
+the code would not have found either.
