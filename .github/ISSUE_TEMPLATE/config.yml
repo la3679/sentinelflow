@@ -1,0 +1,10 @@
+# Security reports must not become public issues, so the blank-issue route is
+# closed and a contact link points at the private advisory flow instead.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/la3679/sentinelflow/security/advisories/new
+    about: Report privately through a GitHub security advisory. Never open a public issue for a vulnerability.
+  - name: Ask a question or discuss an idea
+    url: https://github.com/la3679/sentinelflow/discussions
+    about: For questions and open-ended discussion rather than a specific defect or request.

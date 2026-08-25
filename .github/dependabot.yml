@@ -1,0 +1,123 @@
+# Dependabot configuration.
+#
+# One dependency bot, not several competing ones. Every ecosystem in the
+# monorepo is registered, because an unregistered one silently stops receiving
+# updates and nobody notices until an advisory lands.
+#
+# Patch and minor updates are grouped into a single pull request per ecosystem:
+# they are almost always safe together, and twelve separate PRs a week is how a
+# repository ends up with an ignored Dependabot. Major updates stay separate,
+# because each one deserves its own review and its own CI run.
+#
+# Every pull request still has to pass the full check suite. Nothing here
+# merges anything automatically.
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # GitHub Actions
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels: ["type:security", "area:infra"]
+    commit-message:
+      prefix: "ci"
+      include: scope
+    groups:
+      actions-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # ---------------------------------------------------------------------------
+  # Node - the Bun workspace root. One lockfile covers apps/web.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels: ["type:security", "area:web"]
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: scope
+    groups:
+      web-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # Lovable owns this package and its plugin chain; bumping it out from
+      # under the generated configuration breaks the build in ways a Dependabot
+      # PR cannot explain. See ADR-0009.
+      - dependency-name: "@lovable.dev/*"
+
+  # ---------------------------------------------------------------------------
+  # Java
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: maven
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels: ["type:security", "area:api"]
+    commit-message:
+      prefix: "chore"
+      include: scope
+    groups:
+      api-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # The Spring Boot parent is the BOM that pins most of this service's
+      # dependency tree. Moving it is an architectural decision that needs a
+      # research entry, not an automated bump. See ADR-0003.
+      - dependency-name: "org.springframework.boot:spring-boot-starter-parent"
+        update-types: ["version-update:semver-major"]
+
+  # ---------------------------------------------------------------------------
+  # Python
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: uv
+    directory: /apps/scoring
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels: ["type:security", "area:scoring"]
+    commit-message:
+      prefix: "chore"
+      include: scope
+    groups:
+      scoring-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # ---------------------------------------------------------------------------
+  # Container base images
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: docker
+    directories:
+      - /apps/api
+      - /apps/scoring
+      - /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels: ["type:security", "area:infra"]
+    commit-message:
+      prefix: "chore"
+      include: scope
