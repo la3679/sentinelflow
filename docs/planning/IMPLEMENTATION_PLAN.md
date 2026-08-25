@@ -29,24 +29,46 @@ verified · no secrets · initial preview builds · state file holds the exact r
 
 ---
 
-## Phase 1 — Monorepo and developer foundation · M0
+## Phase 1 — Monorepo and developer foundation · M0 — **COMPLETE** 2026-08-25
 
-**Deliverables**
+**Delivered**
 
-- Monorepo layout (`apps/`, `contracts/`, `docs/`, `infra/`, `scripts/`)
-- `.editorconfig`, `.gitignore`, `.gitattributes`, `.dockerignore`, `.env.example`
-- Maven Wrapper for `apps/api`; `uv` project for `apps/scoring`; normalized `apps/web`
-- `compose.yaml` baseline: PostgreSQL 18.6, Kafka 4.2.1 (KRaft), Prometheus, Grafana, OTel Collector
-- `Makefile` developer command surface, with PowerShell-compatible equivalents documented
-- `.claude/rules/` and hooks, verified against the installed Claude Code schema
-- Per-component CI workflows
-- ADR-0002 monorepo and service boundaries
+- [x] Monorepo layout: `apps/{api,scoring,web}`, `infra/`, `scripts/`, `docs/`. The root is a Bun
+      workspace — deviation recorded in ADR-0002. `contracts/` waits for Phase 2's first schema
+      rather than being created empty.
+- [x] `.editorconfig`, `.gitignore`, `.gitattributes`, `.dockerignore`, `.env.example`
+- [x] Maven Wrapper 3.3.4 (script-only, SHA-256 verified against two sources) for `apps/api`;
+      `uv` project with a committed `uv.lock` for `apps/scoring`; `apps/web` normalized
+- [x] `compose.yaml`: PostgreSQL 18.6, Kafka 4.2.1 (KRaft), the three applications, Prometheus,
+      Grafana — all seven with health checks and health-gated `depends_on`
+- [x] Multi-stage container images for all three applications, non-root, health-checked, scanned
+- [x] `Makefile` command surface plus a native PowerShell runner (`scripts/dev/sf.ps1`), because
+      the reference Windows machine has no `make`
+- [x] `.claude/` status line, four hooks, rules, and a checkpoint helper, verified against the
+      current Claude Code schema (R-2026-08-25-14)
+- [x] Per-component CI: `ci-repo`, `ci-api`, `ci-scoring`, `ci-web`, `ci-containers`
+- [x] Community health files, Dependabot across five ecosystems, labels, milestones
+- [x] `main` protected by a ruleset: pull requests, nine required checks, no bypass actors
+- [x] ADR-0002, `LOVABLE_GITHUB_WORKFLOW.md`, `BRANCH_PROTECTION.md`, a verified README
 
-**Gate** — clean-clone bootstrap works · each app builds and has a health or smoke test · CI green.
+**Deliberately deferred, with the phase that delivers it**
+
+- The **OpenTelemetry Collector** is not in `compose.yaml`. Nothing exports traces until Phase 7,
+  and a collector that receives nothing is decoration rather than infrastructure.
+- `make seed`, `make replay` and `make test-integration` exist, are listed by `make help`, and
+  **fail with the phase that delivers them** rather than silently succeeding.
+
+**Gate — met, with evidence**
+
+| Criterion                            | Evidence                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
+| Clean-clone bootstrap works          | Fresh clone at `55efe6a`: bootstrap, frozen install, all three apps built and tested |
+| Each app builds and has a smoke test | api 5/5 · scoring 6/6 · web 24/24 + 58/58 browser · stack smoke 23/23                |
+| CI green                             | All six workflows passing                                                            |
 
 ---
 
-## Phase 2 — Contracts, domain, and database · M1
+## Phase 2 — Contracts, domain, and database · M1 — **NEXT**
 
 **Deliverables**
 

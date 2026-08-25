@@ -361,15 +361,16 @@ repository provisions a billable resource.
 
 ## Troubleshooting
 
-| Symptom                                             | Cause and fix                                                                                   |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `make up` fails on `POSTGRES_PASSWORD`              | `.env` is missing or the secret is blank. Run `make bootstrap`.                                 |
-| A port is already in use                            | Change it in `.env` — every published port is a variable.                                       |
-| PostgreSQL refuses to start after a version change  | The volume was formatted by a different major version. `make reset-demo`.                       |
-| Kafka refuses to start after editing the cluster id | Same cause. `make reset-demo`.                                                                  |
-| `./mvnw` fails with permission denied               | The executable bit was lost. `git update-index --chmod=+x apps/api/mvnw`.                       |
-| Playwright times out on every test                  | A stale `vite preview` is holding port 4173. Kill it and rerun.                                 |
-| `make smoke` fails on Kafka in Git Bash             | Path conversion. The script scopes `MSYS_NO_PATHCONV`; run it rather than the commands by hand. |
+| Symptom                                             | Cause and fix                                                                                                                                        |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make up` fails on `POSTGRES_PASSWORD`              | `.env` is missing or the secret is blank. Run `make bootstrap`.                                                                                      |
+| A port is already in use                            | Change it in `.env` — every published port is a variable.                                                                                            |
+| PostgreSQL refuses to start after a version change  | The volume was formatted by a different major version. `make reset-demo`.                                                                            |
+| Kafka refuses to start after editing the cluster id | Same cause. `make reset-demo`.                                                                                                                       |
+| `./mvnw` fails with permission denied               | The executable bit was lost. `git update-index --chmod=+x apps/api/mvnw`.                                                                            |
+| Playwright times out on every test                  | A stale `vite preview` is holding port 4173. Kill it and rerun.                                                                                      |
+| `bun install` fails with `ENAMETOOLONG` on Windows  | The clone path is too deep. Nested `node_modules` paths exceed Windows' 260-character limit. Clone somewhere shorter, such as `C:\src\sentinelflow`. |
+| `make smoke` fails on Kafka in Git Bash             | Path conversion. The script scopes `MSYS_NO_PATHCONV`; run it rather than the commands by hand.                                                      |
 
 ## Documentation
 
