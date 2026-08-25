@@ -70,6 +70,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRoute({
+  // Client-rendered SPA: no route is server-rendered. See vite.config.ts and
+  // docs/adr/0009-frontend-component-library.md.
+  ssr: false,
   head: () => ({
     meta: [
       { charSet: "utf-8" },
