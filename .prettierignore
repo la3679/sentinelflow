@@ -1,12 +1,27 @@
+# Dependencies and build output
 node_modules
 dist
 .output
 .vinxi
+apps/api/target
+apps/scoring/.venv
+apps/web/dist
+
+# Lockfiles are tool-owned
+bun.lock
 pnpm-lock.yaml
 package-lock.json
-bun.lock
-routeTree.gen.ts
+uv.lock
+
+# Generated sources
+apps/web/src/routeTree.gen.ts
+
+# Test output
+coverage
+test-results
+playwright-report
 
 # Verbatim licence text - must not be reformatted
 LICENSE
 NOTICE
+THIRD_PARTY_NOTICES.md
