@@ -1,16 +1,11 @@
-import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
-export const getRouter = () => {
-  const queryClient = new QueryClient();
-
-  const router = createRouter({
+// Application data access is RTK Query (see src/api/sentinelApi.ts). The router
+// carries no data-fetching context of its own.
+export const getRouter = () =>
+  createRouter({
     routeTree,
-    context: { queryClient },
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
   });
-
-  return router;
-};
