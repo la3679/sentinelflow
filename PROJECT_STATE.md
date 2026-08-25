@@ -14,11 +14,11 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-25T23:10Z                                                                                                                                |
+| Last updated UTC     | 2026-08-25T23:45Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 1 merged to `main`; Phase 2 not started                                                                                           |
-| Current phase        | Phase 1 — complete and merged via PR #2                                                                                                          |
-| Current task         | Phase 2 — contracts, domain, and database                                                                                                        |
+| Current phase        | Phase 2 — contracts, domain, and database (started)                                                                                              |
+| Current task         | Phase 2 — ADRs merged; `contracts/` is next                                                                                                      |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -216,15 +216,20 @@ None.
 
 ## Next three actions
 
-1. **Write ADR-0006 (event schema and versioning) and ADR-0007 (Flyway and money representation)
-   before any schema exists.** Both constrain everything Phases 2 and 3 build, and both are far
-   cheaper to decide now than to reverse later.
-2. **Create `contracts/`** with the OpenAPI baseline and the transaction and risk event schemas,
-   plus CI validation of them. This is the first real content in that directory, which is why it
-   has not existed until now.
-3. **Add the first Flyway migrations and their Testcontainers PostgreSQL tests.** Real PostgreSQL,
-   never H2. Set a JaCoCo threshold and a pytest `fail_under` once there is behaviour worth
-   measuring.
+ADR-0006 and ADR-0007 are **done and merged** — they were the previous first action. Both are
+binding on everything below.
+
+1. **Create `contracts/`** — `openapi/sentinelflow-api.yaml` for the `/api/v1` surface,
+   `asyncapi/sentinelflow-events.yaml` for the five topics in ADR-0006, and
+   `schemas/` for the shared envelope and each payload. Add a CI job that validates them, and wire
+   it into `make docs-check` or a new `make contracts-check`. This is the first real content in
+   that directory, which is why it has not existed until now.
+2. **Model the domain and write the first Flyway migrations.** Entities per §9 of the build
+   standards, following ADR-0007 exactly: `NUMERIC(19,4)` money with an explicit currency column,
+   UUIDv7 primary keys, `timestamptz`, constraints in the database, `ddl-auto: validate`.
+3. **Add Testcontainers PostgreSQL tests** that run every migration from an empty database and
+   assert the constraints actually reject what they should. Real PostgreSQL, never H2. Set a JaCoCo
+   threshold once there is behaviour worth measuring.
 
 ## Session startup commands
 
