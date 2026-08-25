@@ -1,0 +1,71 @@
+name: CI — scoring
+
+# Not path-filtered, for the same reason as ci-web.yml: a workflow skipped by an
+# `on: paths` filter produces no check run at all, which permanently blocks a
+# pull request when the same check is required by a ruleset. See docs/adr/0002.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-scoring-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.12.2"
+
+defaults:
+  run:
+    working-directory: apps/scoring
+
+jobs:
+  verify:
+    name: Lint, type-check, and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Third-party action pinned to an immutable commit SHA.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: apps/scoring/uv.lock
+
+      # uv provisions the interpreter itself. The runner's preinstalled Python
+      # is deliberately not used: pyproject.toml pins >=3.13,<3.14, and a
+      # runner image bump should not silently change the interpreter the tests
+      # ran on.
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras --dev
+
+      - name: Confirm the pinned interpreter
+        run: uv run python --version
+
+      - name: Lint
+        run: uv run ruff check --output-format=github .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type-check (strict)
+        run: uv run mypy
+
+      - name: Test with coverage
+        run: uv run pytest --cov --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: scoring-coverage
+          path: apps/scoring/coverage.xml
+          retention-days: 7
+          if-no-files-found: ignore
