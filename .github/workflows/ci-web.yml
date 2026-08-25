@@ -74,6 +74,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # vite preview serves the built output, so the build must exist before the
+      # Playwright webServer starts. Without this the preview server exits with
+      # ERR_MODULE_NOT_FOUND on dist/server/server.js and Playwright times out.
+      - name: Build
+        run: bun run build
+
       # Only Chromium is required: both Playwright projects run on it, one at a
       # desktop viewport and one at a tablet viewport.
       - name: Install Playwright Chromium
