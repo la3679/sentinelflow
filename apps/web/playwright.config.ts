@@ -13,6 +13,10 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  // Screenshot capture writes files into docs/. That is a generation task, not
+  // a test, so it stays out of the suite that gates a merge and is run
+  // explicitly:  bunx playwright test screenshots --project=desktop
+  testIgnore: process.env["CAPTURE_SCREENSHOTS"] ? [] : ["**/screenshots.spec.ts"],
   fullyParallel: true,
   forbidOnly: !!process.env["CI"],
   retries: process.env["CI"] ? 2 : 0,

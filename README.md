@@ -1,92 +1,405 @@
 # SentinelFlow
 
-Create a project named "SentinelFlow". This first change is ONLY the reviewed frontend foundation and design system — not the complete application. A separate Spring Boot + Kafka + PostgreSQL + Python backend is being built outside Lovable and will replace the mock data later.
+**An event-driven transaction-risk and fraud-operations platform — built end to end on synthetic
+data, to be read as engineering rather than as a product.**
 
-## Product
+[![CI — repository](https://github.com/la3679/sentinelflow/actions/workflows/ci-repo.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-repo.yml)
+[![CI — api](https://github.com/la3679/sentinelflow/actions/workflows/ci-api.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-api.yml)
+[![CI — scoring](https://github.com/la3679/sentinelflow/actions/workflows/ci-scoring.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-scoring.yml)
+[![CI — web](https://github.com/la3679/sentinelflow/actions/workflows/ci-web.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-web.yml)
+[![CI — containers](https://github.com/la3679/sentinelflow/actions/workflows/ci-containers.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-containers.yml)
+[![Security](https://github.com/la3679/sentinelflow/actions/workflows/security-scan.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/security-scan.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-SentinelFlow is an independent, educational, open-source portfolio project: a transaction-risk and fraud-operations console for reviewing SYNTHETIC financial transactions. It is not affiliated with any bank, financial institution, or employer; it executes no real transactions, makes no real financial decisions, and uses only fictional synthetic data.
+---
 
-## Stack requirements (important)
+> ### Please read this first
+>
+> SentinelFlow is an **independent, educational, open-source portfolio project**. It is **not**
+> affiliated with, endorsed by, or derived from any bank, financial institution, or employer.
+>
+> It runs entirely on **fictional synthetic data** that it generates itself. It contains no real
+> accounts, no real transactions, and no personal data of any kind. It executes no financial
+> transaction, makes no financial decision, and is not a regulatory compliance product or a
+> production fraud-decision engine.
+>
+> Every figure in this README came from a command that was actually run. The date and the command
+> are recorded next to it.
 
-- Vite + React + TypeScript in STRICT mode (not Next.js, not TanStack Start — plain Vite SPA)
-- React Router for routing
-- Redux Toolkit + RTK Query for state and data access (please use RTK Query, not TanStack Query). RTK Query endpoints should point at a typed `/api/v1` base URL read from an env var, but for now be backed by deterministic in-memory mock fixtures behind a clearly named mock layer so the app runs with no backend.
-- Tailwind + shadcn/ui for components
-- Recharts for charts
-- React Hook Form + Zod for forms
-- No Supabase, no database, no backend, no authentication implementation, no API secrets, no cloud integrations in this change.
+---
 
-## Visual direction
+## Current status — Phase 1 of 10 complete
 
-A credible, restrained, information-dense financial-operations console for extended analyst work. NOT a marketing landing page and NOT a neon "AI dashboard".
+This is an in-progress build, and the README says where it actually is rather than describing the
+finished system as though it were running.
 
-- Deep navy/slate neutral dark foundation, high contrast, compact professional typography
-- Restrained semantic colors: red/amber reserved strictly for genuine risk or operational severity; do NOT use green as decoration where it could imply "safe" or "approved"
-- Consistent 8-point spacing rhythm
-- Clearly visible keyboard focus states
-- Dense but readable data tables
-- Desktop-first responsive layout that still works on tablet
-- No glassmorphism, no gradients, no stock photos of banks or hackers, no logos or trademarks, no excessive animation
-- Respect `prefers-reduced-motion`
-- Ship ONE excellent accessible dark theme rather than a half-finished light/dark pair
+| Phase | Scope                                              | State        |
+| ----- | -------------------------------------------------- | ------------ |
+| 0     | Research gate, product baseline, repository        | **complete** |
+| 1     | Monorepo, developer foundation, CI, containers     | **complete** |
+| 2     | Contracts, domain model, PostgreSQL migrations     | next         |
+| 3     | Transaction ingestion, transactional outbox, Kafka | not started  |
+| 4     | Synthetic data generation and risk scoring         | not started  |
+| 5     | Alert lifecycle, investigations, audit             | not started  |
+| 6     | Operations console wired to the real API           | not started  |
+| 7     | Observability and resilience                       | not started  |
+| 8     | Security and release-quality hardening             | not started  |
+| 9     | Performance, documentation, clean-clone check      | not started  |
+| 10    | v1.0.0 release                                     | not started  |
 
-## Accessibility — target WCAG 2.2 AA
+**What runs today:** `docker compose up` starts PostgreSQL, Kafka, the Spring Boot API, the FastAPI
+scoring service, the console, Prometheus and Grafana; all seven report healthy, Prometheus scrapes
+both services, and a 23-check smoke test passes against them. The console renders from a mock
+fixture layer, because the API has no data endpoints yet — that is Phase 2 and 3.
 
-Semantic landmarks and heading order, full keyboard operation, visible focus, status communicated by more than color alone (icon + text label with every risk/status chip), screen-reader labels, proper table semantics, dialog focus management, accessible validation errors, adequate target sizes, tested contrast.
+Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 
-## Screens and routes
+## Why this project exists
 
-1. `/login` — Sign-in: product identity, visible demo/synthetic disclaimer, accessible form with inline validation errors. Mock only — no real auth, no hardcoded token.
-2. `/` — Operations overview: transaction throughput chart, risk-band distribution, open alert counts by status, scoring latency summary, pipeline/DLQ health indicators, recent alerts table.
-3. `/transactions/live` — Live transactions: simulated streaming feed with pause/resume, filtering and search, risk-band and status chips.
-4. `/alerts` — Alert queue: paginated, filterable table with priority, status, final score, age, top reason code, assignee.
-5. `/alerts/:alertId` — Alert detail / investigation: transaction summary, risk breakdown (rule score, model score, final score), reason codes with contributions, investigation timeline, assignment control, notes, valid state-transition actions, audit history.
-6. `/transactions/:transactionId` — Transaction detail: transaction fields, related account activity, assessment and model metadata, correlation/trace reference.
-7. `/reports` — Reports: trend charts, risk-band distribution, analyst feedback summary, a CSV export control.
-8. `/model` — Model and policy: READ-ONLY active model version, feature version, metrics summary, threshold/policy metadata, and an explicit limitations panel.
-9. `/health` — System health: status cards for API, scoring service, Kafka, and database, plus consumer lag and DLQ indicators.
-10. `/about` — About: full independent-project and synthetic-data disclaimer.
-11. Dedicated 404 Not Found, 403 Forbidden, and recoverable error screens.
+Most portfolio projects are a CRUD application with a login screen. The interesting problems in
+transaction risk are not CRUD problems:
 
-## Domain vocabulary to model in the mock fixtures and TypeScript types
+- **A state change and the event announcing it must be atomic.** Writing a row and then publishing
+  to Kafka is two operations with a window between them; a crash in that window loses the event
+  silently. SentinelFlow uses a transactional outbox.
+- **Delivery is at-least-once, so consumers must be idempotent.** A duplicate is normal traffic,
+  not an incident.
+- **Money is not a float**, anywhere — not in the database, the API, the events, or the UI.
+- **Fraud labels are extremely imbalanced**, so accuracy is close to meaningless. Precision, recall,
+  PR-AUC and an explicit operating threshold are what mean anything.
+- **An alert is a workflow, not a row.** It has valid transitions, an assignee, an audit trail, and
+  a reviewer whose decision has to be defensible later.
+- **An analyst stares at the console for a whole shift.** Density, keyboard operation and
+  accessibility are functional requirements, not polish.
 
-- Risk bands: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`
-- Alert statuses: `NEW`, `IN_REVIEW`, `ESCALATED`, `CONFIRMED_SUSPICIOUS`, `DISMISSED_FALSE_POSITIVE`, `CLOSED`
-- Roles: `ANALYST`, `ADMINISTRATOR`, `AUDITOR` (auditor is read-only — render mutating controls as disabled with an accessible explanation; treat this as UX only, never as security)
-- A risk assessment carries: ruleScore, modelScore, finalScore, riskBand, modelVersion, featureVersion, policyVersion, reasonCodes[], scoringLatencyMs
-- Use fictional identifiers only (e.g. account `ACC-000123`, merchant `MER-0042`). No realistic names, addresses, card numbers, or personal identifiers. Money as decimal strings with an explicit currency code — never floating-point arithmetic on amounts.
+It draws on the kinds of responsibilities involved in enterprise transaction services, event
+streaming, and anomaly detection. It reproduces **no** proprietary code, schema, rule, metric, or
+workflow from any employer.
 
-## UX completeness
+## The console
 
-Every data view must have a loading/skeleton state, an empty state, an error state with retry, and pagination or bounded virtualization. No dead controls: if a control is visible it must work against the mock layer, or be clearly and visibly marked as a documented future feature.
+![The SentinelFlow operations overview, showing throughput, risk-band distribution, alert counts and pipeline health](docs/frontend/screenshots/overview.png)
 
-## Code quality
+![The SentinelFlow alert queue, a dense filterable table of synthetic alerts](docs/frontend/screenshots/alert-queue.png)
 
-Small focused components, reusable design tokens, no casual `any`, no `console.log` in committed code, no invented performance, accuracy, or false-positive-reduction claims anywhere in the UI copy.
+Generated from the production bundle by
+[`apps/web/tests/e2e/screenshots.spec.ts`](apps/web/tests/e2e/screenshots.spec.ts), so they cannot
+drift from the build.
 
-## Also include
+**Every number in those images is a mock fixture, not a measurement.** The latency and consumer-lag
+figures shown are synthetic sample data for layout purposes. SentinelFlow has measured no
+performance yet; that is Phase 9, and the results will be reported with the method that produced
+them.
 
-A concise root `AGENTS.md` stating that: SentinelFlow's backend, security, authorization, risk rules, and ML scoring are owned outside Lovable in a Spring Boot / Kafka / PostgreSQL / FastAPI monorepo; the mock fixture layer is temporary and will be replaced by the real `/api/v1` client; and all Lovable output is reviewed and tested before merge.
+## Architecture
 
-Keep the change coherent, componentized, and buildable.
+```mermaid
+flowchart LR
+    U["Analyst · Administrator · Auditor"] --> W["React operations console<br/>apps/web"]
+    W -->|"REST /api/v1"| A["Spring Boot API<br/>apps/api"]
+    A --> P[("PostgreSQL 18")]
+    A -->|"transactional outbox"| K[("Apache Kafka 4.2<br/>KRaft")]
+    K --> C["Risk consumer<br/>in apps/api"]
+    C -->|"HTTP"| M["FastAPI + scikit-learn<br/>apps/scoring"]
+    C --> P
+    A --> O["Prometheus"]
+    M --> O
+    O --> G["Grafana"]
 
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/e1341a35-a595-4af4-b0a5-c158ba286897).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+    classDef built fill:#0f2b3d,stroke:#4ba3c7,color:#e6f1f7
+    classDef planned fill:#2b2b2b,stroke:#666,color:#aaa,stroke-dasharray:4 3
+    class U,W,A,P,K,M,O,G built
+    class C planned
 ```
+
+Solid boxes exist and run today. The dashed **risk consumer** is Phase 3 — it is drawn because it
+is the reason the outbox exists, and it is marked because it does not run yet.
+
+The API is the only backend the console talks to; scoring is reached through the API and never
+directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See
+[ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md).
+
+### Local deployment
+
+```mermaid
+flowchart TB
+    subgraph host["Developer machine — docker compose"]
+        direction TB
+        web["web · nginx-unprivileged<br/>:5173 → 8080"]
+        api["api · Temurin 25 JRE<br/>:8080"]
+        scoring["scoring · Python 3.13<br/>:8000"]
+        pg[("postgres :5432")]
+        kafka[("kafka :29092 · KRaft")]
+        prom["prometheus :9090"]
+        graf["grafana :3000"]
+    end
+    web --> api
+    api --> pg
+    api --> kafka
+    api --> scoring
+    prom --> api
+    prom --> scoring
+    graf --> prom
+```
+
+Every container runs as a non-root user and declares a health check; CI asserts the non-root user
+against the built image rather than trusting the Dockerfile.
+
+Sequence, outbox-delivery, alert state-machine and ER diagrams arrive with the behaviour they
+describe, in Phases 2 to 5. Drawing them now would document a system that does not exist.
+
+## Technology
+
+Chosen with a reason, and recorded. Every version below is pinned and justified in
+[`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md).
+
+| Choice                                   | Why this and not something else                                                                                                              |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Java 25 LTS + Spring Boot 4.1.1**      | Transactional integrity and the outbox belong where mature transaction management lives. LTS because a stranger has to build this in a year. |
+| **PostgreSQL 18.6**                      | `NUMERIC` for money, real constraints, and partial indexes. Tested against real PostgreSQL — **H2 is never accepted as evidence**.           |
+| **Apache Kafka 4.2.1, KRaft**            | The exact broker version the Spring Boot BOM's client targets. KRaft removes ZooKeeper from the stack entirely.                              |
+| **Flyway**                               | Versioned, immutable, forward-only migrations. `ddl-auto` is `validate`, never `update`.                                                     |
+| **Python 3.13 + FastAPI + scikit-learn** | The model belongs in the scientific stack. 3.13 exactly, because numpy needs ≥3.12 and joblib declares support only through 3.13.            |
+| **uv**                                   | Provisions the interpreter and locks the tree, so the reference machine's system Python 3.11 is irrelevant.                                  |
+| **React 19 + TanStack Router**           | Lovable's generated foundation, adopted after audit rather than rewritten. [ADR-0009](docs/adr/0009-frontend-component-library.md).          |
+| **Redux Toolkit + RTK Query**            | One data layer. The mock adapter swaps for a real base query in one place.                                                                   |
+| **shadcn/ui on Radix**                   | Radix supplies the focus management, keyboard interaction and ARIA semantics WCAG 2.2 AA needs. MIT, no paid tier.                           |
+| **Bun**                                  | One package manager, one lockfile, one workspace root.                                                                                       |
+| **Prometheus + Grafana**                 | Scraping and dashboards without an account or an egress dependency.                                                                          |
+
+Deliberately **not** used: Redis, Kubernetes, GraphQL, a graph database, and an LLM. None has
+demonstrated a need here, and adding one for appearance is how a portfolio project stops being
+credible.
+
+## Repository structure
+
+```text
+apps/api/        Spring Boot — transactions, outbox, alerts, audit
+apps/scoring/    FastAPI — features, inference, model registry
+apps/web/        React operations console
+infra/           Prometheus, Grafana, and container configuration
+scripts/         Developer, smoke, and checkpoint scripts
+docs/            ADRs, research, planning, operations, frontend
+compose.yaml     The whole local stack
+Makefile         The command surface (PowerShell equivalent in scripts/dev/sf.ps1)
+```
+
+`contracts/` and `data/` appear in Phases 2 and 4, with their first real files. Empty placeholder
+directories are not created.
+
+## Quickstart
+
+### Prerequisites
+
+| Tool                            | Why                                          | Required                           |
+| ------------------------------- | -------------------------------------------- | ---------------------------------- |
+| Docker + Compose v2             | Runs the whole stack                         | yes                                |
+| [Bun](https://bun.sh) ≥ 1.4     | The only Node package manager used           | yes                                |
+| [uv](https://docs.astral.sh/uv) | Provisions Python 3.13                       | yes                                |
+| Git                             | —                                            | yes                                |
+| JDK 25 (Temurin)                | Only to build `apps/api` outside a container | no — `make up` builds it in Docker |
+
+`make bootstrap` checks all of these and tells you which are missing.
+
+### Run it
+
+```bash
+git clone https://github.com/la3679/sentinelflow.git
+cd sentinelflow
+make bootstrap     # verify prerequisites, generate a local .env with fresh secrets
+make up            # build and start everything, waiting until all seven are healthy
+make smoke         # 23 checks against the running stack
+```
+
+On Windows without `make`, every target is available natively in PowerShell:
+
+```powershell
+.\scripts\dev\sf.ps1 bootstrap
+.\scripts\dev\sf.ps1 up
+.\scripts\dev\sf.ps1 smoke
+```
+
+Then:
+
+| Service          | URL                                     |
+| ---------------- | --------------------------------------- |
+| Console          | <http://localhost:5173>                 |
+| API health       | <http://localhost:8080/actuator/health> |
+| Scoring health   | <http://localhost:8000/health/ready>    |
+| Scoring API docs | <http://localhost:8000/docs>            |
+| Prometheus       | <http://localhost:9090>                 |
+| Grafana          | <http://localhost:3000>                 |
+
+`make down` stops the stack and keeps your data. `make reset-demo` deletes the volumes, and asks
+you to type `reset` first.
+
+### Credentials
+
+There are none to find and none committed. `make bootstrap` generates a random PostgreSQL password
+and a random Grafana admin password into `.env`, which is git-ignored. Compose refuses to start if
+either is missing rather than falling back to something guessable — you can see this in
+[`compose.yaml`](compose.yaml).
+
+The console's sign-in screen is **presentational only**. It has no password field and no real
+authentication, and it says so on screen. Real authentication is Phase 8.
+
+Every variable is documented in [`.env.example`](.env.example) with its default, whether it is
+required, whether it is sensitive, and which component reads it.
+
+## Commands
+
+```bash
+make help              # every target, with a description
+make up / down / ps / logs
+make reset-demo        # destructive, with confirmation
+make build             # build all three applications
+make test              # every standard suite
+make test-e2e          # Playwright, accessibility, responsive
+make lint              # eslint · ruff · mypy · spotless
+make format-check
+make security          # gitleaks over the whole history
+make smoke             # verify the running stack actually serves
+make clean
+```
+
+`make seed`, `make replay` and `make test-integration` are listed and **fail with the phase that
+delivers them** rather than silently succeeding. Phases 2 and 4.
+
+## Testing
+
+Every figure below came from a run on **2026-08-25**, on the branch that became this commit.
+
+| Suite                       | Command                 | Result                                      |
+| --------------------------- | ----------------------- | ------------------------------------------- |
+| Console — unit              | `make test-web`         | **24 passed / 24**, 5 files                 |
+| Console — coverage          | `bun run test:coverage` | 40.4% lines                                 |
+| Console — browser + a11y    | `make test-e2e`         | **58 passed / 58** (29 desktop + 29 tablet) |
+| axe, WCAG 2.1 A/AA          | in the above            | **0 violations**, 8 routes, 2 viewports     |
+| API — build, test, Spotless | `make test-api`         | **5 passed / 5**, `BUILD SUCCESS`           |
+| Scoring — unit              | `make test-scoring`     | **6 passed / 6**                            |
+| Scoring — coverage          | `uv run pytest --cov`   | 83% lines                                   |
+| Scoring — types             | `uv run mypy`           | strict, **0 issues**, 6 files               |
+| Running stack               | `make smoke`            | **23 passed / 0 failed**                    |
+| Secrets, full history       | `make security`         | **0 leaks**                                 |
+| Container scan              | Trivy in CI             | **0 fixable HIGH or CRITICAL**              |
+
+The console's 40.4% line coverage is honest rather than flattering: its routes are covered by the
+Playwright suite instead, and writing unit tests purely to move that number would be
+[exactly the shortcut this project refuses](CONTRIBUTING.md). Coverage thresholds are set in later
+phases, against a baseline that means something.
+
+**No latency, throughput, or false-positive figure is claimed anywhere in this repository.** None
+has been measured. Phase 9 measures them and reports the method alongside the result.
+
+## Observability
+
+Prometheus scrapes both services on every `make up`; Grafana comes up with the Prometheus
+datasource already provisioned from
+[`infra/grafana/provisioning/`](infra/grafana/provisioning/), so a fresh clone needs no clicking.
+
+- API metrics: <http://localhost:8080/actuator/prometheus>
+- Scoring metrics: <http://localhost:8000/metrics>
+- Targets: <http://localhost:9090/targets>
+
+Dashboards, alert rules and runbooks arrive in Phase 7, with the signals they describe. A dashboard
+of empty panels is not observability, and an alert rule with no runbook is a pager nobody knows how
+to answer.
+
+The OpenTelemetry Collector is deliberately **absent** from `compose.yaml` until tracing exists in
+Phase 7 — a collector that receives nothing is decoration.
+
+## Security
+
+Full policy: [`SECURITY.md`](SECURITY.md). **Report a vulnerability privately**, through
+[a GitHub security advisory](https://github.com/la3679/sentinelflow/security/advisories/new) —
+never as a public issue.
+
+Controls that exist today, not aspirations:
+
+| Control                     | Where                                                                |
+| --------------------------- | -------------------------------------------------------------------- |
+| Secret scanning             | gitleaks over full history, every push and pull request, plus weekly |
+| Push protection             | Enabled on the repository                                            |
+| Dependency review           | Fails a pull request on a high-severity or copyleft addition         |
+| Dependabot                  | Weekly across all five ecosystems                                    |
+| Container scanning          | Trivy on every image; fails on any fixable HIGH or CRITICAL          |
+| Non-root containers         | Asserted in CI against the built image                               |
+| Pinned actions              | Third-party actions pinned to an immutable commit SHA                |
+| Verified build tooling      | The Maven Wrapper validates a SHA-256 verified against two sources   |
+| Least-privilege workflows   | `permissions: contents: read` unless a job needs more                |
+| Closed management endpoints | Only health, info and prometheus — asserted by test _and_ by smoke   |
+| Protected `main`            | Pull requests and nine passing checks, with no bypass actors         |
+
+### Known limitations, stated plainly
+
+- **There is no authentication yet.** Phase 8. The sign-in screen is presentational and says so.
+- **Role handling in the console is a UX affordance, never a security boundary.** Disabling a
+  control authorizes nothing.
+- **The local stack is not a deployment target.** It binds to your machine, holds only synthetic
+  data, and has never been hardened for exposure. Do not put it on a network you do not control.
+- **Screen-reader behaviour is unverified.** axe finds roughly a third of real accessibility
+  issues; a manual pass is Phase 6.
+
+## Development workflow
+
+This repository was created by [Lovable](https://lovable.dev), which built the reviewed frontend
+foundation; everything since has been built locally with Claude Code. The full history, including
+Lovable's original root commit, is preserved — nothing has been squashed or rewritten.
+
+Phase 1 moved the console to `apps/web/`, which ends Lovable's ability to regenerate this project,
+because Lovable has no documented support for an application outside the repository root. That
+trade-off, and the two honest routes back to a design session, are recorded in
+[`docs/operations/LOVABLE_GITHUB_WORKFLOW.md`](docs/operations/LOVABLE_GITHUB_WORKFLOW.md).
+
+## Deployment
+
+**The local Docker Compose environment is the supported way to run SentinelFlow.** There is no
+hosted demo, and this README will not link to one that does not exist.
+
+Public cloud deployment is optional, out of scope for v1, and would **incur cost**. Nothing in this
+repository provisions a billable resource.
+
+## Troubleshooting
+
+| Symptom                                             | Cause and fix                                                                                   |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `make up` fails on `POSTGRES_PASSWORD`              | `.env` is missing or the secret is blank. Run `make bootstrap`.                                 |
+| A port is already in use                            | Change it in `.env` — every published port is a variable.                                       |
+| PostgreSQL refuses to start after a version change  | The volume was formatted by a different major version. `make reset-demo`.                       |
+| Kafka refuses to start after editing the cluster id | Same cause. `make reset-demo`.                                                                  |
+| `./mvnw` fails with permission denied               | The executable bit was lost. `git update-index --chmod=+x apps/api/mvnw`.                       |
+| Playwright times out on every test                  | A stale `vite preview` is holding port 4173. Kill it and rerun.                                 |
+| `make smoke` fails on Kafka in Git Bash             | Path conversion. The script scopes `MSYS_NO_PATHCONV`; run it rather than the commands by hand. |
+
+## Documentation
+
+| Area           | Start here                                                                       |
+| -------------- | -------------------------------------------------------------------------------- |
+| Resume state   | [`PROJECT_STATE.md`](PROJECT_STATE.md)                                           |
+| Decisions      | [`docs/adr/`](docs/adr/)                                                         |
+| Research       | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                 |
+| Planning       | [`docs/planning/`](docs/planning/)                                               |
+| Operations     | [`docs/operations/`](docs/operations/)                                           |
+| Frontend audit | [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md)         |
+| Development    | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md) |
+| Contributing   | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                             |
+| Security       | [`SECURITY.md`](SECURITY.md)                                                     |
+
+## Roadmap
+
+Phases 2 through 10 in [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md),
+tracked against milestones M0–M5. In short: contracts and schema, then ingestion and the outbox,
+then synthetic data and scoring, then the alert workflow, then the console against the real API,
+then observability, hardening, performance, and v1.0.0.
+
+## Licence and acknowledgements
+
+[Apache-2.0](LICENSE). See [`NOTICE`](NOTICE).
+
+The initial frontend was generated by [Lovable](https://lovable.dev) and audited before adoption —
+findings in [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md).
+
+Evaluation methodology for imbalanced fraud data was informed conceptually by the openly published
+[Fraud Detection Handbook](https://github.com/Fraud-Detection-Handbook/fraud-detection-handbook).
+**No code, prose, or images were copied** — it is GPLv3 and CC BY-SA, both incompatible with this
+repository's licence. All synthetic data is generated by SentinelFlow's own code.

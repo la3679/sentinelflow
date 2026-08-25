@@ -144,8 +144,9 @@ security: ## Scan the repository for committed secrets
 smoke: ## Verify the running stack actually serves
 	@./scripts/smoke/smoke.sh
 
-docs-check: ## Check documentation formatting and links
+docs-check: ## Check documentation formatting, links, and placeholders
 	@$(BUN) run format:check
+	@$(BUN) scripts/dev/check-docs.mjs
 
 ## ---------------------------------------------------------------------------
 ## Housekeeping

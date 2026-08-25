@@ -40,3 +40,10 @@ jobs:
       # than once per component.
       - name: Check formatting
         run: bun run format:check
+
+      # Documentation drifting from the code is treated as a defect here, and
+      # the most common form of drift is a link to a file that was renamed or
+      # never created. This also fails on a TODO or an unfilled template
+      # placeholder left in prose.
+      - name: Check documentation links and placeholders
+        run: bun scripts/dev/check-docs.mjs

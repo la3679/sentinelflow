@@ -157,7 +157,7 @@ function Invoke-Help {
         'format-check'     = 'Check formatting without changing anything'
         'security'         = 'Scan the repository for committed secrets'
         'smoke'            = 'Verify the running stack actually serves'
-        'docs-check'       = 'Check documentation formatting and links'
+        'docs-check'       = 'Check documentation formatting, links, and placeholders'
         'clean'            = 'Remove build output (keeps dependencies and Docker volumes)'
     }
     foreach ($key in $targets.Keys) {
@@ -527,7 +527,10 @@ switch ($Target) {
         }
     }
     'smoke' { Invoke-Smoke }
-    'docs-check' { Invoke-Native $RepoRoot 'bun' @('run', 'format:check') }
+    'docs-check' {
+        Invoke-Native $RepoRoot 'bun' @('run', 'format:check')
+        Invoke-Native $RepoRoot 'bun' @('scripts/dev/check-docs.mjs')
+    }
 
     'clean' {
         foreach ($path in @(
