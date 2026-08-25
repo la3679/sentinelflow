@@ -15,8 +15,21 @@ name: Dependabot — regenerate bun.lock
 # install is what makes a build reproducible, and weakening a real guarantee to
 # accommodate a tooling gap is the wrong trade.
 #
-# This regenerates the lockfile and pushes it back onto the Dependabot branch,
-# which makes CI run again on the completed change.
+# This regenerates the lockfile and pushes it back onto the Dependabot branch.
+#
+# KNOWN LIMITATION, verified rather than assumed: a push made with the default
+# GITHUB_TOKEN does not start further workflow runs, so CI does not re-run by
+# itself after the lockfile lands. The pull request is then correct but has no
+# checks, and a required-checks ruleset leaves it blocked.
+#
+# Remedy, one line and no extra credentials:
+#
+#     gh pr close <n> && gh pr reopen <n>
+#
+# Avoiding this would need a personal access token or a GitHub App token, which
+# is a standing credential with write access to the repository. That is a larger
+# and more permanent security surface than a manual re-trigger on a weekly bot
+# pull request is worth.
 
 on:
   pull_request:
@@ -47,9 +60,9 @@ jobs:
           # Check out the pull request branch itself rather than the merge
           # commit, so the push below has somewhere real to go.
           ref: ${{ github.head_ref }}
-          # The default token does not trigger further workflow runs on push,
-          # which is what is wanted here: the lockfile commit re-runs CI through
-          # the pull request's own synchronize event.
+          # The default token cannot start further workflow runs on push. See
+          # the KNOWN LIMITATION at the top of this file: the lockfile lands
+          # correctly, but CI has to be re-triggered.
           persist-credentials: true
 
       - name: Set up Bun
