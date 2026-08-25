@@ -28,7 +28,7 @@ RUN bun run build
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.30.4-alpine3.24 AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.3-alpine3.24 AS runtime
 
 # The unprivileged image already runs as uid 101 and listens on 8080 rather
 # than 80, so no capability is needed and no user is added here.
