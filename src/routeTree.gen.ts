@@ -10,33 +10,168 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as ForbiddenRouteImport } from './routes/forbidden'
+import { Route as HealthRouteImport } from './routes/health'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ModelRouteImport } from './routes/model'
+import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
+import { Route as AlertsAlertIdRouteImport } from './routes/alerts/$alertId'
+import { Route as TransactionsTransactionIdRouteImport } from './routes/transactions/$transactionId'
+import { Route as TransactionsLiveRouteImport } from './routes/transactions/live'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForbiddenRoute = ForbiddenRouteImport.update({
+  id: '/forbidden',
+  path: '/forbidden',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModelRoute = ModelRouteImport.update({
+  id: '/model',
+  path: '/model',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsIndexRoute = AlertsIndexRouteImport.update({
+  id: '/alerts/',
+  path: '/alerts/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsAlertIdRoute = AlertsAlertIdRouteImport.update({
+  id: '/alerts/$alertId',
+  path: '/alerts/$alertId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransactionsTransactionIdRoute =
+  TransactionsTransactionIdRouteImport.update({
+    id: '/transactions/$transactionId',
+    path: '/transactions/$transactionId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const TransactionsLiveRoute = TransactionsLiveRouteImport.update({
+  id: '/transactions/live',
+  path: '/transactions/live',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/forbidden': typeof ForbiddenRoute
+  '/health': typeof HealthRoute
+  '/login': typeof LoginRoute
+  '/model': typeof ModelRoute
+  '/reports': typeof ReportsRoute
+  '/alerts/$alertId': typeof AlertsAlertIdRoute
+  '/transactions/$transactionId': typeof TransactionsTransactionIdRoute
+  '/transactions/live': typeof TransactionsLiveRoute
+  '/alerts/': typeof AlertsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/forbidden': typeof ForbiddenRoute
+  '/health': typeof HealthRoute
+  '/login': typeof LoginRoute
+  '/model': typeof ModelRoute
+  '/reports': typeof ReportsRoute
+  '/alerts/$alertId': typeof AlertsAlertIdRoute
+  '/transactions/$transactionId': typeof TransactionsTransactionIdRoute
+  '/transactions/live': typeof TransactionsLiveRoute
+  '/alerts': typeof AlertsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/forbidden': typeof ForbiddenRoute
+  '/health': typeof HealthRoute
+  '/login': typeof LoginRoute
+  '/model': typeof ModelRoute
+  '/reports': typeof ReportsRoute
+  '/alerts/$alertId': typeof AlertsAlertIdRoute
+  '/transactions/$transactionId': typeof TransactionsTransactionIdRoute
+  '/transactions/live': typeof TransactionsLiveRoute
+  '/alerts/': typeof AlertsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/forbidden'
+    | '/health'
+    | '/login'
+    | '/model'
+    | '/reports'
+    | '/alerts/$alertId'
+    | '/transactions/$transactionId'
+    | '/transactions/live'
+    | '/alerts/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/about'
+    | '/forbidden'
+    | '/health'
+    | '/login'
+    | '/model'
+    | '/reports'
+    | '/alerts/$alertId'
+    | '/transactions/$transactionId'
+    | '/transactions/live'
+    | '/alerts'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/forbidden'
+    | '/health'
+    | '/login'
+    | '/model'
+    | '/reports'
+    | '/alerts/$alertId'
+    | '/transactions/$transactionId'
+    | '/transactions/live'
+    | '/alerts/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
+  ForbiddenRoute: typeof ForbiddenRoute
+  HealthRoute: typeof HealthRoute
+  LoginRoute: typeof LoginRoute
+  ModelRoute: typeof ModelRoute
+  ReportsRoute: typeof ReportsRoute
+  AlertsAlertIdRoute: typeof AlertsAlertIdRoute
+  TransactionsTransactionIdRoute: typeof TransactionsTransactionIdRoute
+  TransactionsLiveRoute: typeof TransactionsLiveRoute
+  AlertsIndexRoute: typeof AlertsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +183,91 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forbidden': {
+      id: '/forbidden'
+      path: '/forbidden'
+      fullPath: '/forbidden'
+      preLoaderRoute: typeof ForbiddenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/model': {
+      id: '/model'
+      path: '/model'
+      fullPath: '/model'
+      preLoaderRoute: typeof ModelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts/': {
+      id: '/alerts/'
+      path: '/alerts'
+      fullPath: '/alerts/'
+      preLoaderRoute: typeof AlertsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts/$alertId': {
+      id: '/alerts/$alertId'
+      path: '/alerts/$alertId'
+      fullPath: '/alerts/$alertId'
+      preLoaderRoute: typeof AlertsAlertIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transactions/$transactionId': {
+      id: '/transactions/$transactionId'
+      path: '/transactions/$transactionId'
+      fullPath: '/transactions/$transactionId'
+      preLoaderRoute: typeof TransactionsTransactionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transactions/live': {
+      id: '/transactions/live'
+      path: '/transactions/live'
+      fullPath: '/transactions/live'
+      preLoaderRoute: typeof TransactionsLiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
+  ForbiddenRoute: ForbiddenRoute,
+  HealthRoute: HealthRoute,
+  LoginRoute: LoginRoute,
+  ModelRoute: ModelRoute,
+  ReportsRoute: ReportsRoute,
+  AlertsAlertIdRoute: AlertsAlertIdRoute,
+  TransactionsTransactionIdRoute: TransactionsTransactionIdRoute,
+  TransactionsLiveRoute: TransactionsLiveRoute,
+  AlertsIndexRoute: AlertsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
