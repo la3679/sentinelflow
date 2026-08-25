@@ -38,6 +38,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+.coverage
+.coverage.*
 
 # ---------------------------------------------------------------------------
 # Generated data and models - regenerate with `make seed`, never commit.

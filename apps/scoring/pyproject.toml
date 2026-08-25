@@ -1,0 +1,106 @@
+[project]
+name = "sentinelflow-scoring"
+version = "0.1.0"
+description = "Risk-scoring and model service for SentinelFlow."
+readme = "README.md"
+license = "Apache-2.0"
+# Exactly 3.13. Not a floor with an open ceiling: numpy sets a >=3.12 floor and
+# joblib - which the model-serialisation path depends on from Phase 4 - declares
+# support only through 3.13. Model serialisation is not a place to run on an
+# unsupported interpreter. See docs/research/RESEARCH_LOG.md R-2026-08-25-06 and
+# docs/adr/0004.
+requires-python = ">=3.13,<3.14"
+
+dependencies = [
+    "fastapi>=0.141.1,<0.142",
+    "uvicorn[standard]>=0.52.4,<0.53",
+    "pydantic>=2.13.4,<3",
+    "pydantic-settings>=2.15.0,<3",
+    # Exposes /metrics directly. A dedicated instrumentation framework would be
+    # a third-party dependency for what is a few lines against the client the
+    # Prometheus project itself maintains.
+    "prometheus-client>=0.26.0,<0.27",
+    "structlog>=26.1.0,<27",
+]
+
+[project.urls]
+Homepage = "https://github.com/la3679/sentinelflow"
+Repository = "https://github.com/la3679/sentinelflow"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1,<10",
+    "pytest-cov>=7.1.0,<8",
+    # Starlette 1.6's TestClient requires httpx2 - the renamed 2.x line of
+    # httpx - and emits a deprecation warning when only httpx is installed.
+    # pytest is configured to turn warnings into errors, so that warning is a
+    # failure rather than something to scroll past.
+    "httpx2>=2.12.0,<3",
+    "ruff>=0.16.4,<0.17",
+    "mypy>=2.3.1,<3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sentinelflow_scoring"]
+
+# ---------------------------------------------------------------------------
+# Ruff - linter and formatter. One tool rather than flake8 + isort + black.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # import sorting
+    "B",    # flake8-bugbear
+    "C4",   # comprehensions
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit - security
+    "ANN",  # missing type annotations
+    "RUF",  # ruff-specific
+]
+[tool.ruff.lint.per-file-ignores]
+# assert is how pytest expresses an assertion; S101 is about production code.
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# ---------------------------------------------------------------------------
+# mypy - strict. A service that returns risk scores should not be guessing at
+# its own types.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+warn_return_any = true
+disallow_untyped_defs = true
+no_implicit_reexport = true
+files = ["src", "tests"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["src/sentinelflow_scoring"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+# No fail_under yet. A threshold set against a scaffold measures how much of a
+# scaffold is exercised; Phase 4 sets one against a real baseline.

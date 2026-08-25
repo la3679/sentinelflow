@@ -11,6 +11,7 @@ apps/web/src/routeTree.gen.ts linguist-generated=true
 
 # Lockfiles are generated; keep them out of diff review noise.
 bun.lock -diff linguist-generated=true
+uv.lock -diff linguist-generated=true
 
 # Windows-only scripts must keep CRLF to remain executable by cmd.exe.
 *.bat text eol=crlf
