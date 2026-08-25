@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelflow.example/schemas/dlq-record.v1.json",
+  "title": "Dead-letter record, v1",
+  "description": "Written to `transaction.processing.dlq.v1` when processing an event fails terminally: either the failure was classified non-retryable, or the bounded retry budget was exhausted.\n\nCarries enough to diagnose and to reprocess, and NOTHING sensitive. A DLQ is long-lived storage that operations staff read, which makes it the worst place to put a stack trace, a secret, or an unsanitised payload fragment.",
+
+  "type": "object",
+  "properties": {
+    "originalEvent": {
+      "type": "object",
+      "description": "The complete original envelope, unmodified, so reprocessing replays exactly what failed rather than a reconstruction of it.",
+      "$ref": "event-envelope.v1.json"
+    },
+
+    "consumer": {
+      "type": "string",
+      "description": "Which consumer group failed. Two consumers of the same topic fail independently.",
+      "minLength": 1,
+      "maxLength": 128
+    },
+
+    "sourceTopic": { "type": "string", "minLength": 1, "maxLength": 249 },
+    "sourcePartition": { "type": "integer", "minimum": 0 },
+    "sourceOffset": { "type": "integer", "minimum": 0 },
+
+    "failureClass": {
+      "type": "string",
+      "description": "Why this is here. RETRY_EXHAUSTED means the failure was transient but did not clear; the others were never worth retrying.",
+      "enum": [
+        "RETRY_EXHAUSTED",
+        "SCHEMA_VALIDATION_FAILED",
+        "UNKNOWN_EVENT_TYPE",
+        "MALFORMED_PAYLOAD",
+        "NON_RETRYABLE_ERROR"
+      ]
+    },
+
+    "exceptionType": {
+      "type": "string",
+      "description": "Fully-qualified exception class name. The TYPE only - never a stack trace.",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "sanitisedMessage": {
+      "type": "string",
+      "description": "Exception message with identifiers, credentials and payload fragments removed. Sanitisation is the producer's responsibility and is tested.",
+      "maxLength": 2000
+    },
+
+    "attemptCount": {
+      "type": "integer",
+      "description": "How many times processing was attempted before this record was written.",
+      "minimum": 1
+    },
+
+    "firstFailedAt": { "$ref": "common.v1.json#/$defs/timestamp" },
+    "deadLetteredAt": { "$ref": "common.v1.json#/$defs/timestamp" }
+  },
+
+  "required": [
+    "originalEvent",
+    "consumer",
+    "sourceTopic",
+    "sourcePartition",
+    "sourceOffset",
+    "failureClass",
+    "exceptionType",
+    "sanitisedMessage",
+    "attemptCount",
+    "firstFailedAt",
+    "deadLetteredAt"
+  ],
+
+  "additionalProperties": false
+}

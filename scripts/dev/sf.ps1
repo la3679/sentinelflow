@@ -158,6 +158,7 @@ function Invoke-Help {
         'security'         = 'Scan the repository for committed secrets'
         'smoke'            = 'Verify the running stack actually serves'
         'docs-check'       = 'Check documentation formatting, links, and placeholders'
+        'contracts-check'  = 'Validate OpenAPI, AsyncAPI, and the event schemas'
         'clean'            = 'Remove build output (keeps dependencies and Docker volumes)'
     }
     foreach ($key in $targets.Keys) {
@@ -531,6 +532,7 @@ switch ($Target) {
         Invoke-Native $RepoRoot 'bun' @('run', 'format:check')
         Invoke-Native $RepoRoot 'bun' @('scripts/dev/check-docs.mjs')
     }
+    'contracts-check' { Invoke-Native $RepoRoot 'bun' @('scripts/dev/check-contracts.mjs') }
 
     'clean' {
         foreach ($path in @(

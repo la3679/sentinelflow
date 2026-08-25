@@ -1,0 +1,40 @@
+{
+  "originalEvent": {
+    "eventId": "01936b2c-0100-7000-8000-2f9c1d4e5a80",
+    "eventType": "transaction.created",
+    "schemaVersion": 1,
+    "occurredAt": "2026-08-25T22:02:11.000000Z",
+    "producer": "sentinelflow-api",
+    "correlationId": "01936b2c-0100-7000-8000-1a2b3c4d5e81",
+    "traceId": null,
+    "aggregateType": "transaction",
+    "aggregateId": "01936b2c-0100-7000-8000-9f8e7d6c5b90",
+    "payload": {
+      "transactionId": "01936b2c-0100-7000-8000-9f8e7d6c5b90",
+      "transactionReference": "TXN-000901",
+      "accountId": "01936b2c-0100-7000-8000-aabbccddee01",
+      "accountReference": "ACC-000901",
+      "merchantId": "01936b2c-0100-7000-8000-112233445570",
+      "merchantReference": "MER-0099",
+      "merchantCategoryCode": "5999",
+      "type": "PURCHASE",
+      "channel": "ONLINE_TRANSFER",
+      "amount": { "value": "88.0000", "currency": "EUR" },
+      "originCountry": "DE",
+      "deviceReference": null,
+      "occurredAt": "2026-08-25T22:02:10.500000Z",
+      "ingestionSource": "SCENARIO_REPLAY",
+      "idempotencyKey": "replay-velocity-burst-000901"
+    }
+  },
+  "consumer": "sentinelflow-risk-consumer",
+  "sourceTopic": "transaction.created.v1",
+  "sourcePartition": 2,
+  "sourceOffset": 184203,
+  "failureClass": "RETRY_EXHAUSTED",
+  "exceptionType": "org.springframework.web.client.ResourceAccessException",
+  "sanitisedMessage": "Scoring service unreachable after 5 attempts.",
+  "attemptCount": 5,
+  "firstFailedAt": "2026-08-25T22:02:11.400000Z",
+  "deadLetteredAt": "2026-08-25T22:03:47.900000Z"
+}

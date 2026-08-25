@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelflow.example/schemas/transaction-created.v1.json",
+  "title": "transaction.created payload, v1",
+  "description": "Published on `transaction.created.v1` when a transaction has been accepted and durably persisted. Emitted through the transactional outbox, so its existence means the row was committed - not that it is about to be.\n\nKeyed by ACCOUNT id, not transaction id (ADR-0006): Kafka orders only within a partition, and velocity rules need one account's transactions in order.\n\nThe envelope's `aggregateId` is the transaction id; `accountId` here is the partition key.",
+
+  "type": "object",
+  "properties": {
+    "transactionId": {
+      "$ref": "common.v1.json#/$defs/uuid"
+    },
+    "transactionReference": {
+      "$ref": "common.v1.json#/$defs/transactionReference"
+    },
+    "accountId": {
+      "$ref": "common.v1.json#/$defs/uuid",
+      "description": "The partition key for this topic. Present in the payload as well as the Kafka key so a consumer reading a record in isolation - from a DLQ, or from a console dump - still knows which account it belongs to."
+    },
+    "accountReference": {
+      "$ref": "common.v1.json#/$defs/accountReference"
+    },
+    "merchantId": {
+      "$ref": "common.v1.json#/$defs/uuid"
+    },
+    "merchantReference": {
+      "$ref": "common.v1.json#/$defs/merchantReference"
+    },
+    "merchantCategoryCode": {
+      "type": "string",
+      "description": "ISO 18245 merchant category code.",
+      "pattern": "^[0-9]{4}$",
+      "examples": ["5812", "5999"]
+    },
+    "type": {
+      "$ref": "common.v1.json#/$defs/transactionType"
+    },
+    "channel": {
+      "$ref": "common.v1.json#/$defs/transactionChannel"
+    },
+    "amount": {
+      "$ref": "common.v1.json#/$defs/amount"
+    },
+    "originCountry": {
+      "$ref": "common.v1.json#/$defs/countryCode"
+    },
+    "deviceReference": {
+      "type": ["string", "null"],
+      "description": "Synthetic device handle, or null where the channel has no device. Null rather than absent so a consumer never distinguishes 'no device' from 'field missing'.",
+      "pattern": "^DEV-[0-9a-f]{12}$",
+      "examples": ["DEV-4f2a91c0be73"]
+    },
+    "occurredAt": {
+      "$ref": "common.v1.json#/$defs/timestamp",
+      "description": "When the transaction took place. Distinct from the envelope's occurredAt only in replay, where a historical transaction is ingested now."
+    },
+    "ingestionSource": {
+      "type": "string",
+      "description": "How this transaction entered the system. `SCENARIO_REPLAY` is what tells a consumer the data is a rerun of a known scenario rather than live synthetic traffic.",
+      "enum": ["API", "BATCH", "GENERATOR", "SCENARIO_REPLAY"]
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "The client-supplied key this transaction was accepted under, unique per account. Carried so a consumer can correlate back to the original submission.",
+      "minLength": 8,
+      "maxLength": 128
+    }
+  },
+
+  "required": [
+    "transactionId",
+    "transactionReference",
+    "accountId",
+    "accountReference",
+    "merchantId",
+    "merchantReference",
+    "merchantCategoryCode",
+    "type",
+    "channel",
+    "amount",
+    "originCountry",
+    "deviceReference",
+    "occurredAt",
+    "ingestionSource",
+    "idempotencyKey"
+  ],
+
+  "additionalProperties": false
+}
