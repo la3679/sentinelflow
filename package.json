@@ -1,15 +1,27 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "sentinelflow-web",
+  "version": "0.1.0",
+  "description": "SentinelFlow operations console - React client for the transaction-risk and fraud-operations platform.",
+  "license": "Apache-2.0",
   "private": true,
-  "sideEffects": false,
   "type": "module",
+  "sideEffects": false,
+  "packageManager": "bun@1.4.0",
+  "engines": {
+    "node": ">=24",
+    "bun": ">=1.4.0"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "bun run format:check && bun run lint && bun run typecheck && bun run build"
   },
   "overrides": {
     "rolldown": "1.2.1"
