@@ -6,3 +6,7 @@ pnpm-lock.yaml
 package-lock.json
 bun.lock
 routeTree.gen.ts
+
+# Verbatim licence text - must not be reformatted
+LICENSE
+NOTICE
