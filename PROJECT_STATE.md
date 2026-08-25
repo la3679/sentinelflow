@@ -158,12 +158,13 @@ this repository. None has been measured.** Phase 9 measures them.
 | 0002 | One monorepo, `apps/{api,scoring,web}`, two services, CI not path-filtered                          |
 | 0003 | Java 25 LTS + Spring Boot 4.1.1; dependency versions inherited from the BOM                         |
 | 0004 | Python 3.13 via uv for `apps/scoring`                                                               |
+| 0006 | Event envelope, five business topics, account-keyed ordering, at-least-once with an outbox          |
+| 0007 | Decimal money as JSON strings, UUIDv7 keys, `timestamptz`, forward-only Flyway migrations           |
 | 0009 | Adopt Lovable's TanStack Start foundation; render client-side so Spring Boot stays the sole backend |
 
-**Still needing an ADR:** 0005 Kafka outbox and delivery semantics · 0006 event schema and
-versioning · 0007 Flyway and money representation · 0008 scoring-service boundary · 0010 model and
-evaluation choice · 0011 SSE versus WebSockets · 0012 authentication · 0013 observability ·
-0014 deployment strategy.
+**Still needing an ADR:** 0005 outbox relay mechanics (ADR-0006 settles the semantics) · 0008
+scoring-service boundary · 0010 model and evaluation choice · 0011 SSE versus WebSockets · 0012
+authentication · 0013 observability · 0014 deployment strategy.
 
 **Contracts:** none yet — `contracts/` is created in Phase 2 with its first schema.
 
