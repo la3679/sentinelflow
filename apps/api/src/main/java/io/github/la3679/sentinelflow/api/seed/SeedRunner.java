@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.seed;
 
+import java.time.Instant;
+
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+
+import io.github.la3679.sentinelflow.api.seed.scenario.ScenarioLoader;
 
 /**
  * Runs the seed at startup, and only when asked.
@@ -23,10 +27,12 @@ import org.springframework.stereotype.Component;
 public class SeedRunner implements ApplicationRunner {
 
     private final DeterministicSeedLoader loader;
+    private final ScenarioLoader scenarios;
     private final SeedProperties properties;
 
-    public SeedRunner(DeterministicSeedLoader loader, SeedProperties properties) {
+    public SeedRunner(DeterministicSeedLoader loader, ScenarioLoader scenarios, SeedProperties properties) {
         this.loader = loader;
+        this.scenarios = scenarios;
         this.properties = properties;
     }
 
@@ -36,5 +42,17 @@ public class SeedRunner implements ApplicationRunner {
         // reporting healthy over a half-written demo dataset would be worse
         // than one that refused to start.
         loader.load(properties);
+
+        if (properties.generateScenarios()) {
+            // Parties first, always: the generator writes transactions against
+            // accounts and merchants and has nothing to write against until
+            // they exist. Ordering it here rather than inside either loader
+            // keeps each of them independently runnable.
+            //
+            // Instant.now() is the end of the generated window, so a demo
+            // started at any hour has recent traffic. The generator itself
+            // reads no clock - see ScenarioGenerator.
+            scenarios.load(properties.seed(), properties.profile(), Instant.now());
+        }
     }
 }

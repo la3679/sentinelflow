@@ -18,7 +18,7 @@
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 3 complete and merged; Phase 4 next                                                                                               |
 | Current phase        | Phase 4 — synthetic data and scoring (not started)                                                                                               |
-| Current task         | ADR-0008, the scoring-service boundary, before Phase 4's first handler is written                                                                |
+| Current task         | Phase 4 — synthetic scenarios, the scoring service, and the first real handler                                                                   |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -397,10 +397,11 @@ this repository. None has been measured.** Phase 9 measures them.
 | 0005 | Outbox relay: polling with `FOR UPDATE SKIP LOCKED`, jittered bounded retry, `FAILED` is terminal   |
 | 0006 | Event envelope, five business topics, account-keyed ordering, at-least-once with an outbox          |
 | 0007 | Decimal money as JSON strings, UUIDv7 keys, `timestamptz`, forward-only Flyway migrations           |
+| 0008 | Scoring over HTTP from the consumer; degrade on outage; the API owns the alerting threshold         |
 | 0009 | Adopt Lovable's TanStack Start foundation; render client-side so Spring Boot stays the sole backend |
 
-**Still needing an ADR:** 0008 scoring-service boundary · 0010 model and evaluation choice · 0011
-SSE versus WebSockets · 0012 authentication · 0013 observability · 0014 deployment strategy.
+**Still needing an ADR:** 0010 model and evaluation choice · 0011 SSE versus WebSockets · 0012
+authentication · 0013 observability · 0014 deployment strategy.
 
 **Contracts:** `contracts/` exists and is validated in CI — OpenAPI 3.1 for `/api/v1`,
 AsyncAPI 3.0 for the five topics, and seven JSON Schemas. `make contracts-check` compiles every

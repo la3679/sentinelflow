@@ -175,6 +175,10 @@ sentinelflow:
     # CI, DEMO or LOCAL. Named sizes rather than a free-form count, so a test
     # and a README cannot drift apart about what "the demo dataset" is.
     profile: ${SENTINELFLOW_SEED_PROFILE:DEMO}
+    # Whether to lay generated traffic over the seeded parties. On, because
+    # customers and accounts with no transactions are not a demo. Turned off by
+    # a test that wants the parties and nothing else.
+    scenarios: ${SENTINELFLOW_SEED_SCENARIOS:true}
 
 server:
   port: ${SENTINELFLOW_API_PORT:8080}
@@ -216,3 +220,20 @@ logging:
     # Flyway says which migrations it applied. That line is the only record in
     # the log of what a deployment did to the schema, so it stays at INFO.
     org.flywaydb.core.internal.command: INFO
+    # Hibernate logs every aborted statement at WARN with the full SQL and every
+    # bound value. Two reasons that is wrong here, and neither is about noise
+    # alone.
+    #
+    # A duplicate idempotency key is *normal traffic* under at-least-once
+    # ingestion - the design says so, the service handles it, and the caller
+    # gets its original result back. Logging each one at WARN turns the expected
+    # path into an alarm, and a log full of warnings nobody should act on is a
+    # log nobody reads.
+    #
+    # The bound values are the problem underneath it: that line prints the
+    # amount, the account and merchant references, the device handle and the
+    # idempotency key of every rejected insert. This project's data is synthetic
+    # so nothing sensitive leaks today, but "the logs happen to be safe because
+    # the data is fake" is not a control. A genuine failure still reaches the
+    # log through the exception the application actually handles.
+    org.hibernate.orm.jdbc.error: ERROR

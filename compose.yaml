@@ -137,6 +137,14 @@ services:
       # service name on its container port. KAFKA_HOST_PORT in .env publishes a
       # different listener to the host and is deliberately not used here.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Demo data. Off unless the variable is set, in every environment
+      # including this one: a service that populates whatever database it is
+      # pointed at is a service nobody can safely point at anything. `make seed`
+      # sets it for one recreate of this service and then puts it back.
+      SENTINELFLOW_SEED_ENABLED: ${SENTINELFLOW_SEED_ENABLED:-false}
+      SENTINELFLOW_SEED: ${SENTINELFLOW_SEED:-20260826}
+      SENTINELFLOW_SEED_PROFILE: ${SENTINELFLOW_SEED_PROFILE:-DEMO}
+      SENTINELFLOW_SEED_SCENARIOS: ${SENTINELFLOW_SEED_SCENARIOS:-true}
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:

@@ -262,8 +262,15 @@ make smoke             # verify the running stack actually serves
 make clean
 ```
 
-`make seed`, `make replay` and `make test-integration` are listed and **fail with the phase that
-delivers them** rather than silently succeeding. Phases 2 and 4.
+`make seed` loads the deterministic demo dataset: the parties, and the synthetic traffic the scenario
+generator lays over them. Running it twice is a no-op —
+[`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md) records what it writes, what it
+deliberately does not, and why the labels never reach the database.
+
+`make replay` is still listed and still **fails with the change that delivers it** rather than
+silently succeeding. The transaction shapes it would replay are generated today by `make seed`; its
+own value is in replaying a scoring-service outage and a poison event, and neither exists to replay
+until the scoring client does.
 
 ## Testing
 

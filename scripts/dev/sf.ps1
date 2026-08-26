@@ -143,8 +143,8 @@ function Invoke-Help {
         'logs'             = 'Follow logs for every service'
         'ps'               = 'Show the status of every service'
         'reset-demo'       = 'DESTRUCTIVE - stop the stack and delete all local data volumes'
-        'seed'             = '(Phase 4) Generate and load deterministic demo data'
-        'replay'           = '(Phase 4) Replay the default synthetic scenario'
+        'seed'             = 'Generate and load deterministic demo data'
+        'replay'           = '(Phase 4, in progress) Replay the default synthetic scenario'
         'build'            = 'Build every application'
         'test'             = 'Run every standard test suite'
         'test-web'         = 'Unit tests for the console'
@@ -447,6 +447,50 @@ function Invoke-Smoke {
     }
 }
 
+function Invoke-Seed {
+    <#
+        The Makefile's `seed` target, expressed natively. The two are changed
+        together, every time: a Makefile edit without the matching change here
+        is a defect, because this machine has no make and this is the only way
+        the target is ever exercised on it.
+
+        Seeding runs at API startup behind SENTINELFLOW_SEED_ENABLED, so this
+        recreates that one service with the flag set and then recreates it again
+        without. Two recreates rather than one, deliberately: leaving the flag on
+        would make every later restart re-run the seed.
+
+        Both loaders are idempotent, so running this twice is a no-op rather
+        than a doubled dataset.
+    #>
+    $profileName = if ($env:SENTINELFLOW_SEED_PROFILE) { $env:SENTINELFLOW_SEED_PROFILE } else { 'DEMO' }
+    $seedValue = if ($env:SENTINELFLOW_SEED) { $env:SENTINELFLOW_SEED } else { '20260826' }
+    Write-Host "Seeding with profile $profileName, seed $seedValue."
+
+    $previous = $env:SENTINELFLOW_SEED_ENABLED
+    try {
+        $env:SENTINELFLOW_SEED_ENABLED = 'true'
+        Invoke-Native $RepoRoot 'docker' @(
+            'compose', 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300', 'api')
+    }
+    finally {
+        # Restored even if the recreate failed, so a failed seed cannot leave
+        # the flag set for the next person's `up`.
+        $env:SENTINELFLOW_SEED_ENABLED = $previous
+    }
+
+    # Best effort: the manifest lines are the useful output, and a stack with no
+    # matching line is not a failure worth stopping on.
+    $logs = Invoke-NativeCapture $RepoRoot 'docker' @('compose', 'logs', 'api')
+    $logs -split "`n" |
+        Select-String -Pattern 'Seed complete|Scenario load complete|seed skipped|load skipped' |
+        ForEach-Object { Write-Host $_.Line.Trim() }
+
+    Write-Host 'Returning the API to its unseeded configuration.'
+    Invoke-Native $RepoRoot 'docker' @(
+        'compose', 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300', 'api')
+    Write-Host 'Done. Re-running this is a no-op: both loaders are idempotent.'
+}
+
 function Invoke-ResetDemo {
     Write-Host 'This deletes the PostgreSQL, Kafka, Prometheus and Grafana volumes.'
     Write-Host 'All local demo data will be lost. This cannot be undone.'
@@ -479,8 +523,8 @@ switch ($Target) {
     'logs' { Invoke-Native $RepoRoot 'docker' @('compose', 'logs', '-f') }
     'ps' { Invoke-Native $RepoRoot 'docker' @('compose', 'ps') }
     'reset-demo' { Invoke-ResetDemo }
-    'seed' { Invoke-NotImplemented 'seed' 'Phase 4' 'The deterministic synthetic generator it drives' }
-    'replay' { Invoke-NotImplemented 'replay' 'Phase 4' 'Scenario replay' }
+    'seed' { Invoke-Seed }
+    'replay' { Invoke-NotImplemented 'replay' 'the same change as the scoring client' 'Scenario replay' }
 
     'build' {
         Invoke-Native $RepoRoot 'bun' @('install', '--frozen-lockfile')
