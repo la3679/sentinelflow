@@ -54,7 +54,10 @@ class DeterministicSeedLoaderIT extends AbstractPostgresTest {
     }
 
     private SeedManifest seed(long seed, SeedProfile profile) {
-        return transactions.execute(status -> loader.load(new SeedProperties(true, seed, profile)));
+        // Parties only. This suite is about the party loader, and generating
+        // traffic here would put thousands of transactions behind every
+        // assertion for nothing - ScenarioLoaderIT covers that half.
+        return transactions.execute(status -> loader.load(new SeedProperties(true, seed, profile, false)));
     }
 
     private List<Map<String, Object>> customerRows() {
