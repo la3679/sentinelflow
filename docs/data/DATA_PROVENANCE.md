@@ -14,13 +14,13 @@ licence to comply with, because every row is produced by code written here.
 
 ## 1. Sources
 
-| Source                                    | Status                     | Used                                     |
-| ----------------------------------------- | -------------------------- | ---------------------------------------- |
-| SentinelFlow deterministic seed loader    | **in use**                 | Yes — the only source of data today       |
-| SentinelFlow scenario generator           | **planned, Phase 4**       | Not written yet                          |
-| [IBM AMLSim][amlsim] (Apache-2.0)         | evaluated, **not adopted** | No data, no code, no concepts taken      |
-| [`gen-fraud-graph`][genfraud] (Apache-2.0)| evaluated, **not adopted** | No data, no code, no concepts taken      |
-| [Fraud Detection Handbook][handbook]      | research reading only      | **No code.** See the licence note below. |
+| Source                                     | Status                     | Used                                     |
+| ------------------------------------------ | -------------------------- | ---------------------------------------- |
+| SentinelFlow deterministic seed loader     | **in use**                 | Yes — the only source of data today      |
+| SentinelFlow scenario generator            | **planned, Phase 4**       | Not written yet                          |
+| [IBM AMLSim][amlsim] (Apache-2.0)          | evaluated, **not adopted** | No data, no code, no concepts taken      |
+| [`gen-fraud-graph`][genfraud] (Apache-2.0) | evaluated, **not adopted** | No data, no code, no concepts taken      |
+| [Fraud Detection Handbook][handbook]       | research reading only      | **No code.** See the licence note below. |
 
 [amlsim]: https://github.com/IBM/AMLSim
 [genfraud]: https://github.com/SantanderAI/gen-fraud-graph
@@ -80,7 +80,7 @@ The checksum covers references, not database identifiers. Identifiers are UUIDv7
 wall-clock millisecond they were minted, so two identical runs necessarily differ there; hashing
 them would prove nothing. References are the deterministic part, and they are what a reproduction
 claim is actually about. Two runs of the same seed at the same profile also produce identical row
-*contents* — countries, tiers, balances, merchant names — which `DeterministicSeedLoaderIT` asserts
+_contents_ — countries, tiers, balances, merchant names — which `DeterministicSeedLoaderIT` asserts
 directly rather than through the checksum.
 
 ### Running it
