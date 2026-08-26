@@ -421,3 +421,76 @@ That went out as PR [#22](https://github.com/la3679/sentinelflow/pull/22), merge
 `main` was merged into the Phase 2 branch. Keeping it separate mattered: a security fix and a schema
 phase are not one change, and a reviewer looking for why an OpenSSL version is pinned should not
 have to find it inside a database commit.
+
+---
+
+## Session 5 — 2026-08-26 — Phase 3 begun, then blocked by a GitHub Actions outage
+
+| Field           | Value                                                                     |
+| --------------- | ------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-26T14:35Z / 2026-08-26T16:00Z                                     |
+| Starting SHA    | `7dd5eee` on `main`                                                       |
+| Ending SHA      | `55f37f7` on `feat/outbox-relay`, stacked on `feat/transaction-ingestion` |
+| Objective       | Phase 3: the relay decision, ingestion, and the outbox drain              |
+
+**Outcome:** ADR-0005 written and merged. Ingestion and the relay are written, tested locally, and
+pushed — and unmerged, because GitHub Actions went down partway through.
+
+### What was built
+
+**ADR-0005** decides the relay before the relay exists: polling rather than logical decoding,
+`FOR UPDATE SKIP LOCKED` for the batch claim, exponential backoff with full jitter bounded at ten
+attempts, `FAILED` as terminal and non-automatic to revive, and five metrics from the first commit
+including both depth and age — depth alone cannot tell a busy relay from a stuck one.
+
+**Ingestion** turns the schema's idempotency constraint into a product guarantee. The service's
+lookup is an optimisation, not the guarantee: eight concurrent submissions of one key all pass it,
+and `transactions_idempotency_unique` is what makes exactly one transaction and one outbox event
+exist. Three outcomes kept distinct — 202 created, 200 replayed, 409 for a key reused with a
+different payload, because answering 200 there would leave a caller believing a transaction it never
+submitted was recorded.
+
+**The relay** drains that outbox to Kafka, claim and publish and status update in one transaction.
+
+### Defects found by running, not reading
+
+- **Jackson coerced a JSON number into the money `String` field.** `"value": 1249.99` was accepted,
+  the money pattern then matched, and ADR-0007's central rule had been broken by the parser before
+  any of this project's code ran — with whatever the sender's own `double` had rounded to.
+- **`default-property-inclusion: non_null` dropped `deviceReference`** from the event payload, which
+  the schema requires present and null.
+- **`spring-boot-kafka` was missing**, exactly as `spring-boot-flyway` had been: in Spring Boot 4 the
+  autoconfiguration is its own module, so the library alone means no `KafkaTemplate` and every
+  `spring.kafka.*` property binding to nothing. Second time this shape has bitten; worth expecting a
+  third.
+- **`KafkaTemplate.send` does not always return a failed future** — it throws synchronously when the
+  producer cannot fetch metadata, which escaped the publisher's contract.
+- **A unit test read `../../contracts`.** `apps/api/Dockerfile` builds from a module-only context, so
+  it failed inside the image build where CI runs the unit suite, and could not fail locally. Contract
+  tests that read repository files are ITs now, by rule.
+
+### The outage
+
+`Build and scan api` and `Build and scan web` failed on **CVE-2026-14456**, a new OpenSSL advisory,
+before any of this. That was fixed properly rather than suppressed — see the Phase 2 addendum — and
+merged as its own pull request.
+
+Then Actions itself went down. GitHub declared `major_outage` at **15:11Z**; runs from 15:05 onward
+queue and never start, two returned `startup_failure` in seconds on unchanged workflow files, and
+`gh run cancel` refuses stuck runs as "completed" while the API still reports them `queued`.
+
+Three explanations were checked before concluding it was upstream. Every job already uses the generic
+`ubuntu-latest` pool, so there is no narrow label to widen. The concurrency groups are per
+`github.ref` with `cancel-in-progress: true`, so a ghost run holding a group would have _cancelled_
+one of a queued pair rather than leaving both — and a group lock does not produce a `startup_failure`
+either. The status API confirmed the rest.
+
+Closing PR #25 and opening #26 on the same branch was worth doing and did dispatch more workflows
+than a plain push had, but nothing executes while the incident is open.
+
+### What that leaves
+
+Two branches pushed and unmerged, stacked. `./mvnw verify` on the tip gives 23 unit and 89
+integration tests passing with the coverage gate met, the api image builds, and the contract, docs
+and formatting checks pass — on one machine, which is not CI and is not claimed to be. Landing order
+and the recovery procedure are in `PROJECT_STATE.md`.
