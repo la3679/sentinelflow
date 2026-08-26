@@ -32,19 +32,24 @@ import tools.jackson.databind.json.JsonMapper;
  * JSON types of the values a real ingestion produces. What none of those catch is a rename or an
  * addition, which is exactly what this covers — and it does so without adding a schema-validation
  * library to the runtime for one assertion.
+ *
+ * <p><strong>An IT despite needing no container.</strong> It reads a file two directories above the
+ * module, which makes the repository layout a dependency, and this module's Surefire suites are
+ * self-contained by rule. It is not a theoretical distinction: {@code apps/api/Dockerfile} builds
+ * from a module-only context, so a unit test reaching for {@code ../../contracts} fails inside the
+ * image build with a null path. Found exactly that way.
  */
-class TransactionCreatedPayloadTests {
+class TransactionCreatedContractIT {
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     private static JsonNode schema() {
-        // Resolved relative to the module, so this works in CI and in a clone
-        // at any path.
-        Path path = Path.of("")
-                .toAbsolutePath()
-                .getParent()
-                .getParent()
-                .resolve("contracts/schemas/transaction-created.v1.json");
+        // Relative to the module, so this works in CI and in a clone at any
+        // path. Failing loudly when it is absent is deliberate: a contract test
+        // that quietly skips because it could not find the contract is worse
+        // than no contract test.
+        Path repositoryRoot = Path.of("").toAbsolutePath().getParent().getParent();
+        Path path = repositoryRoot.resolve("contracts/schemas/transaction-created.v1.json");
         try {
             return MAPPER.readTree(Files.readString(path, StandardCharsets.UTF_8));
         } catch (IOException e) {
