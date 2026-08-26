@@ -637,3 +637,129 @@ None.
 2. ADR-0008, the scoring-service boundary, before Phase 4's handler is written.
 3. Phase 4 — synthetic scenario generation and the scoring service, which brings the first real
    `TransactionCreatedHandler`.
+
+---
+
+## Session 7 — 2026-08-26 — Phase 4 opened: the boundary, the data, and the contract
+
+Three pieces of Phase 4 landed, in the order that leaves the fewest decisions to be made by
+accident: the boundary decision, then the data the model will be trained on, then the contract both
+implementations will be written against.
+
+### ADR-0008 first, because it was about to be decided by whichever line ran first
+
+Phase 3 shipped a consumer with a deliberately empty handler seam. That left the API-to-scoring
+boundary open, and an open boundary closes itself the moment somebody writes a call.
+
+Synchronous HTTP from inside the handler, not an event round trip — rejected on three grounds rather
+than on taste: the transaction-to-assessment correlation would become eventual and every screen
+would have to render the window; idempotency would need solving a second time with its own ledger;
+and the Python service would acquire a broker client, a consumer group and an outbox for one call.
+The cost is stated rather than glossed — the assessment path is now coupled to scoring being
+reachable — and it is smaller than it looks, because ingestion commits and publishes before any of
+this runs.
+
+**Two gaps were found by reading the ADR back against ADR-0002 rather than by anything failing.**
+
+The first was a hole. The ADR settled that the call is HTTP and never said what is _in_ it. Several
+features this project needs are historical, and the scoring service has no database — so left
+unsaid, the first implementation either gives it one, making two services systems of record for a
+table `apps/api` owns, or discovers the problem after the contract is written. The request now
+carries a bounded, versioned account context the API computes.
+
+The second was a collision. ADR-0002 assigns "evaluation metrics and thresholds" to `apps/scoring`
+and ADR-0008 gives the alerting threshold to the API, which reads as a contradiction. It is not:
+they are two objects. A model has an operating point that belongs in its model card next to the
+precision and recall measured at it; the alerting policy is applied at runtime to a final score that
+also folds in a rule score the model never saw, and it has to apply identically when the model did
+not answer at all.
+
+### The generator plants shapes, not suspicious-looking rows
+
+Six of them — a velocity burst, an amount spike relative to that account's own baseline, a
+card-testing run, an improbable journey, a proportional account drain, an off-hours purchase from an
+unknown device. Every one needs history to see, which is the whole reason to generate data: a rule
+that only has to notice one large amount can be written without any of this and says nothing about
+whether the pipeline works.
+
+The background is not filler either. An account's spending is drawn around a baseline derived from
+its own reference, it favours a few merchants it has used before, and it uses one of two devices —
+which is what makes "a merchant this account has never used" mean anything when a shape breaks the
+habit. Traffic where every account behaved identically would make a velocity feature trivially
+predictive and any evaluation of it meaningless.
+
+**Labels never enter the database**, and `ScenarioLoaderIT` asserts it against `information_schema`
+rather than trusting the intent. It writes through `TransactionWriter`, so generated traffic gets the
+same validation and the same outbox row as a posted transaction and flows through the relay and the
+consumer exactly as real traffic does. A private insert path would be faster and would prove nothing.
+
+### Two defects found by running it
+
+**Hibernate logs every aborted statement at WARN with the full SQL and all bound values.** A
+duplicate idempotency key is normal traffic under at-least-once ingestion — handled, with the caller
+getting its original result back — and it printed the amount, both references, the device handle and
+the key. Wrong twice over: it turns the expected path into an alarm, and those values are exactly
+what this project's own rules say not to log. The data is synthetic, but "the logs happen to be safe
+because the data is fake" is not a control.
+
+**Content-derived idempotency keys collide.** Two ordinary purchases on one account, at one merchant,
+in the same second, for the same amount are entirely possible in fourteen days of traffic, and the
+second would have been silently rejected as a duplicate — leaving a dataset smaller than the manifest
+claimed. Caught by a test asserting uniqueness over the `DEMO` profile, not by the loader failing.
+
+### The contract, and a checker that only checked one document
+
+`contracts/openapi/sentinelflow-scoring.yaml` is written before either implementation, the same order
+the public API document was written in. `check-contracts.mjs` was hardcoded to
+`sentinelflow-api.yaml`, so the new document would have been a second authoritative contract that
+nothing validated — precisely what "contracts/ is authoritative" exists to rule out. It now reads the
+directory, and that was verified by pointing it at a deliberately broken document rather than assumed.
+
+Two schema fields exist because their absence is a silent wrong answer rather than a missing one.
+`lookbackWindowSeconds` states how far back the context reaches, so a feature defined over 24 hours
+that received an hour can say so in `warnings`. `truncated` says the list hit its cap, which turns a
+count into a floor.
+
+### The README was the most out-of-date document in the repository
+
+It said "Phase 1 of 10 complete" with Phase 2 listed as next, and drew the risk consumer as planned.
+A README that overstates progress is the usual failure, which is what makes one that understates it
+no better as a claim about accuracy — either way the document and the repository disagree.
+
+The testing section is now split by date rather than refreshed wholesale. The API and console figures
+were measured on 2026-08-26 and say so; the browser, accessibility, scoring and smoke figures were
+not re-measured and keep their 2026-08-25 date. A figure that inherits a newer date it was never
+measured on is the exact thing this project's evidence rule exists to prevent.
+
+### Tests and results — every figure from a run on 2026-08-26
+
+| Command                                  | Result                                                         |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)         | **PASS** — 57 unit, 116 integration, coverage gate met         |
+| The same, on the GitHub runner           | **PASS** — same counts, gate met                               |
+| JaCoCo over both suites                  | 80.5% lines (1168/1451), 70.0% branches (191/273)              |
+| `bun scripts/dev/check-contracts.mjs`    | **PASS** — all three API documents                             |
+| The same, against a broken document      | **FAILS and names the file**                                   |
+| `bun scripts/dev/check-docs.mjs`         | **PASS** — 109 links across 36 files, 0 broken, 0 placeholders |
+| `bun run format:check` (repository-wide) | **PASS**                                                       |
+| PowerShell parse of `sf.ps1`             | **PASS** — 0 errors                                            |
+
+### Decisions worth recording
+
+- **`make replay` stays unimplemented, deliberately.** The shapes it would replay are generated by
+  `make seed` today. Its own value is in replaying a scoring-service outage and a poison event, and
+  neither exists to replay until the scoring client does. It lands with the pieces it demonstrates.
+- **Rapid fan-in is not expressible**, and `DATA_PROVENANCE.md` says so rather than leaving a silent
+  gap. `transactions` has no counterparty account column, and changing the schema to satisfy a
+  generator would be the wrong way round.
+- **The coverage gate stays at 0.70/0.60** despite measuring above both. Ratcheting twice inside one
+  phase is churn; the next turn comes when Phase 4 finishes.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: the feature pipeline, then ADR-0010 and reproducible training, then
+the scoring endpoints and the Spring client.
