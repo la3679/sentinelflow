@@ -51,6 +51,25 @@ FROM python:3.13.15-slim-trixie AS runtime
 # containing removes the finding and the capability behind it at the same time.
 RUN python -m pip uninstall --yes pip setuptools wheel >/dev/null 2>&1 || true;     rm -rf /usr/local/lib/python3.13/site-packages/pip     /usr/local/lib/python3.13/site-packages/pip-*     /usr/local/lib/python3.13/site-packages/setuptools     /usr/local/lib/python3.13/site-packages/setuptools-*     /usr/local/lib/python3.13/site-packages/pkg_resources     /usr/local/lib/python3.13/site-packages/wheel     /usr/local/lib/python3.13/site-packages/wheel-*     /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13     /usr/local/bin/wheel
 
+# CVE-2026-14456: unbounded memory growth in OpenSSL's QUIC server path.
+# Debian shipped the fix as 3.5.7-1~deb13u2. The python:3.13.15-slim-trixie tag
+# still carries 3.5.6-1~deb13u2, because it has not been rebuilt since the
+# advisory. Taking the update from the archive is the fix; a .trivyignore would
+# hide a vulnerability that is genuinely patched and genuinely available.
+#
+# Pinned rather than a blanket `apt-get upgrade`, so the image stays a function
+# of this file rather than of the day it was built.
+#
+# REMOVE THIS BLOCK once the base image ships >= 3.5.7-1~deb13u2. Check with
+# `docker run --rm python:3.13-slim-trixie dpkg-query -W libssl3t64`. If Debian
+# rotates this exact version out of the archive first, the build fails here
+# with a clear message and the fix is to delete the block.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        libssl3t64=3.5.7-1~deb13u2 \
+        openssl=3.5.7-1~deb13u2 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10002 sentinelflow \
     && useradd --system --uid 10002 --gid sentinelflow --no-create-home --shell /usr/sbin/nologin sentinelflow
 
