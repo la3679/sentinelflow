@@ -26,5 +26,14 @@ import org.springframework.test.context.TestPropertySource;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Import(PostgresContainerSupport.class)
-@TestPropertySource(properties = "POSTGRES_PASSWORD=overridden-by-the-container-service-connection")
+@TestPropertySource(
+        properties = {
+            "POSTGRES_PASSWORD=overridden-by-the-container-service-connection",
+            // No broker here, and a listener container whose bootstrap address
+            // does not resolve fails the application context at startup rather
+            // than retrying - so every schema test would fail on a Kafka error.
+            // A subclass that starts a broker turns it back on; its own
+            // @TestPropertySource wins over this one.
+            "sentinelflow.consumer.enabled=false"
+        })
 public abstract class AbstractPostgresTest {}
