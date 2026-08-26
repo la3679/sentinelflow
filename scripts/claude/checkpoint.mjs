@@ -60,11 +60,17 @@ const head = run("git", ["rev-parse", "HEAD"]);
 const upstream = run("git", ["rev-parse", "--abbrev-ref", "@{upstream}"]);
 const upstreamHead = upstream ? run("git", ["rev-parse", "@{upstream}"]) : null;
 
+// Parsed by shape, not by fixed offset. `run` trims its output, which eats the
+// leading space of an unstaged-only status line (" M path") - but only on the
+// first line, because the rest keep theirs after the split. Slicing at columns
+// 0-2 and 3 therefore dropped the first character of the first path and left
+// every other one intact, which is the kind of defect that reads as correct
+// until the one file you care about is listed first.
 const porcelain = run("git", ["status", "--porcelain"]) ?? "";
-const dirty = lines(porcelain).map((line) => ({
-  status: line.slice(0, 2).trim(),
-  path: line.slice(3).trim(),
-}));
+const dirty = lines(porcelain).flatMap((line) => {
+  const match = /^(.{1,2}?)\s(.*)$/.exec(line);
+  return match ? [{ status: match[1].trim(), path: match[2].trim() }] : [];
+});
 
 const whitespaceIssues = run("git", ["diff", "--check"]);
 const stagedWhitespaceIssues = run("git", ["diff", "--cached", "--check"]);

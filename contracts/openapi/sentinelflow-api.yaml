@@ -704,8 +704,17 @@ components:
         finalScore: { type: number }
         version:
           type: integer
-          minimum: 1
-          description: Optimistic-lock version. Pass it back as `expectedVersion` to mutate.
+          minimum: 0
+          description: |
+            Optimistic-lock version. Pass it back as `expectedVersion` to mutate.
+
+            **An opaque token.** A newly raised alert is at version 0 and each
+            accepted mutation increments it, but a client must never read
+            meaning into the magnitude — only compare it for equality. The
+            minimum is 0 rather than 1 because the persistence layer seeds a new
+            version at 0 and the alternative was a translation layer whose only
+            job would be to hide that from a client that cannot interpret it
+            anyway. See `docs/adr/0007-*` and the `Alert` JPA mapping.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         closedAt: { type: [string, "null"], format: date-time }
@@ -745,10 +754,14 @@ components:
           $ref: "#/components/schemas/AlertStatus"
         expectedVersion:
           type: integer
-          minimum: 1
+          minimum: 0
           description: |
             The version the caller believes the alert is at. A mismatch is a
             `409`, so two analysts cannot silently overwrite each other.
+
+            0 is a legitimate value: it is the version of an alert nobody has
+            acted on yet, which is exactly the alert most likely to be
+            transitioned first.
         note:
           type: string
           maxLength: 2000

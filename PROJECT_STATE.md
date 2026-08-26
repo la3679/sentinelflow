@@ -14,15 +14,15 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-26T00:15Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T14:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 1 merged to `main`; Phase 2 not started                                                                                           |
-| Current phase        | Phase 2 — contracts, domain, and database (started)                                                                                              |
-| Current task         | Phase 2 — ADRs and `contracts/` merged; domain and migrations next                                                                               |
+| Overall status       | active — Phase 2 deliverables complete and **executed** on `feat/domain-and-migrations`; PR next                                                 |
+| Current phase        | Phase 2 — contracts, domain, and database (in progress)                                                                                          |
+| Current task         | Phase 2 — open the pull request, get CI green on it, merge                                                                                       |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `main` — Phase 2 branches from here                                                                                                              |
+| Working branch       | `feat/domain-and-migrations` — branched from `4de1ff8`, eleven commits, **no PR yet**                                                            |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
@@ -53,7 +53,7 @@ which also records the two honest routes back to a design session if one is ever
 
 - [x] **Phase 0 — research gate and Lovable/GitHub bootstrap**
 - [x] **Phase 1 — monorepo and developer foundation**
-- [ ] Phase 2 — contracts, domain, and database
+- [x] **Phase 2 — contracts, domain, and database** (pending PR and CI)
 - [ ] Phase 3 — ingestion, outbox, and Kafka
 - [ ] Phase 4 — synthetic data and scoring
 - [ ] Phase 5 — alerts and investigations
@@ -105,6 +105,84 @@ against the current schema and exercised locally before commit.
 `CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
 prompt-dump into something verified, with two generated screenshots.
 
+## Completed this session — Phase 2, branch `feat/domain-and-migrations`
+
+**The schema now runs.** Everything below was executed on 2026-08-26 against real PostgreSQL 18.6
+in Testcontainers, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`.
+
+**Testcontainers foundation.** One `postgres:18.6-alpine` container per JVM fork, exposed as a
+`@ServiceConnection` bean, image name from the `postgres.test.image` pom property. Flyway applies
+all six migrations to an empty database and Hibernate validates every mapping against the result;
+both are assertions in themselves.
+
+**All fifteen tables mapped**, and `ddl-auto: validate` accepts every one. Foreign keys are `UUID`
+fields rather than `@ManyToOne`, so no traversal is an implicit query. `TransactionRecord` is named
+around the collision with `jakarta.transaction.Transaction`. Invalid states are unconstructible, not
+merely constrained: `RiskAssessment` has `scored()` and `degraded()` factories and no public
+constructor, `Alert.transitionTo` sets `closedAt` from the target status, `OutboxEvent` derives its
+aggregate type from its event type, and `AuditLogEntry.byUser` requires the actor the `CHECK`
+requires.
+
+**Three defects, all found by running rather than reading.** `PostgreSQLContainer<?>` does not
+compile against Testcontainers 2.x. `spring.datasource.hikari.connection-timeout: 10s` failed
+startup with `NumberFormatException`, because that prefix binds onto `HikariDataSource` whose
+setters take a `long` — committed, unrun, and would have failed identically in production. And
+`spring-boot-flyway`, a separate module in Spring Boot 4, was missing: every `spring.flyway.*`
+property bound to nothing, no migration ran, and the only symptom was Hibernate reporting a missing
+table, which reads like a mapping defect and is not one.
+
+**Constraint, migration and mapping suites — 57 integration tests.** Every constraint test names the
+constraint it expects to fire, and where a rule has a permitted counterpart the counterpart is
+asserted too. `MigrationIT` covers what a constraint test cannot reach: the migration history, the
+PostgreSQL version `uuidv7()` needs, that no money column is floating point, that no timestamp lost
+its zone, and that the six deliberately-chosen indexes still exist and the partial ones are still
+partial.
+
+**Domain unit tests — 23.** `Money` and `UuidV7` had none. The UUIDv7 tests pin the clock, because a
+generator is trivially ordered when time passes between calls and index locality matters under a
+burst.
+
+**`Alert.version` resolved.** OpenAPI moved to `minimum: 0` with the reason stated in the schema;
+`alert-updated.v1.json` keeps `minimum: 1` and now says why.
+
+**Seed foundation.** Deterministic, idempotent, off by default everywhere, application code and
+never a migration. Parties only — customers, accounts, merchants, four fixed analyst logins; the
+scenario generator and `make seed` remain Phase 4. A `SeedManifest` carries the generator version,
+seed, profile, counts and a SHA-256 over the generated references.
+[`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md) records §13.5.
+
+**Diagrams.** [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md) and
+[`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md), drawn from
+`information_schema` on a database built by the migrations. `SchemaDocumentationIT` asserts the ER
+diagram's entity blocks are exactly the tables that exist.
+
+**Coverage gate.** LINE 0.50, BRANCH 0.40 — measured first at 52.4% / 46.9%, then set below the
+measurement. `make test-api` is now the unit half and skips JaCoCo; `make test-integration` is
+implemented; CI runs the full verify and enforces the gate.
+
+### Correction: the state file was wrong about the entity count
+
+This file and commit `78290dc` both claimed six of fifteen tables were mapped. **Four were.**
+`Merchant` and `Account` were described in that commit's message and never written. Git was right,
+the state file was wrong, and the discrepancy is recorded in
+[`docs/planning/SESSION_LOG.md`](docs/planning/SESSION_LOG.md) as the workflow rules require.
+
+## Acceptance criteria status — Phase 2 gate
+
+| Criterion                          | Status   | Evidence                                                                    |
+| ---------------------------------- | -------- | --------------------------------------------------------------------------- |
+| Migrations run from empty database | **pass** | Flyway applied 6/6 to `postgres:18.6-alpine`; `MigrationIT` asserts history |
+| Constraints tested                 | **pass** | `SchemaConstraintIT`, 29 tests, each naming the constraint it expects       |
+| Contracts validate in CI           | **pass** | `check-contracts.mjs` passes; `ci-repo` runs it on every push and PR        |
+| Docs match schema                  | **pass** | `SchemaDocumentationIT` asserts the ER diagram against `information_schema` |
+| OpenAPI / AsyncAPI / event schemas | **pass** | Delivered in the previous session, amended here for `Alert.version`         |
+| Domain model                       | **pass** | 15/15 tables mapped, `ddl-auto: validate` accepts all of them               |
+| Seed framework                     | **pass** | `DeterministicSeedLoader`, 6 tests; scenario generator is Phase 4           |
+| ER / data diagrams                 | **pass** | `docs/architecture/`, both generated from the live schema                   |
+
+**Not yet done for this phase:** the pull request is not open and CI has never run on this branch.
+Until it has, "CI green" is not claimable.
+
 ## Acceptance criteria status — Phase 1 gate
 
 | Criterion                           | Status   | Evidence                                                                        |
@@ -118,7 +196,24 @@ prompt-dump into something verified, with two generated screenshots.
 
 ## Test and verification evidence
 
-Every figure below came from a run on **2026-08-25**. Nothing here is estimated.
+Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-26 — Phase 2
+
+| Command                                      | Result                                                        |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)             | **PASS** — 23 unit, 57 integration, coverage check met        |
+| `./mvnw verify -DskipITs -Djacoco.skip=true` | **PASS** — 23/23, no Docker needed                            |
+| JaCoCo over both suites                      | 62.0% lines (432/697), 63.8% branches (60/94)                 |
+| Flyway against `postgres:18.6-alpine`        | **PASS** — 6/6 migrations applied to an empty database        |
+| Hibernate `ddl-auto: validate`               | **PASS** — all 15 mappings accepted                           |
+| `bun scripts/dev/check-contracts.mjs`        | **PASS**                                                      |
+| `bun scripts/dev/check-docs.mjs`             | **PASS** — 89 links across 33 files, 0 broken, 0 placeholders |
+| `bun run format:check` (repository-wide)     | **PASS**                                                      |
+| `bun run typecheck` (web)                    | **PASS**                                                      |
+| `bun run test` (web)                         | **PASS** — 24/24                                              |
+
+### 2026-08-25 — Phase 1
 
 | Command                                  | Result                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------- |
@@ -174,20 +269,36 @@ schema, validates every example, and asserts the deliberately-invalid ones are r
 
 - **Node 22.19.0 on the reference machine** passed its LTS end date (2026-07-28). `engines`
   requires Node 24. Bun runs everything, so nothing is blocked, but local Node should be upgraded.
-- **Default `JAVA_HOME` points at JDK 17.** JDK 25 is installed at `%USERPROFILE%\.jdks`;
-  `make bootstrap` warns rather than fails, because `make up` builds the API in Docker.
+- **Default `JAVA_HOME` points at JDK 17.** JDK 25 is at `~/.jdks/jdk-25.0.4.1+1`;
+  `make bootstrap` warns rather than fails, because `make up` builds the API in Docker. Hit
+  directly on 2026-08-26: `./mvnw compile` fails with `release version 25 not supported` unless
+  `JAVA_HOME` is set for the command. Spotless passes regardless, because formatting does not
+  compile — a green formatter is not a green build.
+- **Docker Desktop does not start quickly on the reference machine.** Start it before any session
+  that touches persistence: every suite except the 23 unit tests needs it, and `make test-api`
+  exists precisely so the fast half can run without it.
+- ~~**`Alert.version` disagrees between the contract and the mapping.**~~ **Resolved 2026-08-26.**
+  OpenAPI moved to `minimum: 0` with the reason written into the schema; `alert-updated.v1.json`
+  keeps `minimum: 1` and now says why.
 - **The published Temurin 25 image is one critical-patch build behind the local JDK.** Containers
   build on `25.0.4+7`, local `./mvnw` runs on `25.0.4.1+1`. Both are Java 25 LTS. Revisit when
   Adoptium publishes `25.0.4.1`.
 - **`noUnusedLocals` / `noUnusedParameters` are still `false`** in `apps/web/tsconfig.json`.
-- **Coverage thresholds are not enforced** in any component. Deliberate: a threshold set against a
-  scaffold measures how much of a scaffold is exercised. Set them in Phases 2 and 4.
+- **Coverage thresholds are enforced in `apps/api` only** — LINE 0.50, BRANCH 0.40, set from a
+  measurement on 2026-08-26 and raised only when a phase genuinely raises coverage. `apps/web` and
+  `apps/scoring` still have none; set them in Phases 4 and 6.
 - **Google Fonts is loaded from a remote host.** Self-host in Phase 6 so the local-first stack has
   no external runtime dependency.
 - **Screen-reader behaviour is unverified.** axe is not a substitute for a manual pass. Phase 6.
 - **The console still renders from `src/mocks/`.** Replaced in Phase 6, once the API has endpoints.
 - **CI is not path-filtered**, so every push runs every component. Deliberate (ADR-0002); revisit
   when runtime justifies job-level change detection.
+- **`make` is not installed on the reference machine**, so Makefile targets are exercised there
+  through `scripts/dev/sf.ps1` or by running the underlying command directly. Both are changed
+  together, every time; a Makefile edit without the matching runner edit is a defect.
+- **`ProcessedEvent`, `AuditLogEntry`, `RegisteredModel`, `AlertAction`, `Role`, `User` and
+  `UserRole` have mappings and no callers.** They are validated against the schema and otherwise
+  untouched, which is most of the remaining coverage gap. Phases 3 to 5 reach them.
 
 ## Open Dependabot pull requests
 
@@ -218,21 +329,28 @@ None.
 
 ## Next three actions
 
-ADR-0006, ADR-0007 and `contracts/` are **done and merged**. All three were previous next actions.
+Phase 2's deliverables are complete and executed on `feat/domain-and-migrations`. **CI has never run
+on this branch** — the workflows trigger on `main` and on pull requests, and no pull request is
+open. That is the first thing to fix, and until it is green nothing here should be described as
+done.
 
-1. **Model the domain and write the first Flyway migrations.** Entities per §9 of the build
-   standards — customers, accounts, merchants, transactions, risk_assessments, alerts,
-   alert_actions, outbox_events, processed_events, audit_log. Follow ADR-0007 exactly:
-   `NUMERIC(19,4)` money with an explicit currency column, UUID primary keys, `timestamptz`,
-   constraints declared in the database, `ddl-auto: validate`. Shapes must match
-   `contracts/schemas/`.
-2. **Add Testcontainers PostgreSQL tests** that run every migration from an empty database and
-   assert the constraints actually reject what they should — a migration test that only checks the
-   migration applied has tested Flyway, not the schema. Real PostgreSQL, never H2. Add the
-   Testcontainers dependency (BOM-managed at 2.0.5) and a `make test-integration` that works.
-3. **Add the ER diagram and the transaction-to-alert sequence diagram** to
-   `docs/architecture/`, generated from or checked against the migrations, and set a JaCoCo
-   threshold now that there is behaviour worth measuring.
+1. **Open the pull request and get it green.** `gh pr create --base main --head
+feat/domain-and-migrations`, fill in the template honestly, self-review the whole diff. Expect CI
+   to be the first environment other than this machine to run the Testcontainers suites; GitHub
+   runners provide a Docker engine, so they should pass, but a first run on a new runner is
+   evidence, not a formality. The JaCoCo gate is enforced there and only there. Merge with a merge
+   commit once the required checks pass, then update this file and start Phase 3 from `main`.
+2. **Clear the four open Dependabot pull requests, #9 to #12.** They have been open since Phase 1
+   and each needs the same two steps: let the lockfile workflow regenerate `bun.lock` on push, then
+   `gh pr close <n> && gh pr reopen <n>` to re-trigger CI, because a push made with the default
+   `GITHUB_TOKEN` cannot start workflow runs. `#11` (`@vitejs/plugin-react` 5 → 6) needs a build and
+   a browser check; `#12` (`eslint` 9 → 10) is a major with likely flat-config changes.
+3. **Begin Phase 3 — ingestion, outbox and Kafka.** The schema is ready for it and
+   [`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) is the
+   design to build against. Start with the validated ingestion endpoint and the idempotency path,
+   because the constraint that makes it correct is already tested and the endpoint is what turns it
+   from a schema rule into a product guarantee. ADR-0005 (outbox relay mechanics) is still owed and
+   should be written before the relay, not after it.
 
 ## Session startup commands
 

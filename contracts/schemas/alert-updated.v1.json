@@ -40,7 +40,7 @@
 
     "version": {
       "type": "integer",
-      "description": "Optimistic-lock version of the alert AFTER this change. Lets a consumer detect a gap, and lets a late-arriving duplicate be discarded on ordering rather than only on eventId.",
+      "description": "Optimistic-lock version of the alert AFTER this change. Lets a consumer detect a gap, and lets a late-arriving duplicate be discarded on ordering rather than only on eventId. Minimum 1, unlike Alert.version in the REST contract, and deliberately so: an alert is raised at version 0 and this event only ever describes a change, so by the time one is published the version has already been incremented at least once.",
       "minimum": 1
     },
 

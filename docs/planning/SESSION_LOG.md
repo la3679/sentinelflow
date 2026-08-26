@@ -240,3 +240,153 @@ Two defects in the checker itself surfaced from running it. AJV registers a sche
 AsyncAPI parser given only a file's contents has no base path, so every `../schemas/*.json`
 reference failed to resolve; it needs `fromFile`. Both are the same lesson as Phase 1's ten: reading
 the code would not have found either.
+
+### Phase 2 continues — the schema, and a session that could not run it
+
+The six Flyway migrations covering all fifteen tables in §9 are written, along with the domain
+value types and the first six JPA entities. **None of it has been executed.** Docker Desktop was
+not running when this session started; it was launched and had still not brought its engine up by
+the time the checkpoint threshold arrived. Nothing here is claimed to work.
+
+What _was_ run, on 2026-08-26: `./mvnw spotless:apply` and `./mvnw compile` under
+`~/.jdks/jdk-25.0.4.1+1` (both exit 0), `bun run format:check` (pass), `check-docs.mjs` (77 links
+across 30 files, 0 broken), and `check-contracts.mjs` (pass). Compilation is evidence the Java is
+well-formed. It is not evidence that a single migration applies or that a single mapping matches
+its table, and `ddl-auto: validate` means the service will refuse to start if any of them do not.
+
+The default `JAVA_HOME` on the reference machine still points at JDK 17, which is already recorded
+as known debt. It surfaced here as `release version 25 not supported` — worth noting that Spotless
+passed anyway, because formatting does not compile. A green formatter is not a green build.
+
+Three schema constraints took the most thought and are the ones the constraint tests will target
+first. `transactions (account_id, idempotency_key)` **is** the idempotency guarantee — an
+application-level check-then-insert has a window between its two statements and this does not.
+`risk_assessments_degraded_consistent` makes a half-degraded assessment unrepresentable, which is
+what a partially-failed scoring call would otherwise persist and a consumer would later read as a
+real model output. `model_registry_single_active_idx` allows exactly one `ACTIVE` model, because a
+second one makes "which model scored this" ambiguous for every assessment written while it lasted.
+
+One contract tension surfaced and is **not yet resolved**: OpenAPI gives `Alert.version` and
+`AlertTransitionRequest.expectedVersion` a `minimum` of 1, while Hibernate's `@Version` seeds a new
+entity at 0. The schema currently permits `version >= 0`. Either the contract moves to 0 with a
+stated reason or the mapping compensates; picking one is a Phase 2 action, not something to leave
+for whoever writes the alert service in Phase 5 to discover.
+
+A defect in `scripts/claude/checkpoint.mjs` was found by reading its own output: `run` trims, which
+removes the leading space of the **first** porcelain line only, so a fixed-offset slice dropped the
+first character of that path and left every other one intact. It printed `pps/api/pom.xml`. Fixed
+and verified. A helper that exists to stop facts being typed from memory and typed wrong is worse
+than nothing when it corrupts one authoritatively.
+
+---
+
+## Session 4 — 2026-08-26 — Phase 2: running the schema, and everything that found
+
+| Field           | Value                                                                          |
+| --------------- | ------------------------------------------------------------------------------ |
+| Start / end UTC | 2026-08-26T13:20Z / 2026-08-26T14:05Z                                          |
+| Starting SHA    | `67ac508` on `feat/domain-and-migrations`                                      |
+| Ending SHA      | `4eca035` on `feat/domain-and-migrations`                                      |
+| Objective       | Execute the unrun Phase 2 schema, finish the mappings, and close the phase out |
+
+**Outcome:** six commits. The schema that had been written and never run now runs, all fifteen
+tables are mapped and validated, and the constraint suite, the seed foundation and the two diagrams
+Phase 2 owes are in place.
+
+### The session's actual subject: nothing had been executed
+
+The previous session committed six migrations, three domain types and four entity mappings without
+a database. Everything below came out of finally running it, and none of it was visible by reading.
+
+**Three defects in the first `./mvnw verify`, in the order they surfaced.**
+
+`PostgreSQLContainer<?>` does not compile. Testcontainers 2.x moved the class to
+`org.testcontainers.postgresql` and dropped the self-referential type parameter, so every example
+written against 1.x is wrong here.
+
+`spring.datasource.hikari.connection-timeout: 10s` failed startup with `NumberFormatException`.
+Everything under that prefix binds straight onto `HikariDataSource`, whose setters take a `long`;
+Boot's `Duration` conversion never gets a chance. That was committed, unrun, and would have failed
+identically in production.
+
+`spring-boot-flyway` was absent. In Spring Boot 4 the autoconfiguration is its own module.
+`flyway-core` was on the classpath, every `spring.flyway.*` property bound to nothing, no migration
+ran — and the only symptom was Hibernate reporting `missing table [customers]`, which reads exactly
+like a mapping defect and is not one. That is the one worth remembering: the error named the wrong
+layer.
+
+### A state-file discrepancy, corrected in favour of Git
+
+`PROJECT_STATE.md` and commit `78290dc` both said six of fifteen tables were mapped. Four were.
+`Merchant` and `Account` were described in that commit's own message and never written. Git is
+right; the state file is corrected and this is the note the workflow rules require.
+
+### Alert.version, resolved rather than carried forward
+
+OpenAPI required `minimum: 1`; Hibernate seeds a new `@Version` at 0; the `CHECK` permits 0. The
+contract moved to `minimum: 0` with the reason written into the schema. The version is an opaque
+concurrency token — a client echoes it back as `expectedVersion` and compares it for equality —
+so bending the mapping would have bought a translation layer whose only job was hiding the ORM's
+counter from someone who cannot interpret it anyway. `alert-updated.v1.json` keeps `minimum: 1`
+and now says why: that event only ever describes a change, so the version has already been
+incremented by the time one is published.
+
+### What the tests are actually asserting
+
+Every constraint test names the constraint it expects to fire. "Something failed" would let a test
+pass on a fixture typo, a missing not-null, or a foreign key nobody meant to trip, which is how a
+constraint quietly stops being tested while its test stays green. Where a rule has a permitted
+counterpart the counterpart is asserted too — the same idempotency key on a _different_ account
+must succeed — because a schema that rejects everything also passes a suite that only checks for
+rejection.
+
+Two things the run corrected in the tests themselves. The optimistic-lock test first re-read the
+alert _after_ the winning write, which is not stale; it now detaches before the winner commits. And
+it asserts `jakarta.persistence.OptimisticLockException`, not Spring's translated type, because
+translation happens in a `@Repository` proxy and that test drives the `EntityManager` directly.
+
+`make test-api` and `make test-integration` are now different things. The service cannot start
+without PostgreSQL, so leaving every test in one target would have made `make test` require Docker,
+which is not what "all standard suites" has meant here.
+
+### Seed determinism is a specification claim, not an observation
+
+The loader uses only `java.util.Random` and only its single-argument `nextInt(int)`. The
+two-argument form is a `RandomGenerator` default method whose implementation the specification does
+not pin, and the entire claim is that seed `20260826` reproduces on someone else's machine.
+
+The manifest checksums generated _references_, not identifiers: identifiers are UUIDv7 and embed
+the millisecond they were minted, so two identical runs necessarily differ there and hashing them
+would prove nothing. Row contents are asserted directly instead.
+
+The data is synthetic by construction rather than by anonymisation — there is no column for a name,
+an address or a card number anywhere — and a test asserts no such column has appeared, so adding
+one fails rather than quietly giving the seed somewhere to put it.
+
+### Documentation that cannot go stale silently
+
+`DATA_MODEL.md` deliberately does not repeat the column lists; the migrations are authoritative and
+a duplicated list misleads someone eventually. `SchemaDocumentationIT` asserts the ER diagram's
+entity blocks are exactly the tables that exist, because to a compiler a diagram is prose and
+nothing else in the build would notice it drifting.
+
+### Tests and results — every figure from a run on 2026-08-26
+
+| Command                                      | Result                                                 |
+| -------------------------------------------- | ------------------------------------------------------ |
+| `./mvnw verify` (JDK 25.0.4.1+1)             | **PASS** — 23 unit, 57 integration, coverage check met |
+| `./mvnw verify -DskipITs -Djacoco.skip=true` | **PASS** — 23/23                                       |
+| JaCoCo, both suites                          | 62.0% lines (432/697), 63.8% branches (60/94)          |
+| `bun scripts/dev/check-contracts.mjs`        | **PASS**                                               |
+| `bun scripts/dev/check-docs.mjs`             | **PASS** — 89 links across 33 files, 0 broken          |
+| `bun run format:check`                       | **PASS**                                               |
+| `bun run typecheck` (web)                    | **PASS**                                               |
+| `bun run test` (web)                         | **PASS** — 24/24                                       |
+
+The coverage floor was set to 0.50 line / 0.40 branch after the first measurement of 52.4% / 46.9%,
+deliberately below it: a threshold at the measurement fails the next honest refactor, and one chosen
+before a measurement is a guess. The later 62.0% / 63.8% is the same gate with the seed and
+documentation suites added.
+
+`make` is still absent on the reference machine, so the Makefile changes were verified by running
+the equivalent Maven invocations directly and the PowerShell runner was updated in the same commit.
