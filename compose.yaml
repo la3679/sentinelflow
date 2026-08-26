@@ -133,6 +133,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-sentinelflow}
       POSTGRES_USER: ${POSTGRES_USER:-sentinelflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make bootstrap to generate local secrets}
+      # Same reasoning as POSTGRES_HOST: inside the network the broker is the
+      # service name on its container port. KAFKA_HOST_PORT in .env publishes a
+      # different listener to the host and is deliberately not used here.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:

@@ -69,6 +69,27 @@ spring:
     # until a test noticed.
     default-property-inclusion: always
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # acks=all with idempotence. The outbox guarantees an event is not lost
+      # before publication; these are what stop it being lost during it. A
+      # leader acknowledging alone can lose the record when it fails before its
+      # replicas catch up, and without idempotence a producer-side retry can
+      # write the same record twice within one send.
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        # Bounded, and shorter than the relay's own send timeout, so a failure
+        # surfaces as a retryable publication error rather than as a claim
+        # holding row locks while the producer waits.
+        delivery.timeout.ms: 20000
+        request.timeout.ms: 10000
+        linger.ms: 5
+
   flyway:
     enabled: true
     # No baseline-on-migrate: it exists to adopt a database that already has a
@@ -86,6 +107,23 @@ spring:
 # populates whatever database it is pointed at is a service nobody can safely
 # point at anything. Turn it on deliberately, for one run.
 sentinelflow:
+  outbox:
+    # The relay. On by default: an outbox nobody drains is a queue that only
+    # grows, and a service that silently stops publishing is worse than one that
+    # fails loudly. Turned off in tests that drive a drain directly, so a
+    # scheduled thread cannot publish a row out from under an assertion.
+    enabled: ${SENTINELFLOW_OUTBOX_ENABLED:true}
+    # The publication delay, and the honest cost of the outbox (ADR-0005).
+    # Nothing in this pipeline is real-time.
+    poll-interval: ${SENTINELFLOW_OUTBOX_POLL_INTERVAL:500ms}
+    # Bounds how long one claim holds row locks when the broker is slow.
+    batch-size: ${SENTINELFLOW_OUTBOX_BATCH_SIZE:100}
+    retry-base: 1s
+    retry-max-delay: 5m
+    # About 25 minutes of trying: long enough to ride out a broker restart,
+    # short enough that a genuinely broken event is visible within the hour.
+    max-attempts: 10
+
   seed:
     enabled: ${SENTINELFLOW_SEED_ENABLED:false}
     # The same value produces the same dataset on any machine, which is what

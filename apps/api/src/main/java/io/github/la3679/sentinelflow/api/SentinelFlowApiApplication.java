@@ -4,6 +4,7 @@ package io.github.la3679.sentinelflow.api;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Entry point for the SentinelFlow API.
@@ -17,6 +18,10 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
+// The outbox relay polls on a schedule (ADR-0005). Without this the relay bean
+// exists, never runs, and the outbox grows silently - which is the failure mode
+// hardest to notice, because nothing errors.
+@EnableScheduling
 public class SentinelFlowApiApplication {
 
     public static void main(String[] args) {
