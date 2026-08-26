@@ -28,29 +28,37 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phase 1 of 10 complete
+## Current status — Phases 0 to 3 complete, Phase 4 in progress
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
 
-| Phase | Scope                                              | State        |
-| ----- | -------------------------------------------------- | ------------ |
-| 0     | Research gate, product baseline, repository        | **complete** |
-| 1     | Monorepo, developer foundation, CI, containers     | **complete** |
-| 2     | Contracts, domain model, PostgreSQL migrations     | next         |
-| 3     | Transaction ingestion, transactional outbox, Kafka | not started  |
-| 4     | Synthetic data generation and risk scoring         | not started  |
-| 5     | Alert lifecycle, investigations, audit             | not started  |
-| 6     | Operations console wired to the real API           | not started  |
-| 7     | Observability and resilience                       | not started  |
-| 8     | Security and release-quality hardening             | not started  |
-| 9     | Performance, documentation, clean-clone check      | not started  |
-| 10    | v1.0.0 release                                     | not started  |
+| Phase | Scope                                              | State           |
+| ----- | -------------------------------------------------- | --------------- |
+| 0     | Research gate, product baseline, repository        | **complete**    |
+| 1     | Monorepo, developer foundation, CI, containers     | **complete**    |
+| 2     | Contracts, domain model, PostgreSQL migrations     | **complete**    |
+| 3     | Transaction ingestion, transactional outbox, Kafka | **complete**    |
+| 4     | Synthetic data generation and risk scoring         | **in progress** |
+| 5     | Alert lifecycle, investigations, audit             | not started     |
+| 6     | Operations console wired to the real API           | not started     |
+| 7     | Observability and resilience                       | not started     |
+| 8     | Security and release-quality hardening             | not started     |
+| 9     | Performance, documentation, clean-clone check      | not started     |
+| 10    | v1.0.0 release                                     | not started     |
 
 **What runs today:** `docker compose up` starts PostgreSQL, Kafka, the Spring Boot API, the FastAPI
-scoring service, the console, Prometheus and Grafana; all seven report healthy, Prometheus scrapes
-both services, and a 23-check smoke test passes against them. The console renders from a mock
-fixture layer, because the API has no data endpoints yet — that is Phase 2 and 3.
+scoring service, the console, Prometheus and Grafana; all seven report healthy and Prometheus
+scrapes both services.
+
+The pipeline is end to end. A transaction posted to `/api/v1/transactions` is written with its
+outbox row in one database transaction, published to Kafka by the relay, consumed idempotently, and
+either handled or dead-lettered with a classified reason. `make seed` fills the stack with
+deterministic synthetic traffic that travels that same path.
+
+**What does not run yet:** there is no model, so nothing scores a transaction — the consumer's
+handler seam is deliberately empty until Phase 4 fills it. The console still renders from a mock
+fixture layer, because the API has no read endpoints yet; that is Phase 5 and 6.
 
 Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 
@@ -108,12 +116,14 @@ flowchart LR
 
     classDef built fill:#0f2b3d,stroke:#4ba3c7,color:#e6f1f7
     classDef planned fill:#2b2b2b,stroke:#666,color:#aaa,stroke-dasharray:4 3
-    class U,W,A,P,K,M,O,G built
-    class C planned
+    class U,W,A,P,K,C,O,G built
+    class M planned
 ```
 
-Solid boxes exist and run today. The dashed **risk consumer** is Phase 3 — it is drawn because it
-is the reason the outbox exists, and it is marked because it does not run yet.
+Solid boxes exist and run today, the risk consumer included since Phase 3. The dashed link is the
+**model**: the scoring service is running and healthy, but it has no model to serve and nothing
+calls it yet. That is Phase 4, and the arrow is marked rather than removed because the consumer's
+handler seam exists and is waiting for it.
 
 The API is the only backend the console talks to; scoring is reached through the API and never
 directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See
@@ -145,8 +155,11 @@ flowchart TB
 Every container runs as a non-root user and declares a health check; CI asserts the non-root user
 against the built image rather than trusting the Dockerfile.
 
-Sequence, outbox-delivery, alert state-machine and ER diagrams arrive with the behaviour they
-describe, in Phases 2 to 5. Drawing them now would document a system that does not exist.
+Diagrams arrive with the behaviour they describe. The ER diagram and the transaction-to-alert flow
+exist — [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md) and
+[`TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md), both generated from
+`information_schema` on a database the migrations built, with a test asserting the ER diagram's
+entities are exactly the tables that exist. The alert state machine arrives with Phase 5.
 
 ## Technology
 
@@ -274,26 +287,47 @@ until the scoring client does.
 
 ## Testing
 
-Every figure below came from a run on **2026-08-25**, on the branch that became this commit.
+Every figure below came from a run that actually happened, and each block says when. Nothing here
+is estimated, and a figure that has not been re-measured keeps the date it was measured on rather
+than being quietly refreshed.
 
-| Suite                       | Command                 | Result                                      |
-| --------------------------- | ----------------------- | ------------------------------------------- |
-| Console — unit              | `make test-web`         | **24 passed / 24**, 5 files                 |
-| Console — coverage          | `bun run test:coverage` | 40.4% lines                                 |
-| Console — browser + a11y    | `make test-e2e`         | **58 passed / 58** (29 desktop + 29 tablet) |
-| axe, WCAG 2.1 A/AA          | in the above            | **0 violations**, 8 routes, 2 viewports     |
-| API — build, test, Spotless | `make test-api`         | **5 passed / 5**, `BUILD SUCCESS`           |
-| Scoring — unit              | `make test-scoring`     | **6 passed / 6**                            |
-| Scoring — coverage          | `uv run pytest --cov`   | 83% lines                                   |
-| Scoring — types             | `uv run mypy`           | strict, **0 issues**, 6 files               |
-| Running stack               | `make smoke`            | **23 passed / 0 failed**                    |
-| Secrets, full history       | `make security`         | **0 leaks**                                 |
-| Container scan              | Trivy in CI             | **0 fixable HIGH or CRITICAL**              |
+**2026-08-26**, on the commit that finished Phase 3:
+
+| Suite                             | Command                | Result                                                  |
+| --------------------------------- | ---------------------- | ------------------------------------------------------- |
+| API — full verify                 | `./mvnw verify`        | **57 unit + 116 integration passed**, coverage gate met |
+| API — coverage                    | JaCoCo, both suites    | 80.5% lines (1168/1451), 70.0% branches (191/273)       |
+| Console — unit                    | `make test-web`        | **24 passed / 24**, 5 files                             |
+| Contracts                         | `make contracts-check` | **PASS** — every schema, example and API document       |
+| Documentation links, placeholders | `make docs-check`      | **PASS** — 98 links across 35 files, 0 broken           |
+| Formatting, repository-wide       | `make format-check`    | **PASS**                                                |
+
+The API's integration suites run against **real PostgreSQL 18.6 and real Kafka 4.2.1** in
+Testcontainers, on the GitHub runner as well as locally — the runner's log shows the migrations
+applied and the same test counts. H2 is never accepted as evidence, and neither is a mocked broker.
+
+**2026-08-25**, and not re-measured since:
+
+| Suite                    | Command                 | Result                                      |
+| ------------------------ | ----------------------- | ------------------------------------------- |
+| Console — coverage       | `bun run test:coverage` | 40.4% lines                                 |
+| Console — browser + a11y | `make test-e2e`         | **58 passed / 58** (29 desktop + 29 tablet) |
+| axe, WCAG 2.1 A/AA       | in the above            | **0 violations**, 8 routes, 2 viewports     |
+| Scoring — unit           | `make test-scoring`     | **6 passed / 6**                            |
+| Scoring — coverage       | `uv run pytest --cov`   | 83% lines                                   |
+| Scoring — types          | `uv run mypy`           | strict, **0 issues**, 6 files               |
+| Running stack            | `make smoke`            | **23 passed / 0 failed**                    |
+| Secrets, full history    | `make security`         | **0 leaks**                                 |
+| Container scan           | Trivy in CI             | **0 fixable HIGH or CRITICAL**              |
 
 The console's 40.4% line coverage is honest rather than flattering: its routes are covered by the
 Playwright suite instead, and writing unit tests purely to move that number would be
-[exactly the shortcut this project refuses](CONTRIBUTING.md). Coverage thresholds are set in later
-phases, against a baseline that means something.
+[exactly the shortcut this project refuses](CONTRIBUTING.md).
+
+The API's coverage gate is a ratchet — measured, then set below the measurement, raised only when a
+phase genuinely raises coverage, and never lowered to go green. It is currently LINE 0.70 and BRANCH
+0.60. `apps/web` and `apps/scoring` have no threshold yet; they get one against a baseline that
+means something, in Phases 4 and 6.
 
 **No latency, throughput, or false-positive figure is claimed anywhere in this repository.** None
 has been measured. Phase 9 measures them and reports the method alongside the result.
