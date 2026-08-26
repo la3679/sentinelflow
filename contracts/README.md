@@ -11,11 +11,20 @@ same change**. See [ADR-0006](../docs/adr/0006-event-schema-and-versioning.md) a
 
 | Path                                | What it is                                            |
 | ----------------------------------- | ----------------------------------------------------- |
-| `openapi/sentinelflow-api.yaml`     | The `/api/v1` HTTP surface (OpenAPI 3.1)              |
+| `openapi/sentinelflow-api.yaml`     | The public `/api/v1` HTTP surface (OpenAPI 3.1)       |
+| `openapi/sentinelflow-scoring.yaml` | The internal API-to-scoring contract (OpenAPI 3.1)    |
 | `asyncapi/sentinelflow-events.yaml` | The five Kafka topics (AsyncAPI 3.0)                  |
 | `schemas/`                          | JSON Schema 2020-12 for the envelope and each payload |
 | `examples/`                         | Instances that **must** validate                      |
 | `examples/invalid/`                 | Instances that **must be rejected**                   |
+
+**Every document in `openapi/` is validated**, not a named one. The checker reads the directory, so
+adding a document is enough to have it checked — the alternative is a second contract that nothing
+verifies, which is exactly what "authoritative" is meant to rule out.
+
+The scoring contract is **internal**. It is not reachable from a browser and is not part of `/api/v1`:
+the API is the only backend the console talks to, so there is one authorization boundary, one audit
+trail, and one place to rate-limit ([ADR-0002](../docs/adr/0002-monorepo-and-service-boundaries.md)).
 
 ## Checking them
 
@@ -36,7 +45,9 @@ It runs in CI on every push and pull request, and it does four things:
 3. **Every invalid example is rejected.** These are the cases that matter: a validator that accepts
    everything passes silently. Deleting the `const: "NEW"` from `alert-created.v1.json` makes the
    check exit 1 and name the fixture — verified, not assumed.
-4. **Both API documents parse** and are internally consistent.
+4. **Every API document parses** and is internally consistent — both OpenAPI documents and the
+   AsyncAPI one. The OpenAPI list comes from the directory, so a new contract is checked the moment
+   it is added rather than when someone remembers to register it.
 
 ## The rules these encode
 

@@ -176,17 +176,33 @@ if (existsSync(INVALID)) {
 // ---------------------------------------------------------------------------
 process.stdout.write("\nAPI documents parse:\n");
 
-const openapiPath = join(CONTRACTS, "openapi", "sentinelflow-api.yaml");
-if (existsSync(openapiPath)) {
+// Every document in contracts/openapi/, not a named one. There are two now -
+// the public /api/v1 surface and the internal scoring contract - and a checker
+// that validates whichever was written first turns the second into a document
+// nothing checks, which is precisely what "contracts/ is authoritative" is meant
+// to rule out. The directory is the list.
+const OPENAPI = join(CONTRACTS, "openapi");
+const openapiDocuments = existsSync(OPENAPI)
+  ? readdirSync(OPENAPI)
+      .filter((name) => name.endsWith(".yaml") || name.endsWith(".yml"))
+      .sort()
+  : [];
+
+if (openapiDocuments.length === 0) {
+  fail("openapi/", "no OpenAPI documents found");
+}
+
+for (const name of openapiDocuments) {
   try {
+    // Imported per document rather than once: SwaggerParser caches resolved
+    // $refs on the instance, and two documents that define a schema of the same
+    // name would otherwise resolve against each other's.
     const SwaggerParser = (await import("@apidevtools/swagger-parser")).default;
-    const api = await SwaggerParser.validate(openapiPath);
-    pass(`openapi/sentinelflow-api.yaml — ${api.info.title} ${api.info.version}`);
+    const api = await SwaggerParser.validate(join(OPENAPI, name));
+    pass(`openapi/${name} — ${api.info.title} ${api.info.version}`);
   } catch (error) {
-    fail("openapi/sentinelflow-api.yaml", error.message.split("\n")[0]);
+    fail(`openapi/${name}`, error.message.split("\n")[0]);
   }
-} else {
-  fail("openapi/sentinelflow-api.yaml", "missing");
 }
 
 const asyncapiPath = join(CONTRACTS, "asyncapi", "sentinelflow-events.yaml");
