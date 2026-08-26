@@ -14,11 +14,11 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-26T20:30Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T21:35Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 3 complete and merged; Phase 4 next                                                                                               |
-| Current phase        | Phase 4 — synthetic data and scoring (not started)                                                                                               |
-| Current task         | Phase 4 — synthetic scenarios, the scoring service, and the first real handler                                                                   |
+| Overall status       | active — Phase 4 in progress: the boundary, the data and the contract have landed                                                                |
+| Current phase        | Phase 4 — synthetic data and scoring (three of twelve pieces done)                                                                               |
+| Current task         | The versioned feature pipeline in `apps/scoring`, against the contract merged in #31                                                             |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -76,7 +76,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 1 — monorepo and developer foundation**
 - [x] **Phase 2 — contracts, domain, and database**
 - [x] **Phase 3 — ingestion, outbox, and Kafka**
-- [ ] **Phase 4 — synthetic data and scoring** ← next
+- [ ] **Phase 4 — synthetic data and scoring** ← in progress
 - [ ] Phase 5 — alerts and investigations
 - [ ] Phase 6 — operations frontend
 - [ ] Phase 7 — observability and resilience
@@ -125,6 +125,89 @@ against the current schema and exercised locally before commit.
 **Documentation.** ADR-0002, `LOVABLE_GITHUB_WORKFLOW.md`, `BRANCH_PROTECTION.md`,
 `CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
 prompt-dump into something verified, with two generated screenshots.
+
+## In progress — Phase 4
+
+Three pieces have landed. The rest of the phase is the model itself and the client that calls it.
+
+**[ADR-0008](docs/adr/0008-scoring-service-boundary.md), merged as PR
+[#29](https://github.com/la3679/sentinelflow/pull/29).** Written before either side of the boundary
+existed, because it was about to be decided by whichever line of code was written first. Synchronous
+HTTP from inside the consumer's handler rather than an event round trip; scoring unavailable writes a
+degraded assessment rather than failing; budgets under ten seconds end to end because a consumer's
+retry blocks its partition; and the API owns the alerting threshold while the scoring service owns
+the score.
+
+Two gaps in it were found by reading it back against ADR-0002 and closed in the same pull request.
+It had settled that the call is HTTP and never said **what is in it** — so the request now carries
+the transaction plus a bounded account context the API computes, and the scoring service stays
+stateless rather than acquiring a database. And ADR-0002's "evaluation metrics and thresholds"
+row read as a contradiction: it is not, because a model's **operating point** and the **alerting
+policy** are different objects on different schedules, and both are persisted so which is which is
+never inferred.
+
+**The scenario generator, merged as PR
+[#30](https://github.com/la3679/sentinelflow/pull/30).** Deterministic synthetic traffic over the
+seeded parties: ordinary background spending with six shapes planted in it — a velocity burst, an
+amount spike relative to that account's own baseline, a card-testing run, an improbable journey, an
+account drain proportional to the balance, and an off-hours purchase from a device the account has
+never used. Every shape needs history to see, which is the point of generating data at all.
+
+It writes through `TransactionWriter`, so generated traffic gets the same validation, the same
+idempotency constraint and the same outbox row as a posted transaction, and flows through the relay
+and the consumer exactly as real traffic does. `make seed` is implemented on both the Makefile and
+the PowerShell runner.
+
+**Labels never enter the database**, and `ScenarioLoaderIT` asserts it against `information_schema`
+rather than trusting the intent. The distribution lives in the manifest as counts.
+
+**The scoring contract, merged as PR
+[#31](https://github.com/la3679/sentinelflow/pull/31).** `contracts/openapi/sentinelflow-scoring.yaml`
+— `/v1/score`, `/v1/model`, and the health endpoints — written before either implementation, the same
+order the public API document was written in. `check-contracts.mjs` now validates **every** document
+in `contracts/openapi/` rather than one named file, which is what stops a second authoritative
+document from being one nothing checks.
+
+### Two defects found by running things
+
+- **Hibernate logged every aborted statement at WARN with the full SQL and all bound values.** A
+  duplicate idempotency key is normal traffic under at-least-once ingestion — handled, with the
+  caller getting its original result back — and it printed the amount, both references, the device
+  handle and the key. Wrong twice: it turns the expected path into an alarm, and those values are
+  what this project's own rules say not to log. `org.hibernate.orm.jdbc.error` is now at ERROR.
+- **Content-derived idempotency keys collide.** Two ordinary purchases on one account, at one
+  merchant, in the same second, for the same amount are possible in fourteen days of traffic, and the
+  second would have been silently rejected as a duplicate — leaving a dataset smaller than the
+  manifest claimed. A sequence number fixes it, and a test asserts uniqueness over the `DEMO` profile.
+
+### What remains in Phase 4
+
+| Piece                                       | State                                                         |
+| ------------------------------------------- | ------------------------------------------------------------- |
+| ADR-0008, the scoring boundary              | **done** (#29)                                                |
+| Scenario generator, `make seed`             | **done** (#30)                                                |
+| Scoring contract                            | **done** (#31)                                                |
+| Versioned feature pipeline                  | not started — `apps/scoring`, leakage prevention is the point |
+| Transparent rules baseline                  | not started — `apps/api`, per ADR-0002                        |
+| Reproducible training, evaluation, registry | not started                                                   |
+| ADR-0010, model and evaluation choice       | not started                                                   |
+| Model card and `EVALUATION.md`              | not started                                                   |
+| `/v1/score` and `/v1/model` implementations | not started                                                   |
+| Spring scoring client with resilience       | not started                                                   |
+| Persisted risk assessments                  | not started                                                   |
+| `make replay`                               | not started — lands with the client, see below                |
+
+**`make replay` is deliberately still unimplemented and still fails loudly.** The transaction shapes
+it would replay are generated today by `make seed`. Its own value is in the operational scenarios
+§8.3 lists — a temporary scoring-service outage, a malformed event reaching the dead-letter path —
+and neither exists to replay until the scoring client does. It lands with the pieces it demonstrates
+rather than ahead of them.
+
+**Rapid fan-in is not expressible at all**, and `docs/data/DATA_PROVENANCE.md` says so rather than
+leaving it as a silent gap: `transactions` records an account and a merchant and has no counterparty
+account column, so a transfer between two accounts is one row on one account. Changing the schema to
+satisfy a generator would be the wrong way round. Rounded-value transfers and rapid fan-out are
+expressible and are simply not implemented yet.
 
 ## Completed — Phase 3, merged as PRs [#26](https://github.com/la3679/sentinelflow/pull/26), [#27](https://github.com/la3679/sentinelflow/pull/27) and [#28](https://github.com/la3679/sentinelflow/pull/28)
 
@@ -322,6 +405,24 @@ available.
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
 
+### 2026-08-26 — Phase 4, so far
+
+Local run under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`, then reproduced on the GitHub runner.
+
+| Command                                  | Result                                                        |
+| ---------------------------------------- | ------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)         | **PASS** — 57 unit, 116 integration, coverage gate met        |
+| The same, on the GitHub runner           | **PASS** — same counts, gate met                              |
+| JaCoCo over both suites                  | 80.5% lines (1168/1451), 70.0% branches (191/273)             |
+| `bun scripts/dev/check-contracts.mjs`    | **PASS** — all three API documents                            |
+| The same, against a broken document      | **FAILS and names the file** — verified, not assumed          |
+| `bun scripts/dev/check-docs.mjs`         | **PASS** — 99 links across 35 files, 0 broken, 0 placeholders |
+| `bun run format:check` (repository-wide) | **PASS**                                                      |
+| PowerShell parse of `sf.ps1`             | **PASS** — 0 errors                                           |
+
+The coverage gate stays at LINE 0.70 / BRANCH 0.60. It measures above both, and ratcheting twice
+inside one phase is churn; the next turn comes when Phase 4 finishes.
+
 ### 2026-08-26 — Phase 3
 
 Local run under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`, then reproduced on the GitHub runner.
@@ -403,9 +504,12 @@ this repository. None has been measured.** Phase 9 measures them.
 **Still needing an ADR:** 0010 model and evaluation choice · 0011 SSE versus WebSockets · 0012
 authentication · 0013 observability · 0014 deployment strategy.
 
-**Contracts:** `contracts/` exists and is validated in CI — OpenAPI 3.1 for `/api/v1`,
-AsyncAPI 3.0 for the five topics, and seven JSON Schemas. `make contracts-check` compiles every
-schema, validates every example, and asserts the deliberately-invalid ones are rejected.
+**Contracts:** `contracts/` is validated in CI — OpenAPI 3.1 for the public `/api/v1`, OpenAPI 3.1
+for the internal API-to-scoring boundary, AsyncAPI 3.0 for the five topics, and seven JSON Schemas.
+`make contracts-check` compiles every schema, validates every example, asserts the
+deliberately-invalid ones are rejected, and parses **every** document in `contracts/openapi/` rather
+than one named file — which is what stops a second authoritative document from being one nothing
+checks.
 
 ## Known issues and technical debt
 
@@ -498,23 +602,30 @@ None.
 
 ## Next three actions
 
-Phase 3 is merged and `main` is green. None of these is blocked.
+Phase 4 is in progress and `main` is green. Nothing is blocked.
 
-1. **Write ADR-0008 — the scoring-service boundary.** It is the last decision standing between here
-   and Phase 4's first line of code, and it has to settle what crosses the boundary and how failure
-   behaves: synchronous HTTP from the consumer or an event round trip, what the API does when scoring
-   is unavailable (the `degraded` factory on `RiskAssessment` exists and nothing constructs one yet),
-   what the timeout and retry budget are given that a consumer's retry blocks its partition, and
-   which of the two services owns the threshold that turns a score into an alert. ADR-0006 §4 already
-   classifies a scoring 5xx as retryable, so the ADR is constrained rather than open.
-2. **Phase 4 — synthetic data and scoring.** The scenario generator and `make seed` (the Phase 2 seed
-   loader covers parties only), the FastAPI scoring endpoints, feature engineering, and the first
-   real `TransactionCreatedHandler` — which registers into the list the consumer already injects, so
-   no change to the consumer is needed. Set coverage thresholds for `apps/scoring` while its code is
+1. **The versioned feature pipeline, in `apps/scoring`.** Build it against
+   `contracts/openapi/sentinelflow-scoring.yaml`, which already fixes what arrives: the transaction
+   and a bounded `AccountContext` carrying `lookbackWindowSeconds` and `truncated`. Those two fields
+   exist so a feature defined over 24 hours that only received an hour reports it in `warnings`
+   rather than returning a confidently wrong number — honour them rather than ignoring them.
+   Features are versioned and deterministic, and **nothing that would only be known after an
+   analyst's decision may enter one**; that rule is the difference between an evaluation that means
+   something and one that does not. Set a coverage threshold for `apps/scoring` while the code is
    being written, not after.
-3. **Self-host Google Fonts, or defer it deliberately.** Small, and the only remaining external
-   runtime dependency in a stack that claims to be local-first. Currently carried as Phase 6 work; it
-   is worth ten minutes now if Phase 4 stalls on anything.
+2. **ADR-0010 — the model and evaluation choice — then reproducible training.** The ADR comes first
+   for the same reason ADR-0008 did: the comparison is rules-only, logistic regression, a tree-based
+   model if it materially helps, and Isolation Forest as an unsupervised comparison, and the
+   production-demo candidate is chosen on documented evidence rather than on the highest number.
+   Training is an explicit offline command, never an API side effect. Time-aware or group-aware
+   splitting, so the same account cannot appear in both train and test. **Accuracy is never the
+   headline** — PR-AUC is, with precision, recall, false-positive rate and alert volume beside it.
+3. **`/v1/score` and `/v1/model`, then the Spring client and persisted assessments.** The client
+   carries the timeouts, bounded retry and circuit breaker ADR-0008 §3 fixes, and the circuit
+   breaker is load-bearing rather than decoration: without it every record in a backlog pays the
+   full timeout before degrading. The first real `TransactionCreatedHandler` registers into the list
+   the consumer already injects, so the consumer itself needs no change. `make replay` lands here
+   too, because a scoring outage and a poison event are the scenarios worth replaying.
 
 ## Session startup commands
 
