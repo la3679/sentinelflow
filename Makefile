@@ -97,17 +97,21 @@ test: test-web test-api test-scoring ## Run every standard test suite
 test-web: ## Unit tests for the console
 	@cd $(WEB) && $(BUN) run test
 
+# Unit tests only. `make test` must run without Docker, so the Testcontainers
+# suites are excluded here and have their own target below. JaCoCo is skipped
+# with them: the coverage threshold is set for a full run, and half a run
+# cannot be judged against it.
 test-api: ## Tests for the Spring Boot service
-	@cd $(API) && $(MVNW) -B verify
+	@cd $(API) && $(MVNW) -B verify -DskipITs -Djacoco.skip=true
 
 test-scoring: ## Tests for the scoring service
 	@cd $(SCORING) && $(UV) run pytest
 
-# Not implemented yet. Testcontainers suites arrive with the schema they verify.
-test-integration: ## (Phase 2) Testcontainers PostgreSQL and Kafka suites
-	@echo "make test-integration is not implemented yet."
-	@echo "Testcontainers suites arrive in Phase 2 with the schema they verify."
-	@exit 1
+# Needs a running Docker engine. skipUnitTests is a property of our own because
+# Surefire and Failsafe share the built-in skipTests, so there is no standard
+# way to skip only the fast half.
+test-integration: ## Testcontainers PostgreSQL suites (requires Docker)
+	@cd $(API) && $(MVNW) -B verify -DskipUnitTests=true
 
 test-e2e: ## Playwright browser, accessibility and responsive checks
 	@cd $(WEB) && $(BUN) run build && $(BUN) run test:e2e

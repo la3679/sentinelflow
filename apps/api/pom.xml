@@ -286,6 +286,52 @@
               <goal>report</goal>
             </goals>
           </execution>
+          <!--
+            The coverage floor. Measured, then set below the measurement: on
+            2026-08-26 a full `./mvnw verify` covered 52.4% of lines (296/565)
+            and 46.9% of branches (30/64), so these are 50% and 40%.
+
+            A threshold chosen before a measurement is a guess, and a threshold
+            set exactly at the measurement fails the next honest refactor. This
+            is a ratchet - raise it when a phase genuinely raises coverage, and
+            never lower it to go green.
+
+            The gap is almost entirely accessors on entities Phases 3 to 5 have
+            not reached yet: the model registry, the audit log, the
+            deduplication ledger and the alert-action history all have mappings
+            and no callers.
+
+            Judged over both suites, because the report is. `make test-api`
+            runs the unit half alone and passes -Djacoco.skip=true, since one
+            half of a run cannot be measured against a threshold set for the
+            whole of it.
+          -->
+          <execution>
+            <id>check-coverage</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.50</minimum>
+                    </limit>
+                    <limit>
+                      <counter>BRANCH</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.40</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
     </plugins>

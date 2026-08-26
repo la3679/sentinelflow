@@ -46,7 +46,12 @@ jobs:
       # in .mvn/wrapper/maven-wrapper.properties. CI deliberately uses the same
       # wrapper as a developer rather than a preinstalled Maven, so a checksum
       # or version problem is caught here and not only on someone's laptop.
-      - name: Verify (compile, test, JaCoCo, Spotless)
+      # The full run, including the Testcontainers suites: GitHub-hosted
+      # runners provide a Docker engine, so the schema is verified against real
+      # PostgreSQL 18 here and not only on a developer's machine. The JaCoCo
+      # threshold is judged over both suites, so this is the job that enforces
+      # it.
+      - name: Verify (compile, test, Testcontainers, JaCoCo, Spotless)
         run: ./mvnw -B --no-transfer-progress verify
 
       - name: Upload coverage report
@@ -62,7 +67,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: api-surefire-reports
-          path: apps/api/target/surefire-reports/
+          name: api-test-reports
+          path: |
+            apps/api/target/surefire-reports/
+            apps/api/target/failsafe-reports/
           retention-days: 7
           if-no-files-found: ignore
