@@ -1,0 +1,596 @@
+openapi: 3.1.0
+
+info:
+  title: SentinelFlow scoring service
+  version: 1.0.0
+  summary: Model inference over a transaction and a bounded account context.
+  description: |
+    **SentinelFlow is an independent, educational project operating on fictional
+    synthetic data.** It executes no financial transaction and makes no
+    financial decision. Nothing this service returns is advice.
+
+    This is an **internal** contract between `apps/api` and `apps/scoring`. It is
+    not reachable from a browser and is not part of the public `/api/v1`
+    surface: the API is the only backend the console talks to, so there is one
+    authorization boundary, one audit trail, and one place to rate-limit
+    ([ADR-0002](../../docs/adr/0002-monorepo-and-service-boundaries.md)).
+
+    Written before the handlers exist, so implementation is reviewed against it
+    rather than the reverse. Endpoints are marked with the phase that delivers
+    them; an endpoint here is not necessarily running yet.
+
+    ## What this service does and does not decide
+
+    It returns a **score** and the reasons for it. It never decides whether an
+    alert should exist. Alerting policy is configuration in the API, versioned
+    as `policyVersion` and persisted on every assessment, because a threshold is
+    a business decision on a different schedule from a model and has to apply
+    identically whether or not the model answered at all. See
+    [ADR-0008](../../docs/adr/0008-scoring-service-boundary.md) §4.
+
+    ## What crosses the boundary
+
+    A transaction, and a **bounded account context the API computes**. Several
+    of the features this project needs are historical — counts over the last
+    minute, five minutes and hour; sums over the last hour and day; whether this
+    merchant, device or country is new for the account — and this service has no
+    database. Giving it one would make two services systems of record for a
+    table `apps/api` already owns.
+
+    So the API sends the history and this service turns it into a feature
+    vector. The context is bounded and versioned: a request whose size grows
+    with an account's history is a denial-of-service primitive, and an
+    unversioned one cannot change without deploying both services at the same
+    instant. See [ADR-0008](../../docs/adr/0008-scoring-service-boundary.md) §1.
+
+    **Nothing that would only be known after an analyst's decision may appear in
+    a request.** A feature the model could not have had at scoring time makes
+    every evaluation of it worthless.
+
+    ## Conventions
+
+    - **Money is a decimal string with an explicit currency**, never a JSON
+      number, exactly as on the public API
+      ([ADR-0007](../../docs/adr/0007-money-identifiers-and-schema-migrations.md)).
+    - **Identifiers are UUIDv7.** Synthetic references such as `ACC-000123` are
+      human-readable handles, never keys.
+    - **Timestamps are ISO 8601 UTC** with an explicit offset.
+    - **Errors are RFC 9457 `application/problem+json`** and never contain a
+      traceback, a file path, or an echo of the input.
+    - **`X-Correlation-Id`** is accepted and echoed, tying one scoring call to
+      the transaction, the event and the log lines it belongs to.
+
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8000
+    description: |
+      The local development stack from `compose.yaml`. Reached by the API over
+      the compose network as `http://scoring:8000`; the published port exists so
+      a developer can `curl` it. **Not a deployment target.**
+
+tags:
+  - name: scoring
+    description: Inference. Phase 4.
+  - name: model
+    description: Which model is loaded, and what it was measured at. Phase 4.
+  - name: operations
+    description: Liveness, readiness and build identity. Delivered in Phase 1.
+
+paths:
+  /health/live:
+    get:
+      tags: [operations]
+      operationId: getLiveness
+      summary: Whether the process is running.
+      description: |
+        Liveness only. A process that is up but cannot reach its dependencies is
+        live and **not ready** — collapsing the two makes an orchestrator
+        restart a container that only needed to be taken out of rotation.
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Liveness"
+
+  /health/ready:
+    get:
+      tags: [operations]
+      operationId: getReadiness
+      summary: Whether the service can do useful work.
+      description: |
+        `modelLoaded` is reported rather than assumed, so readiness never claims
+        a capability the service lacks. A service with no model is not ready to
+        score, and saying so is what lets the API degrade deliberately instead of
+        discovering it one request at a time.
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Not ready. No model is loaded, or a required dependency is unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /v1/model:
+    get:
+      tags: [model]
+      operationId: getActiveModel
+      summary: Which model is loaded, and what it was measured at.
+      description: |
+        The metadata that makes a score reconstructible months later: the model
+        and feature versions, the artifact's checksum, when it was trained, and
+        the metrics it was measured at on its own evaluation set.
+
+        **The operating point here is a recommendation, not the threshold that
+        ran.** The API applies its own alerting policy to a final score that also
+        folds in a rule score this model never saw. Both are persisted on every
+        assessment, so which is which is never inferred
+        ([ADR-0008](../../docs/adr/0008-scoring-service-boundary.md) §4).
+
+        Every figure is from the evaluation run named by `trainedAt`, on
+        synthetic data. None of them is a claim about any real system.
+      responses:
+        "200":
+          description: The active model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelInfo"
+        "503":
+          description: No model is loaded.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /v1/score:
+    post:
+      tags: [scoring]
+      operationId: scoreTransaction
+      summary: Score one transaction.
+      description: |
+        Synchronous, and expected to answer in milliseconds. The caller is a
+        Kafka consumer whose retry blocks its partition, so its whole budget for
+        this call is a couple of seconds
+        ([ADR-0008](../../docs/adr/0008-scoring-service-boundary.md) §3).
+
+        **Idempotent in the only sense that matters here: it has no side
+        effects.** The same request returns the same score for the same model and
+        feature version, so a retry is free and a duplicate is harmless. It
+        writes nothing and remembers nothing between requests.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoreRequest"
+      responses:
+        "200":
+          description: Scored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoreResponse"
+        "422":
+          description: |
+            The request does not satisfy this contract. **Never retried** — it
+            will not become valid, and the caller dead-letters it so a contract
+            mismatch between two services in one repository stays visible
+            ([ADR-0006](../../docs/adr/0006-event-schema-and-versioning.md) §4).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: |
+            No model is loaded. Retryable: the caller retries within its budget
+            and then writes a degraded assessment scored by rules alone.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+components:
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: |
+        Echoed on the response. Ties this call to the transaction, the event and
+        every log line about it. Generated by the caller if absent.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Money:
+      type: string
+      description: |
+        A decimal amount as a **string**, never a JSON number. Scale at most 4,
+        matching `NUMERIC(19,4)`. `JSON.parse` produces a `double`, so a JSON
+        number is rounded before application code sees it. See ADR-0007.
+      pattern: '^-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$'
+      examples: ["1249.99", "0.5000", "-42.00"]
+
+    CurrencyCode:
+      type: string
+      description: ISO 4217 alphabetic code.
+      pattern: "^[A-Z]{3}$"
+      examples: ["GBP"]
+
+    CountryCode:
+      type: string
+      description: ISO 3166-1 alpha-2 code.
+      pattern: "^[A-Z]{2}$"
+      examples: ["GB"]
+
+    Amount:
+      type: object
+      description: A monetary amount and the currency it is denominated in. Never one without the other.
+      additionalProperties: false
+      required: [value, currency]
+      properties:
+        value:
+          $ref: "#/components/schemas/Money"
+        currency:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    TransactionType:
+      type: string
+      enum: [PURCHASE, REFUND, TRANSFER, WITHDRAWAL, DEPOSIT]
+
+    TransactionChannel:
+      type: string
+      enum: [CARD_PRESENT, CARD_NOT_PRESENT, ONLINE_TRANSFER, ATM, DIRECT_DEBIT]
+
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [UP]
+
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status, modelLoaded]
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN]
+        modelLoaded:
+          type: boolean
+          description: Whether a scoring model is loaded and usable.
+
+    TransactionToScore:
+      type: object
+      description: |
+        The transaction being scored. A subset of what the API stores: enough to
+        compute features, and nothing that would only be known afterwards.
+      additionalProperties: false
+      required:
+        [
+          transactionId,
+          accountReference,
+          merchantReference,
+          merchantCategoryCode,
+          type,
+          channel,
+          amount,
+          originCountry,
+          deviceReference,
+          occurredAt,
+        ]
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+          description: UUIDv7. Carried for correlation and logging, never used as a feature.
+        accountReference:
+          type: string
+          pattern: "^ACC-[0-9]{6}$"
+        merchantReference:
+          type: string
+          pattern: "^MER-[0-9]{4}$"
+        merchantCategoryCode:
+          type: string
+          pattern: "^[0-9]{4}$"
+          description: ISO 18245. A property of a merchant, not of a person.
+        type:
+          $ref: "#/components/schemas/TransactionType"
+        channel:
+          $ref: "#/components/schemas/TransactionChannel"
+        amount:
+          $ref: "#/components/schemas/Amount"
+        originCountry:
+          $ref: "#/components/schemas/CountryCode"
+        deviceReference:
+          type: [string, "null"]
+          pattern: "^DEV-[0-9a-f]{12}$"
+          description: |
+            **Required and nullable.** Null rather than absent, so this service
+            never has to distinguish "this channel has no device" from "the
+            caller forgot the field".
+        occurredAt:
+          type: string
+          format: date-time
+          description: |
+            When the transaction happened, not when it was ingested. Every
+            velocity feature is computed against this.
+
+    RecentTransaction:
+      type: object
+      description: |
+        One earlier transaction on the same account. Deliberately thin: enough to
+        compute a velocity, an amount ratio, or a "new merchant" indicator, and
+        nothing more.
+      additionalProperties: false
+      required:
+        [occurredAt, amount, merchantReference, deviceReference, originCountry, channel, type]
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        amount:
+          $ref: "#/components/schemas/Amount"
+        merchantReference:
+          type: string
+          pattern: "^MER-[0-9]{4}$"
+        deviceReference:
+          type: [string, "null"]
+          pattern: "^DEV-[0-9a-f]{12}$"
+        originCountry:
+          $ref: "#/components/schemas/CountryCode"
+        channel:
+          $ref: "#/components/schemas/TransactionChannel"
+        type:
+          $ref: "#/components/schemas/TransactionType"
+
+    AccountContext:
+      type: object
+      description: |
+        The account history this service needs and cannot look up. Computed by
+        the API from one indexed read over `transactions_account_occurred_idx`.
+
+        **Bounded on purpose.** `recentTransactions` is capped, and the cap is
+        part of the contract rather than a convention: a request that grew with
+        an account's history would be a denial-of-service primitive, and a
+        service that accepted an unbounded one would be the vulnerability.
+
+        **`contextVersion` is separate from the payload version.** What the API
+        can cheaply compute changes for different reasons than what the model
+        wants, and a context that gained a field would otherwise force both
+        services to deploy together.
+      additionalProperties: false
+      required:
+        [contextVersion, lookbackWindowSeconds, accountOpenedAt, currentBalance, recentTransactions]
+      properties:
+        contextVersion:
+          type: integer
+          minimum: 1
+          description: The shape of this object. Currently 1.
+        lookbackWindowSeconds:
+          type: integer
+          minimum: 1
+          description: |
+            How far back `recentTransactions` reaches. Stated rather than
+            assumed: a feature computed over "the last 24 hours" is wrong if the
+            caller only sent an hour, and this is what lets the service say so in
+            `warnings` instead of returning a confidently wrong number.
+        accountOpenedAt:
+          type: string
+          format: date-time
+          description: Account age is a feature; a very new account behaves differently.
+        currentBalance:
+          $ref: "#/components/schemas/Amount"
+        recentTransactions:
+          type: array
+          maxItems: 200
+          description: |
+            Earlier transactions on this account inside the lookback window,
+            **newest first**, excluding the one being scored. Truncated to the
+            cap by the caller, which reports the truncation in `truncated`.
+          items:
+            $ref: "#/components/schemas/RecentTransaction"
+        truncated:
+          type: boolean
+          default: false
+          description: |
+            True when the account had more transactions in the window than the
+            cap allows. A count computed from a truncated list is a floor rather
+            than a count, and the service says so in `warnings` rather than
+            reporting it as though it were exact.
+
+    ScoreRequest:
+      type: object
+      additionalProperties: false
+      required: [transaction, accountContext]
+      properties:
+        transaction:
+          $ref: "#/components/schemas/TransactionToScore"
+        accountContext:
+          $ref: "#/components/schemas/AccountContext"
+
+    ReasonContribution:
+      type: object
+      description: |
+        One reason the score is what it is. A code and a signed contribution,
+        not free text: the console groups and filters on the code, and an
+        analyst's written justification has to survive the model being replaced.
+      additionalProperties: false
+      required: [code, contribution]
+      properties:
+        code:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{2,63}$"
+          description: A stable identifier such as `VELOCITY_1M_HIGH`.
+          examples: ["VELOCITY_1M_HIGH", "AMOUNT_RATIO_HIGH", "NEW_DEVICE"]
+        contribution:
+          type: number
+          description: |
+            Signed. Positive pushes the score up. Units are the model's own and
+            are only comparable within one `modelVersion`.
+
+    ScoreResponse:
+      type: object
+      additionalProperties: false
+      required: [modelVersion, featureVersion, modelScore, reasons, inferenceDurationMs, warnings]
+      properties:
+        modelVersion:
+          type: string
+          description: |
+            Persisted on the assessment. Without it a score months old cannot be
+            attributed to the model that produced it.
+        featureVersion:
+          type: string
+          description: |
+            Separate from `modelVersion`. A feature definition can change under a
+            model, and a score computed from different features is a different
+            score even when the model is identical.
+        modelScore:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: |
+            Higher is riskier. **Not a probability**, and deliberately not
+            presented as one: calling it a probability invites reading it as
+            "this transaction is 87% likely to be fraud", which no model here
+            supports.
+        reasons:
+          type: array
+          maxItems: 10
+          description: |
+            Bounded, most significant first. An unbounded list would be an
+            unbounded response, and ten is more than an analyst reads anyway.
+          items:
+            $ref: "#/components/schemas/ReasonContribution"
+        inferenceDurationMs:
+          type: number
+          minimum: 0
+          description: |
+            Measured by this service, so the caller can distinguish a slow model
+            from a slow network without guessing.
+        warnings:
+          type: array
+          maxItems: 10
+          description: |
+            What the service had to work around: a truncated context, a lookback
+            shorter than a feature wanted, an optional field absent. **Present
+            and empty rather than omitted**, so a caller never has to
+            distinguish "no warnings" from "the field was left out".
+          items:
+            type: string
+            maxLength: 200
+
+    ModelInfo:
+      type: object
+      additionalProperties: false
+      required: [modelVersion, featureVersion, algorithm, trainedAt, artifactSha256, metrics]
+      properties:
+        modelVersion:
+          type: string
+        featureVersion:
+          type: string
+        algorithm:
+          type: string
+          description: What it is, in one phrase. For example `logistic-regression`.
+        trainedAt:
+          type: string
+          format: date-time
+        artifactSha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: |
+            Verified before the artifact is activated. This service loads only
+            artifacts its own training pipeline produced, and a checksum is what
+            makes that a check rather than a convention.
+        datasetFingerprint:
+          type: string
+          description: Identifies the dataset it was trained on, so a result can be reproduced.
+        metrics:
+          $ref: "#/components/schemas/ModelMetrics"
+
+    ModelMetrics:
+      type: object
+      description: |
+        Measured on this model's own evaluation split, on synthetic data.
+
+        **Accuracy is deliberately absent.** Suspicious transactions are
+        extremely imbalanced, so a model that predicts "not suspicious" for
+        everything scores well on accuracy and is worthless. Reporting it at all
+        invites quoting it.
+      additionalProperties: false
+      required: [precision, recall, f1, averagePrecision, falsePositiveRate, operatingThreshold]
+      properties:
+        precision:
+          type: number
+          minimum: 0
+          maximum: 1
+        recall:
+          type: number
+          minimum: 0
+          maximum: 1
+        f1:
+          type: number
+          minimum: 0
+          maximum: 1
+        averagePrecision:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: PR-AUC. The headline metric for imbalanced classes.
+        rocAuc:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Secondary only. Optimistic under heavy imbalance.
+        falsePositiveRate:
+          type: number
+          minimum: 0
+          maximum: 1
+        operatingThreshold:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: |
+            The score at which the metrics above were measured. A
+            **recommendation**; the API's alerting policy is what actually runs.
+        alertVolumeAtThreshold:
+          type: integer
+          minimum: 0
+          description: How many of the evaluation set would have alerted. Precision without volume is half an answer.
+
+    Problem:
+      type: object
+      description: |
+        RFC 9457. Never contains a traceback, a file path, or an echo of the
+        input — an error response is the easiest place to leak what a caller
+        should not see back to them.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
