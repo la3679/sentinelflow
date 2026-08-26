@@ -33,6 +33,22 @@ FROM nginxinc/nginx-unprivileged:1.30.4-alpine3.24 AS runtime
 # The unprivileged image already runs as uid 101 and listens on 8080 rather
 # than 80, so no capability is needed and no user is added here.
 
+# CVE-2026-14456: unbounded memory growth in OpenSSL's QUIC server path.
+# Alpine 3.24 shipped the fix as 3.5.8-r0. This nginx tag still carries
+# 3.5.7-r0, because it has not been rebuilt since the advisory. Taking the
+# update from the repository is the fix; a .trivyignore would hide a
+# vulnerability that is genuinely patched and genuinely available.
+#
+# Pinned rather than a blanket `apk upgrade`, so the image stays a function of
+# this file rather than of the day it was built. root is needed because the
+# unprivileged base has already dropped to 101, and it is handed straight back.
+#
+# REMOVE THIS BLOCK once the base image ships >= 3.5.8-r0. Check with
+# `docker run --rm nginxinc/nginx-unprivileged:1.30.4-alpine3.24 apk list -I`.
+USER root
+RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
+USER 101
+
 COPY --chown=101:101 infra/docker/web-nginx.conf /etc/nginx/conf.d/default.conf
 
 # Only the client bundle. dist/server/ is a build artifact of the prerender
