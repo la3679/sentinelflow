@@ -17,7 +17,7 @@
 | Last updated UTC     | 2026-08-26T14:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 2 deliverables complete and **executed** on `feat/domain-and-migrations`; PR next                                                 |
-| Current phase        | Phase 2 — contracts, domain, and database (in progress)                                                                                          |
+| Current phase        | Phase 3 — ingestion, outbox, and Kafka (not started)                                                                                             |
 | Current task         | Phase 2 — open the pull request, get CI green on it, merge                                                                                       |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
@@ -53,8 +53,8 @@ which also records the two honest routes back to a design session if one is ever
 
 - [x] **Phase 0 — research gate and Lovable/GitHub bootstrap**
 - [x] **Phase 1 — monorepo and developer foundation**
-- [x] **Phase 2 — contracts, domain, and database** (pending PR and CI)
-- [ ] Phase 3 — ingestion, outbox, and Kafka
+- [x] **Phase 2 — contracts, domain, and database**
+- [ ] **Phase 3 — ingestion, outbox, and Kafka** ← current
 - [ ] Phase 4 — synthetic data and scoring
 - [ ] Phase 5 — alerts and investigations
 - [ ] Phase 6 — operations frontend
@@ -105,7 +105,7 @@ against the current schema and exercised locally before commit.
 `CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
 prompt-dump into something verified, with two generated screenshots.
 
-## Completed this session — Phase 2, branch `feat/domain-and-migrations`
+## Completed — Phase 2, merged as PR [#21](https://github.com/la3679/sentinelflow/pull/21)
 
 **The schema now runs.** Everything below was executed on 2026-08-26 against real PostgreSQL 18.6
 in Testcontainers, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`.
@@ -180,8 +180,21 @@ the state file was wrong, and the discrepancy is recorded in
 | Seed framework                     | **pass** | `DeterministicSeedLoader`, 6 tests; scenario generator is Phase 4           |
 | ER / data diagrams                 | **pass** | `docs/architecture/`, both generated from the live schema                   |
 
-**Not yet done for this phase:** the pull request is not open and CI has never run on this branch.
-Until it has, "CI green" is not claimable.
+**CI green, verified.** PR [#21](https://github.com/la3679/sentinelflow/pull/21) merged on
+2026-08-26 with all ten required checks passing, and all six workflows passed again on `main` at
+`c38934f`. The GitHub runner ran the Testcontainers suites for real — its log shows the six
+migrations applied and 23 unit plus 57 integration tests — so this is not a claim resting on one
+machine.
+
+**One thing blocked the merge and was fixed separately.** Trivy began failing the scoring and web
+image scans on **CVE-2026-14456** (OpenSSL, unbounded memory growth in the QUIC server path). Both
+are required checks, so it blocked every pull request in the repository, and it was nothing to do
+with Phase 2 — `main` was green the day before and the advisory is newer. The base images could not
+be bumped because neither had been rebuilt with the fix, so PR
+[#22](https://github.com/la3679/sentinelflow/pull/22) takes the patched package from each
+distribution at build time, pinned, with a recorded condition for removing the block once the base
+images catch up. Not a `.trivyignore`: the vulnerability is genuinely patched and genuinely
+available.
 
 ## Acceptance criteria status — Phase 1 gate
 
@@ -293,6 +306,11 @@ schema, validates every example, and asserts the deliberately-invalid ones are r
 - **The console still renders from `src/mocks/`.** Replaced in Phase 6, once the API has endpoints.
 - **CI is not path-filtered**, so every push runs every component. Deliberate (ADR-0002); revisit
   when runtime justifies job-level change detection.
+- **Two Dockerfiles pin an OpenSSL package version by hand** (`apps/scoring`, `apps/web`), to take
+  the CVE-2026-14456 fix from the distribution before the base images ship it. Both blocks say how
+  to check whether the base image has caught up and should be deleted when it has. If a distribution
+  rotates the pinned version out of its archive first, the build fails there with a clear message
+  and the fix is the same deletion.
 - **`make` is not installed on the reference machine**, so Makefile targets are exercised there
   through `scripts/dev/sf.ps1` or by running the underlying command directly. Both are changed
   together, every time; a Makefile edit without the matching runner edit is a defect.
@@ -329,28 +347,30 @@ None.
 
 ## Next three actions
 
-Phase 2's deliverables are complete and executed on `feat/domain-and-migrations`. **CI has never run
-on this branch** — the workflows trigger on `main` and on pull requests, and no pull request is
-open. That is the first thing to fix, and until it is green nothing here should be described as
-done.
+Phase 2 is merged. Start from `main` and branch before editing.
 
-1. **Open the pull request and get it green.** `gh pr create --base main --head
-feat/domain-and-migrations`, fill in the template honestly, self-review the whole diff. Expect CI
-   to be the first environment other than this machine to run the Testcontainers suites; GitHub
-   runners provide a Docker engine, so they should pass, but a first run on a new runner is
-   evidence, not a formality. The JaCoCo gate is enforced there and only there. Merge with a merge
-   commit once the required checks pass, then update this file and start Phase 3 from `main`.
-2. **Clear the four open Dependabot pull requests, #9 to #12.** They have been open since Phase 1
-   and each needs the same two steps: let the lockfile workflow regenerate `bun.lock` on push, then
+1. **Write ADR-0005 — outbox relay mechanics.** ADR-0006 settled the semantics (at-least-once,
+   account-keyed, an outbox); the relay's own behaviour is undecided and should be decided before it
+   is written, not documented after. It needs to answer: polling versus logical decoding, how a
+   batch is claimed so two instances cannot publish the same row twice, the backoff schedule and its
+   ceiling, when an event moves from `PENDING` to `FAILED` rather than being retried again, and what
+   an operator does with a `FAILED` row. The schema already carries `attempt_count`, `last_error`
+   and `next_attempt_at`, so the ADR is choosing a policy over columns that exist.
+2. **Build the validated ingestion endpoint.** `POST /api/v1/transactions` against the OpenAPI
+   contract: Bean Validation on the DTO, RFC 9457 problem details, no JPA entity on the boundary,
+   and the idempotency path returning the original result rather than a conflict. The constraint
+   that makes it correct — `transactions_idempotency_unique` — is already tested at the schema
+   level; this is what turns it into a product guarantee. Then the outbox write in the same
+   transaction, which is the atomicity ADR-0006 depends on.
+3. **Clear the four open Dependabot pull requests, #9 to #12.** Open since Phase 1. Each needs the
+   same two steps: let the lockfile workflow regenerate `bun.lock` on push, then
    `gh pr close <n> && gh pr reopen <n>` to re-trigger CI, because a push made with the default
    `GITHUB_TOKEN` cannot start workflow runs. `#11` (`@vitejs/plugin-react` 5 → 6) needs a build and
    a browser check; `#12` (`eslint` 9 → 10) is a major with likely flat-config changes.
-3. **Begin Phase 3 — ingestion, outbox and Kafka.** The schema is ready for it and
-   [`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) is the
-   design to build against. Start with the validated ingestion endpoint and the idempotency path,
-   because the constraint that makes it correct is already tested and the endpoint is what turns it
-   from a schema rule into a product guarantee. ADR-0005 (outbox relay mechanics) is still owed and
-   should be written before the relay, not after it.
+
+[`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) is the
+design for all of Phase 3 and is marked as design rather than as a running system. Remove that
+marking as each step becomes real.
 
 ## Session startup commands
 
