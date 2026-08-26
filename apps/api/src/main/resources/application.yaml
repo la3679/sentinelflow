@@ -68,6 +68,20 @@ spring:
     out-of-order: false
     locations: classpath:db/migration
 
+# Demo data. Off in every environment, including local: a service that
+# populates whatever database it is pointed at is a service nobody can safely
+# point at anything. Turn it on deliberately, for one run.
+sentinelflow:
+  seed:
+    enabled: ${SENTINELFLOW_SEED_ENABLED:false}
+    # The same value produces the same dataset on any machine, which is what
+    # makes "reproduce it with seed 20260826" a usable instruction. Quote it in
+    # a bug report; pin it in CI.
+    seed: ${SENTINELFLOW_SEED:20260826}
+    # CI, DEMO or LOCAL. Named sizes rather than a free-form count, so a test
+    # and a README cannot drift apart about what "the demo dataset" is.
+    profile: ${SENTINELFLOW_SEED_PROFILE:DEMO}
+
 server:
   port: ${SENTINELFLOW_API_PORT:8080}
   # Give in-flight requests a chance to finish when the container is stopped;
