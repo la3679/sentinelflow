@@ -89,6 +89,30 @@ spring:
         delivery.timeout.ms: 20000
         request.timeout.ms: 10000
         linger.ms: 5
+    consumer:
+      # The group is also the consumer_name written to processed_events, so
+      # "what Kafka redelivers to" and "what deduplication is scoped to" are the
+      # same thing by construction rather than by two settings agreeing.
+      group-id: transaction-risk
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # earliest, not latest. A consumer starting for the first time against a
+      # topic that already has events must read them: skipping to the end would
+      # silently drop everything published before it existed, and the outbox
+      # would show them published with nothing having happened.
+      auto-offset-reset: earliest
+      # Offsets are committed by the container after the listener returns, not
+      # on a timer. Auto-commit acknowledges records that are still being
+      # processed, so a crash loses them while the offset says otherwise.
+      enable-auto-commit: false
+      # Bounds how much work one poll can hand to a listener that then blocks on
+      # a retry, which is what keeps max.poll.interval.ms honest.
+      max-poll-records: 50
+    listener:
+      # One offset per record. The alternative commits a batch, which after a
+      # partial failure either re-delivers records that succeeded or commits
+      # past records that did not.
+      ack-mode: record
 
   flyway:
     enabled: true
@@ -123,6 +147,24 @@ sentinelflow:
     # About 25 minutes of trying: long enough to ride out a broker restart,
     # short enough that a genuinely broken event is visible within the hour.
     max-attempts: 10
+
+  consumer:
+    # The transaction.created listener. On by default, for the same reason the
+    # relay is: a pipeline half nobody notices is switched off is worse than one
+    # that fails loudly. Turned off in the many test contexts that need the
+    # schema and no broker, because a listener whose bootstrap address does not
+    # resolve fails the whole application context at startup.
+    enabled: ${SENTINELFLOW_CONSUMER_ENABLED:true}
+    # A consumer's retry blocks its partition, so this budget is spent against
+    # every record queued behind the one that is failing. That is why it looks
+    # like the outbox's and is an order of magnitude shorter: the relay is
+    # waiting for a broker with one row in hand, and this is holding up a
+    # partition (ADR-0006 section 4).
+    retry-base: 500ms
+    retry-max-delay: 20s
+    # Five deliveries, so roughly half a minute of trying before the record is
+    # dead-lettered and the partition moves on.
+    max-attempts: 5
 
   seed:
     enabled: ${SENTINELFLOW_SEED_ENABLED:false}
