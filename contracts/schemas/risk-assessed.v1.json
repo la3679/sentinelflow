@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelflow.example/schemas/risk-assessed.v1.json",
+  "title": "risk.assessed payload, v1",
+  "description": "Published on `risk.assessed.v1` when a transaction has been scored and the assessment persisted.\n\nCarries every version that contributed to the score - model, feature, and policy - because an assessment that cannot be attributed to the exact configuration that produced it cannot be defended, reproduced, or audited later.\n\nKeyed by ACCOUNT id, matching `transaction.created.v1`, so an account's transactions and their assessments stay in order relative to one another.",
+
+  "type": "object",
+  "properties": {
+    "assessmentId": {
+      "$ref": "common.v1.json#/$defs/uuid"
+    },
+    "transactionId": {
+      "$ref": "common.v1.json#/$defs/uuid"
+    },
+    "accountId": {
+      "$ref": "common.v1.json#/$defs/uuid",
+      "description": "The partition key for this topic."
+    },
+
+    "ruleScore": {
+      "$ref": "common.v1.json#/$defs/score",
+      "description": "Deterministic rule contribution, computed in the API inside the transaction."
+    },
+    "modelScore": {
+      "oneOf": [{ "$ref": "common.v1.json#/$defs/score" }, { "type": "null" }],
+      "description": "Model contribution, or null when the scoring service was unavailable and the assessment degraded to rules alone. Null is a real and expected outcome, not an error - see `degraded`."
+    },
+    "finalScore": {
+      "$ref": "common.v1.json#/$defs/score",
+      "description": "The combined score the risk band and any alert were derived from."
+    },
+    "riskBand": {
+      "$ref": "common.v1.json#/$defs/riskBand"
+    },
+
+    "degraded": {
+      "type": "boolean",
+      "description": "True when this assessment was produced without a model score. Explicit rather than inferred from `modelScore == null`, so a consumer filtering for degraded assessments does not have to encode that inference."
+    },
+
+    "modelVersion": {
+      "oneOf": [{ "$ref": "common.v1.json#/$defs/version" }, { "type": "null" }],
+      "description": "Version of the model that produced modelScore, or null when degraded."
+    },
+    "featureVersion": {
+      "oneOf": [{ "$ref": "common.v1.json#/$defs/version" }, { "type": "null" }],
+      "description": "Version of the feature pipeline. Two scores are only comparable when this matches."
+    },
+    "policyVersion": {
+      "$ref": "common.v1.json#/$defs/version",
+      "description": "Version of the thresholds and banding policy. Always present: banding happens even when the model does not."
+    },
+
+    "reasonCodes": {
+      "type": "array",
+      "description": "What drove the score, ordered by descending absolute contribution. Bounded at 20: an explanation an analyst cannot read is not an explanation.",
+      "items": { "$ref": "common.v1.json#/$defs/reasonCode" },
+      "minItems": 1,
+      "maxItems": 20
+    },
+
+    "scoringLatencyMs": {
+      "type": "integer",
+      "description": "Wall-clock milliseconds for the scoring call, measured by the caller. Zero when degraded.",
+      "minimum": 0
+    },
+
+    "alertRaised": {
+      "type": "boolean",
+      "description": "Whether this assessment opened an alert. The alert itself arrives on alert.created.v1; this lets a consumer avoid joining across topics to answer 'did anything happen'."
+    },
+
+    "assessedAt": {
+      "$ref": "common.v1.json#/$defs/timestamp"
+    }
+  },
+
+  "required": [
+    "assessmentId",
+    "transactionId",
+    "accountId",
+    "ruleScore",
+    "modelScore",
+    "finalScore",
+    "riskBand",
+    "degraded",
+    "modelVersion",
+    "featureVersion",
+    "policyVersion",
+    "reasonCodes",
+    "scoringLatencyMs",
+    "alertRaised",
+    "assessedAt"
+  ],
+
+  "additionalProperties": false
+}

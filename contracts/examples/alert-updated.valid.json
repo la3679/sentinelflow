@@ -1,0 +1,25 @@
+{
+  "eventId": "01936b2b-0100-7000-8000-2f9c1d4e5a70",
+  "eventType": "alert.updated",
+  "schemaVersion": 1,
+  "occurredAt": "2026-08-25T21:31:44.210000Z",
+  "producer": "sentinelflow-api",
+  "correlationId": "01936b2b-0100-7000-8000-1a2b3c4d5e71",
+  "traceId": "8a3c1f5e77b34da6a3ce929d0e0e4901",
+  "aggregateType": "alert",
+  "aggregateId": "01936b2a-8300-7000-8000-0a0b0c0d0e0f",
+  "payload": {
+    "alertId": "01936b2a-8300-7000-8000-0a0b0c0d0e0f",
+    "alertReference": "ALT-0007",
+    "changeType": "STATUS_TRANSITION",
+    "previousStatus": "NEW",
+    "status": "IN_REVIEW",
+    "previousAssignee": null,
+    "assignee": "01936b2b-0100-7000-8000-5a5b5c5d5e5f",
+    "priority": "HIGH",
+    "actorId": "01936b2b-0100-7000-8000-5a5b5c5d5e5f",
+    "actorRole": "ANALYST",
+    "version": 2,
+    "occurredAt": "2026-08-25T21:31:44.210000Z"
+  }
+}

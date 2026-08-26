@@ -1,0 +1,19 @@
+{
+  "alertId": "01936b2a-8300-7000-8000-0a0b0c0d0e0f",
+  "alertReference": "ALT-0007",
+  "assessmentId": "01936b2a-8100-7000-8000-0102030405f6",
+  "transactionId": "01936b2a-7c4f-7000-8000-9f8e7d6c5b4a",
+  "accountId": "01936b2a-7c4f-7000-8000-aabbccddeeff",
+  "status": "CLOSED",
+  "priority": "HIGH",
+  "riskBand": "HIGH",
+  "finalScore": 71.2,
+  "summary": "An alert cannot be created already closed.",
+  "topReasonCode": {
+    "code": "VELOCITY_1H_EXCEEDED",
+    "description": "Six transactions in the preceding hour.",
+    "contribution": 31.5,
+    "source": "RULE"
+  },
+  "createdAt": "2026-08-25T21:14:07.640000Z"
+}

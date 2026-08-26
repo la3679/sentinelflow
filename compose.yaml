@@ -126,13 +126,24 @@ services:
     restart: unless-stopped
     environment:
       SENTINELFLOW_API_PORT: "8080"
+      # Inside the network the database is reachable as the service name on the
+      # container port. POSTGRES_PORT in .env is the port published to the
+      # host and is deliberately not used here.
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-sentinelflow}
+      POSTGRES_USER: ${POSTGRES_USER:-sentinelflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make bootstrap to generate local secrets}
+      # Same reasoning as POSTGRES_HOST: inside the network the broker is the
+      # service name on its container port. KAFKA_HOST_PORT in .env publishes a
+      # different listener to the host and is deliberately not used here.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:
-      # The API does not talk to PostgreSQL or Kafka yet - persistence lands in
-      # Phase 2 and the outbox in Phase 3. The dependencies are declared now so
-      # that startup ordering is already correct when it does, and so a broken
-      # broker surfaces at `make up` rather than three phases later.
+      # The API owns the schema from Phase 2 onward: it runs Flyway at startup
+      # and refuses to start if the mappings and the schema disagree. Kafka is
+      # declared now so a broken broker surfaces at `make up` rather than in
+      # Phase 3.
       postgres:
         condition: service_healthy
       kafka:

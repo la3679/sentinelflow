@@ -13,6 +13,127 @@ spring:
   main:
     banner-mode: "off"
 
+  datasource:
+    # No default for the password: a missing variable must stop startup, not
+    # silently connect somewhere with a guessable one. The host defaults to the
+    # compose service name, which is what the container needs; a developer
+    # running the API outside the stack overrides it to localhost.
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres}:${POSTGRES_INTERNAL_PORT:5432}/${POSTGRES_DB:sentinelflow}
+    username: ${POSTGRES_USER:sentinelflow}
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      # Named so a connection holding a lock is attributable in pg_stat_activity
+      # rather than showing up as one of ten identical "PostgreSQL JDBC Driver".
+      pool-name: sentinelflow-api-pool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      # Milliseconds, not a Duration. Everything under spring.datasource.hikari
+      # is bound straight onto HikariDataSource, whose setters take a plain
+      # long - Boot's Duration conversion never gets a chance, and `10s` fails
+      # startup with NumberFormatException. Only running the service shows this.
+      connection-timeout: 10000
+      # 25 minutes. Below PostgreSQL's default idle_session_timeout and any
+      # sensible proxy timeout, so the pool discards a connection before the
+      # server does.
+      max-lifetime: 1500000
+
+  jpa:
+    hibernate:
+      # validate, never update, never create-drop. Flyway owns the schema
+      # (ADR-0007); Hibernate's job is to refuse to start when the mappings and
+      # the schema have drifted apart, which is a defect worth failing on.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        # A JDBC batch is only worth configuring alongside ordered inserts and
+        # updates; without the ordering the batch is broken up again.
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+        # An implicit query-time fetch of a lazy association is a latent N+1.
+        # Failing loudly in every environment is the only way it stays fixed.
+        query.fail_on_pagination_over_collection_fetch: true
+
+  jackson:
+    deserialization:
+      # The contracts declare additionalProperties: false. Bean Validation has
+      # no equivalent, so this is what enforces it: a client's typo becomes a
+      # 400 naming the problem rather than a field silently ignored and a
+      # transaction quietly recorded with a default the caller never chose.
+      fail-on-unknown-properties: true
+    # Nulls are serialised, not dropped. The event schemas require fields like
+    # deviceReference to be present and null rather than absent, so a consumer
+    # never has to distinguish "this channel has no device" from "the producer
+    # forgot the field". non_null inclusion would silently break that, and did
+    # until a test noticed.
+    default-property-inclusion: always
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # acks=all with idempotence. The outbox guarantees an event is not lost
+      # before publication; these are what stop it being lost during it. A
+      # leader acknowledging alone can lose the record when it fails before its
+      # replicas catch up, and without idempotence a producer-side retry can
+      # write the same record twice within one send.
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        # Bounded, and shorter than the relay's own send timeout, so a failure
+        # surfaces as a retryable publication error rather than as a claim
+        # holding row locks while the producer waits.
+        delivery.timeout.ms: 20000
+        request.timeout.ms: 10000
+        linger.ms: 5
+
+  flyway:
+    enabled: true
+    # No baseline-on-migrate: it exists to adopt a database that already has a
+    # schema, and adopting an unknown schema silently is the failure mode this
+    # project most wants to avoid. This database is created by these migrations
+    # or it is not ours.
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    # A merged migration is immutable. Refusing to run out of order is what
+    # makes that true in an environment rather than only in the review.
+    out-of-order: false
+    locations: classpath:db/migration
+
+# Demo data. Off in every environment, including local: a service that
+# populates whatever database it is pointed at is a service nobody can safely
+# point at anything. Turn it on deliberately, for one run.
+sentinelflow:
+  outbox:
+    # The relay. On by default: an outbox nobody drains is a queue that only
+    # grows, and a service that silently stops publishing is worse than one that
+    # fails loudly. Turned off in tests that drive a drain directly, so a
+    # scheduled thread cannot publish a row out from under an assertion.
+    enabled: ${SENTINELFLOW_OUTBOX_ENABLED:true}
+    # The publication delay, and the honest cost of the outbox (ADR-0005).
+    # Nothing in this pipeline is real-time.
+    poll-interval: ${SENTINELFLOW_OUTBOX_POLL_INTERVAL:500ms}
+    # Bounds how long one claim holds row locks when the broker is slow.
+    batch-size: ${SENTINELFLOW_OUTBOX_BATCH_SIZE:100}
+    retry-base: 1s
+    retry-max-delay: 5m
+    # About 25 minutes of trying: long enough to ride out a broker restart,
+    # short enough that a genuinely broken event is visible within the hour.
+    max-attempts: 10
+
+  seed:
+    enabled: ${SENTINELFLOW_SEED_ENABLED:false}
+    # The same value produces the same dataset on any machine, which is what
+    # makes "reproduce it with seed 20260826" a usable instruction. Quote it in
+    # a bug report; pin it in CI.
+    seed: ${SENTINELFLOW_SEED:20260826}
+    # CI, DEMO or LOCAL. Named sizes rather than a free-form count, so a test
+    # and a README cannot drift apart about what "the demo dataset" is.
+    profile: ${SENTINELFLOW_SEED_PROFILE:DEMO}
+
 server:
   port: ${SENTINELFLOW_API_PORT:8080}
   # Give in-flight requests a chance to finish when the container is stopped;
@@ -50,3 +171,6 @@ logging:
   level:
     root: INFO
     io.github.la3679.sentinelflow: INFO
+    # Flyway says which migrations it applied. That line is the only record in
+    # the log of what a deployment did to the schema, so it stays at INFO.
+    org.flywaydb.core.internal.command: INFO

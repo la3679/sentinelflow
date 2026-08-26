@@ -1,0 +1,13 @@
+{
+  "eventId": "01936b2a-7c4f-7000-8000-2f9c1d4e5a6b",
+  "eventType": "risk.assessed",
+  "schemaVersion": 1,
+  "occurredAt": "2026-08-25T21:14:07.123456Z",
+  "producer": "sentinelflow-api",
+  "correlationId": "01936b2a-7c4f-7000-8000-1a2b3c4d5e6f",
+  "traceId": null,
+  "aggregateType": "assessment",
+  "aggregateId": "01936b2a-8100-7000-8000-0102030405f6",
+  "tenantId": "should-not-be-here",
+  "payload": {}
+}

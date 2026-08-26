@@ -47,3 +47,10 @@ jobs:
       # placeholder left in prose.
       - name: Check documentation links and placeholders
         run: bun scripts/dev/check-docs.mjs
+
+      # contracts/ is authoritative for this project, which only means something
+      # if something checks it. Every schema compiles, every valid example
+      # validates against its envelope and its payload schema, every
+      # deliberately-invalid example is rejected, and both API documents parse.
+      - name: Validate contracts
+        run: bun scripts/dev/check-contracts.mjs

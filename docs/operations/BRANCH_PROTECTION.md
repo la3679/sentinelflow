@@ -91,6 +91,18 @@ The alternative — dropping `--frozen-lockfile` from CI — was rejected. A fro
 makes the build reproducible, and weakening a real guarantee to accommodate a tooling gap is the
 wrong trade.
 
+**One manual step remains.** A push made with the default `GITHUB_TOKEN` cannot start further
+workflow runs, so CI does not re-run by itself once the lockfile lands. The pull request is then
+correct but has no checks, and the ruleset leaves it blocked. Re-trigger it with:
+
+```bash
+gh pr close <number> && gh pr reopen <number>
+```
+
+Removing that step would need a personal access token or a GitHub App token — a standing
+credential with write access to this repository. That is a larger and more permanent security
+surface than one command on a weekly bot pull request is worth.
+
 ## Interaction with Lovable
 
 Lovable responds to a rejected protected-branch push by silently diverting the change to a backup

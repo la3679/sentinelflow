@@ -1,0 +1,35 @@
+{
+  "eventId": "01936b2a-8200-7000-8000-2f9c1d4e5a6d",
+  "eventType": "risk.assessed",
+  "schemaVersion": 1,
+  "occurredAt": "2026-08-25T21:15:01.004000Z",
+  "producer": "sentinelflow-api",
+  "correlationId": "01936b2a-8200-7000-8000-1a2b3c4d5e70",
+  "traceId": null,
+  "aggregateType": "assessment",
+  "aggregateId": "01936b2a-8200-7000-8000-0102030405f7",
+  "payload": {
+    "assessmentId": "01936b2a-8200-7000-8000-0102030405f7",
+    "transactionId": "01936b2a-8200-7000-8000-9f8e7d6c5b4b",
+    "accountId": "01936b2a-7c4f-7000-8000-aabbccddeeff",
+    "ruleScore": 22,
+    "modelScore": null,
+    "finalScore": 22,
+    "riskBand": "LOW",
+    "degraded": true,
+    "modelVersion": null,
+    "featureVersion": null,
+    "policyVersion": "1.0.0",
+    "reasonCodes": [
+      {
+        "code": "SCORING_UNAVAILABLE",
+        "description": "Scoring service did not respond; assessment used deterministic rules only.",
+        "contribution": 0,
+        "source": "RULE"
+      }
+    ],
+    "scoringLatencyMs": 0,
+    "alertRaised": false,
+    "assessedAt": "2026-08-25T21:15:01.004000Z"
+  }
+}
