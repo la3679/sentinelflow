@@ -30,7 +30,10 @@ class MigrationIT extends AbstractPostgresTest {
     void allMigrationsApplied() {
         List<String> versions = jdbc.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE success = true ORDER BY installed_rank", String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
+        // Every migration this module ships, in order. Adding one without
+        // adding it here fails, which is the point: a migration that ran but
+        // that nothing expected is exactly what an accidental commit looks like.
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7");
 
         Integer failures =
                 jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success = false", Integer.class);
