@@ -27,10 +27,15 @@ spring:
       pool-name: sentinelflow-api-pool
       maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
       minimum-idle: ${DB_POOL_MIN_IDLE:2}
-      connection-timeout: 10s
-      # Below PostgreSQL's default idle_session_timeout and any sensible proxy
-      # timeout, so the pool discards a connection before the server does.
-      max-lifetime: 25m
+      # Milliseconds, not a Duration. Everything under spring.datasource.hikari
+      # is bound straight onto HikariDataSource, whose setters take a plain
+      # long - Boot's Duration conversion never gets a chance, and `10s` fails
+      # startup with NumberFormatException. Only running the service shows this.
+      connection-timeout: 10000
+      # 25 minutes. Below PostgreSQL's default idle_session_timeout and any
+      # sensible proxy timeout, so the pool discards a connection before the
+      # server does.
+      max-lifetime: 1500000
 
   jpa:
     hibernate:

@@ -89,10 +89,21 @@
       flyway-database-postgresql is a separate artifact from Flyway 10 onward.
       Without it Flyway starts, finds no PostgreSQL support, and fails at the
       first migration rather than at configuration time.
+
+      spring-boot-flyway is the autoconfiguration, and in Spring Boot 4 it is
+      its own module rather than part of spring-boot-autoconfigure. Without it
+      flyway-core is on the classpath, every spring.flyway.* property binds to
+      nothing, no migration runs, and the only symptom is Hibernate reporting a
+      missing table - which reads like a mapping defect and is not one. Found by
+      running the suite, not by reading the pom.
     -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-flyway</artifactId>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>

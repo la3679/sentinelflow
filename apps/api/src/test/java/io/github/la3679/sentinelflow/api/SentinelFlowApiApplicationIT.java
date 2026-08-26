@@ -10,6 +10,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
+import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
+
 /**
  * Smoke test for the service as it is actually served.
  *
@@ -19,9 +21,15 @@ import org.springframework.test.web.servlet.client.RestTestClient;
  *
  * <p>{@code RestTestClient} is the Spring Framework 7 client for this; {@code TestRestTemplate} was
  * removed in Spring Boot 4.
+ *
+ * <p><strong>An IT, not a unit test, since Phase 2.</strong> The service now owns a schema, so it
+ * cannot start without PostgreSQL to migrate and validate against, and a test that needs a
+ * container belongs to Failsafe by this module's own rule. That is not a downgrade: readiness now
+ * means the database is reachable and the mappings match it, which is what an operator actually
+ * relies on that probe to mean.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class SentinelFlowApiApplicationTests {
+class SentinelFlowApiApplicationIT extends AbstractPostgresTest {
 
     @LocalServerPort
     private int port;
