@@ -55,6 +55,39 @@ runs. **Scoring being down never rejects a transaction.** It delays or degrades 
 **The contract is versioned and lives in `contracts/openapi/`** alongside the public API, and both
 sides test against the file rather than against each other.
 
+#### What crosses the boundary, and why the scoring service stays stateless
+
+The request carries **the transaction, and a bounded account context the API computes**. The
+response carries a model score, the feature and model versions, reason contributions, and an
+inference duration.
+
+This follows from something [ADR-0002](0002-monorepo-and-service-boundaries.md) already decided and
+that is easy to walk into by accident. Several of the features this project needs are historical —
+transaction counts over the last minute, five minutes and hour; amount sums over the last hour and
+day; time since the previous transaction; whether this merchant, device or country is new for the
+account. **The scoring service has no database**, and giving it one would make it a second system of
+record for transactions that `apps/api` already owns.
+
+So the API, which has that history, computes the context and sends it. The scoring service turns a
+context into a feature vector and a feature vector into a score, and holds no state between
+requests.
+
+Three consequences, all deliberate:
+
+- **The context is bounded and versioned**, like everything else on the wire. A request whose size
+  grows with an account's history is a denial-of-service primitive, and an unversioned one cannot be
+  changed without deploying both services at the same instant.
+- **A scoring instance is disposable.** No warm cache to lose, no local state to reconcile, and
+  scaling it is adding a replica.
+- **The API pays for the context.** It is one indexed read per transaction over
+  `transactions_account_occurred_idx`, which exists for exactly this and which
+  `MigrationIT` already asserts is still there.
+
+**Nothing that would only be known after an analyst's decision may enter the context.** That is the
+leakage rule from §12.3 of the build prompt expressed at the boundary rather than only in the
+training script: a feature the model could not have had at scoring time makes an evaluation
+worthless, and the boundary is the last place that can be enforced structurally.
+
 ### 2. When scoring is unavailable, the assessment is written degraded
 
 Three outcomes, and they are genuinely different states rather than three flavours of failure:
@@ -130,6 +163,28 @@ Three reasons, in order of weight:
 **Bands are `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`**, mapped from the final score by that configuration,
 and the mapping is tested rather than assumed.
 
+#### This refines ADR-0002's ownership table rather than contradicting it
+
+[ADR-0002](0002-monorepo-and-service-boundaries.md) §3 assigns "evaluation metrics and thresholds"
+to `apps/scoring`. Read carelessly that is the opposite of what this section says, so the two words
+are separated here rather than left to be reconciled by whoever hits them next.
+
+**There are two thresholds, and they are different objects.**
+
+| Threshold                                                      | Owner          | Changes when                                     |
+| -------------------------------------------------------------- | -------------- | ------------------------------------------------ |
+| The **operating point** a model is evaluated at and ships with | `apps/scoring` | The model is retrained or re-evaluated           |
+| The **alerting policy** applied to a final score at runtime    | `apps/api`     | The business changes what is worth investigating |
+
+The first is a property of a model and belongs in its model card, next to the precision and recall
+measured at it. The second is a runtime decision applied to a final score that also folds in a rule
+score the model never saw, and it must apply identically whether or not the model answered at all —
+which is impossible if it lives in the model.
+
+**They may legitimately differ**, and when they do, the model card's operating point is a
+recommendation and the policy is what actually ran. Both are persisted on the assessment, so which
+is which is never a matter of inference.
+
 ## Alternatives considered
 
 **Scoring as a Kafka consumer publishing `risk.assessed.v1`.** Rejected for the three reasons in §1.
@@ -149,6 +204,11 @@ exists to avoid.
 
 **The scoring service returning a band rather than a score.** Rejected: see §4. It also makes the
 service's contract change every time a business threshold moves.
+
+**Giving the scoring service its own read access to the transaction database**, so it could compute
+historical features itself. Rejected: it would make two services systems of record for the same
+table, couple the Python service to a schema owned by the Java one, and put a second consumer on the
+connection pool — all to avoid sending a bounded context on a request that is already being made.
 
 **No circuit breaker, just the timeout.** Rejected. A timeout bounds one call; a scoring outage is
 every call, and paying the bound repeatedly turns a dependency failure into unbounded consumer lag.
