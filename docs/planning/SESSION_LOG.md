@@ -390,3 +390,34 @@ documentation suites added.
 
 `make` is still absent on the reference machine, so the Makefile changes were verified by running
 the equivalent Maven invocations directly and the PowerShell runner was updated in the same commit.
+
+### Addendum — Phase 2 merged, and the CVE that blocked it
+
+PR [#21](https://github.com/la3679/sentinelflow/pull/21) merged at `c38934f`. All ten required
+checks passed, and all six workflows passed again on `main` afterwards. The GitHub runner ran the
+Testcontainers suites for real — its log shows six migrations applied and 23 unit plus 57
+integration tests — so the phase's evidence no longer rests on one machine.
+
+It did not merge on the first attempt. `Build and scan scoring` and `Build and scan web` failed on
+**CVE-2026-14456**, an OpenSSL denial of service via unbounded memory growth in the QUIC server
+path. Both are required checks, so it blocked every pull request in the repository — and it had
+nothing to do with Phase 2. `main` was green the day before; the advisory is newer than its last
+container run.
+
+The obvious fix was unavailable: neither base image had been rebuilt with the patch.
+`python:3.13-slim-trixie` still shipped `3.5.6-1~deb13u2` and
+`nginx-unprivileged:1.30.4-alpine3.24` still shipped `3.5.7-r0`, both checked by running them rather
+than assumed. But both distributions had published the fix, so the update was taken from the archive
+at build time — pinned to the exact fixed version, so an image stays a function of its Dockerfile
+rather than of the day it was built, and with the removal condition written beside it.
+
+A `.trivyignore` would have been faster and wrong. The rule here is that a security finding is never
+suppressed to go green, and the distinguishing fact was that this one is genuinely patched and
+genuinely available: suppressing it would have traded a real fix for a quiet one. Both images were
+rebuilt and scanned locally with Trivy 0.70.0 under CI's own flags — 0 findings, exit 0 — and the
+web image was checked with `id` to confirm it still runs as uid 101 after the `USER root` layer.
+
+That went out as PR [#22](https://github.com/la3679/sentinelflow/pull/22), merged first, then
+`main` was merged into the Phase 2 branch. Keeping it separate mattered: a security fix and a schema
+phase are not one change, and a reviewer looking for why an OpenSSL version is pinned should not
+have to find it inside a database commit.
