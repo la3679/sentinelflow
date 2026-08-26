@@ -14,11 +14,11 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-26T21:35Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T22:20Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 4 in progress: the boundary, the data and the contract have landed                                                                |
-| Current phase        | Phase 4 — synthetic data and scoring (three of twelve pieces done)                                                                               |
-| Current task         | The versioned feature pipeline in `apps/scoring`, against the contract merged in #31                                                             |
+| Current phase        | Phase 4 — synthetic data and scoring (four of twelve pieces done)                                                                                |
+| Current task         | ADR-0010 and reproducible training, then the scoring endpoints and the Spring client                                                             |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -161,6 +161,24 @@ the PowerShell runner.
 **Labels never enter the database**, and `ScenarioLoaderIT` asserts it against `information_schema`
 rather than trusting the intent. The distribution lives in the manifest as counts.
 
+**The feature pipeline, merged as PR
+[#34](https://github.com/la3679/sentinelflow/pull/34).** Sixteen versioned, deterministic features
+over the transaction and the account context, with the request models and a suite that keeps them
+from drifting from the contract.
+
+**Leakage is prevented structurally rather than by care.** Every window is measured backwards from
+the transaction's own `occurredAt`, and anything at or after it is discarded before a feature sees
+it — because the API sends history as of when it _asked_, so a replayed or late-arriving transaction
+legitimately carries history from after itself. A leak makes every metric look better, which is why
+an assertion is the only thing that ever catches one.
+
+Every default was chosen against the version that would have made an account's first transaction its
+most alarming: no history is a ratio of 1.0 rather than something enormous, a null device on an ATM
+is a real answer rather than a new device, and a drain against a zero balance is 0.0 rather than
+infinity. `lookbackWindowSeconds` and `truncated` are honoured rather than accepted and ignored.
+
+`apps/scoring` gained its first coverage floor — measured at 95.9%, set to 90.
+
 **The scoring contract, merged as PR
 [#31](https://github.com/la3679/sentinelflow/pull/31).** `contracts/openapi/sentinelflow-scoring.yaml`
 — `/v1/score`, `/v1/model`, and the health endpoints — written before either implementation, the same
@@ -175,6 +193,11 @@ document from being one nothing checks.
   caller getting its original result back — and it printed the amount, both references, the device
   handle and the key. Wrong twice: it turns the expected path into an alarm, and those values are
   what this project's own rules say not to log. `org.hibernate.orm.jdbc.error` is now at ERROR.
+- **A skip in my own test made twelve assertions vanish.** The contract-conformance suite guarded
+  its fixture with a skip when the contract file was not found, and the path was wrong by one level,
+  so twelve tests reported as skipped and the run passed green. A skip that fires because of a defect
+  is indistinguishable from one that fires legitimately, and there is no legitimate absence here. It
+  asserts now.
 - **Content-derived idempotency keys collide.** Two ordinary purchases on one account, at one
   merchant, in the same second, for the same amount are possible in fourteen days of traffic, and the
   second would have been silently rejected as a duplicate — leaving a dataset smaller than the
@@ -182,20 +205,20 @@ document from being one nothing checks.
 
 ### What remains in Phase 4
 
-| Piece                                       | State                                                         |
-| ------------------------------------------- | ------------------------------------------------------------- |
-| ADR-0008, the scoring boundary              | **done** (#29)                                                |
-| Scenario generator, `make seed`             | **done** (#30)                                                |
-| Scoring contract                            | **done** (#31)                                                |
-| Versioned feature pipeline                  | not started — `apps/scoring`, leakage prevention is the point |
-| Transparent rules baseline                  | not started — `apps/api`, per ADR-0002                        |
-| Reproducible training, evaluation, registry | not started                                                   |
-| ADR-0010, model and evaluation choice       | not started                                                   |
-| Model card and `EVALUATION.md`              | not started                                                   |
-| `/v1/score` and `/v1/model` implementations | not started                                                   |
-| Spring scoring client with resilience       | not started                                                   |
-| Persisted risk assessments                  | not started                                                   |
-| `make replay`                               | not started — lands with the client, see below                |
+| Piece                                       | State                                          |
+| ------------------------------------------- | ---------------------------------------------- |
+| ADR-0008, the scoring boundary              | **done** (#29)                                 |
+| Scenario generator, `make seed`             | **done** (#30)                                 |
+| Scoring contract                            | **done** (#31)                                 |
+| Versioned feature pipeline                  | **done** (#34)                                 |
+| Transparent rules baseline                  | not started — `apps/api`, per ADR-0002         |
+| Reproducible training, evaluation, registry | not started                                    |
+| ADR-0010, model and evaluation choice       | not started                                    |
+| Model card and `EVALUATION.md`              | not started                                    |
+| `/v1/score` and `/v1/model` implementations | not started                                    |
+| Spring scoring client with resilience       | not started                                    |
+| Persisted risk assessments                  | not started                                    |
+| `make replay`                               | not started — lands with the client, see below |
 
 **`make replay` is deliberately still unimplemented and still fails loudly.** The transaction shapes
 it would replay are generated today by `make seed`. Its own value is in the operational scenarios
@@ -419,6 +442,10 @@ Local run under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`, then reproduced on the GitHu
 | `bun scripts/dev/check-docs.mjs`         | **PASS** — 99 links across 35 files, 0 broken, 0 placeholders |
 | `bun run format:check` (repository-wide) | **PASS**                                                      |
 | PowerShell parse of `sf.ps1`             | **PASS** — 0 errors                                           |
+| `uv run pytest` (scoring)                | **PASS** — 42 passed                                          |
+| `uv run pytest --cov` (scoring)          | **95.88%**, gate of 90 met; both feature modules 100%         |
+| `uv run mypy` (scoring, strict)          | **PASS** — 0 issues, 12 files                                 |
+| `uv run ruff check` / `format --check`   | **PASS** — 13 files                                           |
 
 The coverage gate stays at LINE 0.70 / BRANCH 0.60. It measures above both, and ratcheting twice
 inside one phase is churn; the next turn comes when Phase 4 finishes.
@@ -531,9 +558,10 @@ checks.
   Adoptium publishes `25.0.4.1`.
 - **`noUnusedLocals` / `noUnusedParameters` are still `false`** in `apps/web/tsconfig.json`.
 - **Coverage thresholds are enforced in `apps/api` only** — LINE 0.70, BRANCH 0.60, ratcheted on
-  2026-08-26 from 0.50/0.40 after Phase 3 measured 77.6% and 66.1%. Raised only when a phase
-  genuinely raises coverage, and never lowered to go green. `apps/web` and `apps/scoring` still
-  have none; set them in Phases 4 and 6.
+  2026-08-26 from 0.50/0.40 after Phase 3 measured 77.6% and 66.1%. `apps/scoring` gained its own
+  floor with the feature pipeline — `fail_under = 90`, measured at 95.9%. Both are ratchets: raised
+  only when a change genuinely raises coverage, never lowered to go green. **`apps/web` still has
+  none**; it gets one in Phase 6.
 - **Google Fonts is loaded from a remote host.** Self-host in Phase 6 so the local-first stack has
   no external runtime dependency.
 - **Screen-reader behaviour is unverified.** axe is not a substitute for a manual pass. Phase 6.
@@ -604,28 +632,26 @@ None.
 
 Phase 4 is in progress and `main` is green. Nothing is blocked.
 
-1. **The versioned feature pipeline, in `apps/scoring`.** Build it against
-   `contracts/openapi/sentinelflow-scoring.yaml`, which already fixes what arrives: the transaction
-   and a bounded `AccountContext` carrying `lookbackWindowSeconds` and `truncated`. Those two fields
-   exist so a feature defined over 24 hours that only received an hour reports it in `warnings`
-   rather than returning a confidently wrong number — honour them rather than ignoring them.
-   Features are versioned and deterministic, and **nothing that would only be known after an
-   analyst's decision may enter one**; that rule is the difference between an evaluation that means
-   something and one that does not. Set a coverage threshold for `apps/scoring` while the code is
-   being written, not after.
-2. **ADR-0010 — the model and evaluation choice — then reproducible training.** The ADR comes first
-   for the same reason ADR-0008 did: the comparison is rules-only, logistic regression, a tree-based
-   model if it materially helps, and Isolation Forest as an unsupervised comparison, and the
-   production-demo candidate is chosen on documented evidence rather than on the highest number.
-   Training is an explicit offline command, never an API side effect. Time-aware or group-aware
-   splitting, so the same account cannot appear in both train and test. **Accuracy is never the
-   headline** — PR-AUC is, with precision, recall, false-positive rate and alert volume beside it.
-3. **`/v1/score` and `/v1/model`, then the Spring client and persisted assessments.** The client
-   carries the timeouts, bounded retry and circuit breaker ADR-0008 §3 fixes, and the circuit
-   breaker is load-bearing rather than decoration: without it every record in a backlog pays the
-   full timeout before degrading. The first real `TransactionCreatedHandler` registers into the list
-   the consumer already injects, so the consumer itself needs no change. `make replay` lands here
-   too, because a scoring outage and a poison event are the scenarios worth replaying.
+1. **ADR-0010 — the model and evaluation choice.** It comes before the training code for the same
+   reason ADR-0008 came before the client: the comparison is rules-only, logistic regression, a
+   tree-based model if it materially helps, and Isolation Forest as an unsupervised comparison, and
+   the production-demo candidate is chosen on documented evidence — simplicity, inference cost,
+   reproducibility, explainability — rather than on the highest number. Decide the splitting strategy
+   there too: time-aware or group-aware, so the same account cannot appear in both train and test.
+2. **Reproducible training, evaluation, and the model registry.** An explicit offline command, never
+   an API side effect. Save the dataset fingerprint, the feature version, the split strategy, the
+   hyperparameters, the environment lock, the metrics JSON, the plots, the artifact checksum and the
+   model card. **Accuracy is never the headline** under this imbalance — PR-AUC is, with precision,
+   recall, false-positive rate and alert volume beside it. `docs/ml/MODEL_CARD.md` and
+   `docs/ml/EVALUATION.md` ship with the model, not after it.
+3. **`/v1/score` and `/v1/model`, then the rules baseline, the Spring client and persisted
+   assessments.** The rules baseline lives in `apps/api` (ADR-0002), which is what makes a degraded
+   assessment a real answer rather than a null with a flag on it. The client carries the timeouts,
+   bounded retry and circuit breaker ADR-0008 §3 fixes; the breaker is load-bearing, because without
+   it every record in a backlog pays the full timeout before degrading. The first real
+   `TransactionCreatedHandler` registers into the list the consumer already injects, so the consumer
+   needs no change. `make replay` lands here, since a scoring outage and a poison event are the
+   scenarios worth replaying.
 
 ## Session startup commands
 
