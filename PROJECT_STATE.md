@@ -14,15 +14,15 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-26T00:15Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T00:40Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 1 merged to `main`; Phase 2 not started                                                                                           |
-| Current phase        | Phase 2 — contracts, domain, and database (started)                                                                                              |
-| Current task         | Phase 2 — ADRs and `contracts/` merged; domain and migrations next                                                                               |
+| Overall status       | active — Phase 2 in progress on `feat/domain-and-migrations`, nothing executed yet                                                               |
+| Current phase        | Phase 2 — contracts, domain, and database (in progress)                                                                                          |
+| Current task         | Phase 2 — migrations and entities written, **unrun**; Testcontainers next                                                                        |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `main` — Phase 2 branches from here                                                                                                              |
+| Working branch       | `feat/domain-and-migrations` — branched from `4de1ff8`, five commits, no PR yet                                                                  |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
@@ -105,6 +105,30 @@ against the current schema and exercised locally before commit.
 `CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
 prompt-dump into something verified, with two generated screenshots.
 
+## In progress — Phase 2, branch `feat/domain-and-migrations`
+
+**Written and committed. None of it has been executed.** Docker Desktop was not running when the
+session began, was launched, and had not brought its engine up before the checkpoint. No migration
+in this branch has touched PostgreSQL and no JPA mapping has been validated against a table.
+
+- Six forward-only Flyway migrations covering all fifteen §9 tables: identity and reference data,
+  parties and accounts, transactions, assessments and the alert workflow, the model registry, and
+  the outbox, deduplication ledger and audit log.
+- `UuidV7` (RFC 9562, monotonic counter in `rand_a`), `Money` (scale-normalised, `compareTo`
+  equality, cross-currency arithmetic rejected), and 21 domain enums matching the CHECK
+  constraints and `contracts/schemas/`.
+- Six of fifteen JPA entities: `Role`, `User`, `UserRole`, `Customer`, `Merchant`, `Account`,
+  over an `AbstractEntity` that assigns its identifier in the constructor.
+- Persistence wiring: JPA, Flyway, the driver, `ddl-auto: validate`, Hikari, `open-in-view: false`,
+  Surefire/Failsafe split, one merged JaCoCo exec file, and database credentials passed to the API
+  container in `compose.yaml`.
+- `scripts/claude/checkpoint.mjs` path-truncation defect fixed and verified.
+
+**What this branch still needs before it is reviewable:** the nine remaining entities, the
+Testcontainers base and migration suite, `make test-integration`, the JaCoCo threshold, the seed
+framework, and the two diagrams. CI is not running on it — the workflows trigger on `main` and on
+pull requests, and no pull request is open, deliberately, because the branch would be red.
+
 ## Acceptance criteria status — Phase 1 gate
 
 | Criterion                           | Status   | Evidence                                                                        |
@@ -174,8 +198,18 @@ schema, validates every example, and asserts the deliberately-invalid ones are r
 
 - **Node 22.19.0 on the reference machine** passed its LTS end date (2026-07-28). `engines`
   requires Node 24. Bun runs everything, so nothing is blocked, but local Node should be upgraded.
-- **Default `JAVA_HOME` points at JDK 17.** JDK 25 is installed at `%USERPROFILE%\.jdks`;
-  `make bootstrap` warns rather than fails, because `make up` builds the API in Docker.
+- **Default `JAVA_HOME` points at JDK 17.** JDK 25 is at `~/.jdks/jdk-25.0.4.1+1`;
+  `make bootstrap` warns rather than fails, because `make up` builds the API in Docker. Hit
+  directly on 2026-08-26: `./mvnw compile` fails with `release version 25 not supported` unless
+  `JAVA_HOME` is set for the command. Spotless passes regardless, because formatting does not
+  compile — a green formatter is not a green build.
+- **Docker Desktop does not start quickly on the reference machine.** It was launched at the start
+  of the 2026-08-26 session and its engine was still unreachable minutes later, which is why the
+  Phase 2 schema is committed unexecuted. Start it before any session that touches persistence.
+- **`Alert.version` disagrees between the contract and the mapping.** OpenAPI sets `minimum: 1` on
+  `Alert.version` and `AlertTransitionRequest.expectedVersion`; Hibernate's `@Version` seeds a new
+  entity at 0 and the schema permits `>= 0`. Unresolved by design rather than overlooked — see
+  "Next three actions".
 - **The published Temurin 25 image is one critical-patch build behind the local JDK.** Containers
   build on `25.0.4+7`, local `./mvnw` runs on `25.0.4.1+1`. Both are Java 25 LTS. Revisit when
   Adoptium publishes `25.0.4.1`.
@@ -218,21 +252,30 @@ None.
 
 ## Next three actions
 
-ADR-0006, ADR-0007 and `contracts/` are **done and merged**. All three were previous next actions.
+The migrations, the domain types and six of fifteen entities are written and committed on
+`feat/domain-and-migrations`. **Nothing on that branch has been run.** Resume there, not on `main`.
 
-1. **Model the domain and write the first Flyway migrations.** Entities per §9 of the build
-   standards — customers, accounts, merchants, transactions, risk_assessments, alerts,
-   alert_actions, outbox_events, processed_events, audit_log. Follow ADR-0007 exactly:
-   `NUMERIC(19,4)` money with an explicit currency column, UUID primary keys, `timestamptz`,
-   constraints declared in the database, `ddl-auto: validate`. Shapes must match
-   `contracts/schemas/`.
-2. **Add Testcontainers PostgreSQL tests** that run every migration from an empty database and
-   assert the constraints actually reject what they should — a migration test that only checks the
-   migration applied has tested Flyway, not the schema. Real PostgreSQL, never H2. Add the
-   Testcontainers dependency (BOM-managed at 2.0.5) and a `make test-integration` that works.
-3. **Add the ER diagram and the transaction-to-alert sequence diagram** to
-   `docs/architecture/`, generated from or checked against the migrations, and set a JaCoCo
-   threshold now that there is behaviour worth measuring.
+1. **Start Docker, then prove the schema.** `docker compose` must be reachable before anything
+   else is worth doing. Then add the Testcontainers base — a shared `postgres:18.6-alpine`
+   container with `@ServiceConnection`, image name from the `postgres.test.image` pom property —
+   and make the existing `SentinelFlowApiApplicationTests` use it, because the service now needs a
+   database to start at all. `./mvnw verify` under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1` is the
+   command; the default `JAVA_HOME` is JDK 17 and fails with `release version 25 not supported`.
+   Expect real failures here: `uuidv7()` needs PostgreSQL 18, and `ddl-auto: validate` will reject
+   any column type, length or nullability the entities got wrong. That rejection is the point.
+2. **Finish the mappings and the constraint tests.** The nine unmapped tables — `Transaction`,
+   `RiskAssessment`, `Alert`, `AlertAction`, `AnalystFeedback`, `RegisteredModel`, `OutboxEvent`,
+   `ProcessedEvent`, `AuditLogEntry` — plus a `*IT` suite that asserts the constraints **reject**
+   what they should. A migration test that only checks the migration applied has tested Flyway,
+   not the schema. Start with `transactions (account_id, idempotency_key)`,
+   `risk_assessments_degraded_consistent`, `alerts_closed_at_consistent` and
+   `model_registry_single_active_idx`. Then `make test-integration` (`-DskipUnitTests=true`) and a
+   JaCoCo threshold set from the measured number, not chosen first.
+3. **Resolve the alert-version contract tension, then the seed framework and diagrams.** OpenAPI
+   requires `Alert.version >= 1`; Hibernate seeds `@Version` at 0 and the schema currently permits 0. Decide it explicitly — amend the contract with a stated reason, or compensate in the mapping
+   — and do not leave it for Phase 5 to discover. Then the repeatable seed loader (application
+   code, never a migration; synthetic data only) and the ER and transaction-to-alert diagrams in
+   `docs/architecture/`, checked against the migrations rather than drawn from memory.
 
 ## Session startup commands
 

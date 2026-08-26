@@ -240,3 +240,40 @@ Two defects in the checker itself surfaced from running it. AJV registers a sche
 AsyncAPI parser given only a file's contents has no base path, so every `../schemas/*.json`
 reference failed to resolve; it needs `fromFile`. Both are the same lesson as Phase 1's ten: reading
 the code would not have found either.
+
+### Phase 2 continues — the schema, and a session that could not run it
+
+The six Flyway migrations covering all fifteen tables in §9 are written, along with the domain
+value types and the first six JPA entities. **None of it has been executed.** Docker Desktop was
+not running when this session started; it was launched and had still not brought its engine up by
+the time the checkpoint threshold arrived. Nothing here is claimed to work.
+
+What _was_ run, on 2026-08-26: `./mvnw spotless:apply` and `./mvnw compile` under
+`~/.jdks/jdk-25.0.4.1+1` (both exit 0), `bun run format:check` (pass), `check-docs.mjs` (77 links
+across 30 files, 0 broken), and `check-contracts.mjs` (pass). Compilation is evidence the Java is
+well-formed. It is not evidence that a single migration applies or that a single mapping matches
+its table, and `ddl-auto: validate` means the service will refuse to start if any of them do not.
+
+The default `JAVA_HOME` on the reference machine still points at JDK 17, which is already recorded
+as known debt. It surfaced here as `release version 25 not supported` — worth noting that Spotless
+passed anyway, because formatting does not compile. A green formatter is not a green build.
+
+Three schema constraints took the most thought and are the ones the constraint tests will target
+first. `transactions (account_id, idempotency_key)` **is** the idempotency guarantee — an
+application-level check-then-insert has a window between its two statements and this does not.
+`risk_assessments_degraded_consistent` makes a half-degraded assessment unrepresentable, which is
+what a partially-failed scoring call would otherwise persist and a consumer would later read as a
+real model output. `model_registry_single_active_idx` allows exactly one `ACTIVE` model, because a
+second one makes "which model scored this" ambiguous for every assessment written while it lasted.
+
+One contract tension surfaced and is **not yet resolved**: OpenAPI gives `Alert.version` and
+`AlertTransitionRequest.expectedVersion` a `minimum` of 1, while Hibernate's `@Version` seeds a new
+entity at 0. The schema currently permits `version >= 0`. Either the contract moves to 0 with a
+stated reason or the mapping compensates; picking one is a Phase 2 action, not something to leave
+for whoever writes the alert service in Phase 5 to discover.
+
+A defect in `scripts/claude/checkpoint.mjs` was found by reading its own output: `run` trims, which
+removes the leading space of the **first** porcelain line only, so a fixed-offset slice dropped the
+first character of that path and left every other one intact. It printed `pps/api/pom.xml`. Fixed
+and verified. A helper that exists to stop facts being typed from memory and typed wrong is worse
+than nothing when it corrupts one authoritatively.
