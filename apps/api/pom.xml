@@ -40,6 +40,21 @@
     <spotless-maven-plugin.version>3.10.0</spotless-maven-plugin.version>
     <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
     <palantir-java-format.version>2.86.0</palantir-java-format.version>
+
+    <!--
+      The PostgreSQL image the Testcontainers suites run against. It must match
+      compose.yaml: a schema verified on one major version and deployed on
+      another has been verified against a different type system, and PostgreSQL
+      18's uuidv7() does not exist before 18 at all.
+    -->
+    <postgres.test.image>postgres:18.6-alpine</postgres.test.image>
+
+    <!--
+      Lets `make test-integration` run only the Testcontainers suites.
+      Surefire and Failsafe share `skipTests`, so skipping unit tests alone
+      needs a property of our own rather than a built-in one.
+    -->
+    <skipUnitTests>false</skipUnitTests>
   </properties>
 
   <dependencies>
@@ -66,9 +81,63 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!--
+      Persistence. Flyway owns the schema and Hibernate only validates it
+      against the mappings (ADR-0007), so these three always move together:
+      the driver, the migration tool, and the ORM that checks the result.
+
+      flyway-database-postgresql is a separate artifact from Flyway 10 onward.
+      Without it Flyway starts, finds no PostgreSQL support, and fails at the
+      first migration rather than at configuration time.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+      Real PostgreSQL for every test that touches the database. H2 is not
+      acceptable evidence that a PostgreSQL migration works: it shares neither
+      the type system, the constraint behaviour, nor the dialect, so a green H2
+      run against a schema PostgreSQL would reject is worse than no test at all
+      (ADR-0007).
+
+      Testcontainers 2.x renamed its modules - `testcontainers-postgresql`, not
+      `postgresql` - and moved PostgreSQLContainer to org.testcontainers.postgresql.
+      The 1.x coordinates resolve to nothing on this BOM.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -126,15 +195,66 @@
       </plugin>
 
       <!--
-        JaCoCo produces the coverage report every phase gate quotes. No
-        threshold rule is configured yet: a threshold set before the service has
-        behaviour to cover only measures how much of a scaffold is exercised.
-        Phase 2 sets it against a real baseline.
+        Unit tests. Fast, no Docker, no network. `*Tests.java` by convention;
+        anything needing a container is an IT and belongs to Failsafe below.
+
+        The image name is handed to the tests as a system property rather than
+        hard-coded in a base class, so the pom stays the single place where the
+        tested PostgreSQL version is written down.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <skipTests>${skipUnitTests}</skipTests>
+          <systemPropertyVariables>
+            <sentinelflow.test.postgres.image>${postgres.test.image}</sentinelflow.test.postgres.image>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+
+      <!--
+        Integration tests: `*IT.java`, run at the `integration-test` phase
+        against real PostgreSQL in a container. Failsafe rather than Surefire
+        because Failsafe records a failure and lets `post-integration-test`
+        run before `verify` fails the build - Surefire halts immediately and
+        leaves containers behind.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <sentinelflow.test.postgres.image>${postgres.test.image}</sentinelflow.test.postgres.image>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <id>integration-tests</id>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Coverage over both suites. The unit and integration agents write to one
+        exec file - JaCoCo appends - so the report reflects everything that ran
+        rather than crediting only the faster half.
+
+        `report` is bound to post-integration-test, not verify: a report that
+        only exists when the build passes is missing exactly when it is wanted.
       -->
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
         <version>${jacoco-maven-plugin.version}</version>
+        <configuration>
+          <destFile>${project.build.directory}/jacoco.exec</destFile>
+          <dataFile>${project.build.directory}/jacoco.exec</dataFile>
+        </configuration>
         <executions>
           <execution>
             <id>prepare-agent</id>
@@ -143,8 +263,14 @@
             </goals>
           </execution>
           <execution>
+            <id>prepare-agent-integration</id>
+            <goals>
+              <goal>prepare-agent-integration</goal>
+            </goals>
+          </execution>
+          <execution>
             <id>report</id>
-            <phase>verify</phase>
+            <phase>post-integration-test</phase>
             <goals>
               <goal>report</goal>
             </goals>
