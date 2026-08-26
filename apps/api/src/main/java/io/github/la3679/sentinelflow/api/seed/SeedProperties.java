@@ -14,9 +14,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param seed the pseudo-random seed. The same value produces the same dataset on any machine, so
  *     it is quoted in bug reports and pinned in CI. Changing it changes every generated reference.
  * @param profile how much data to load
+ * @param scenarios whether to generate transaction traffic over the seeded parties as well.
+ *     {@link Boolean} rather than {@code boolean} so that "unset" is distinguishable from "off" —
+ *     a primitive would default to {@code false} and quietly leave every seeded demo with no
+ *     transactions in it. Defaults to on, because parties with no traffic are not a demo.
  */
 @ConfigurationProperties("sentinelflow.seed")
-public record SeedProperties(boolean enabled, long seed, SeedProfile profile) {
+public record SeedProperties(boolean enabled, long seed, SeedProfile profile, Boolean scenarios) {
 
     /**
      * A date, so it reads as a deliberate constant rather than as a number someone liked. Any value
@@ -31,5 +35,13 @@ public record SeedProperties(boolean enabled, long seed, SeedProfile profile) {
         if (seed == 0L) {
             seed = DEFAULT_SEED;
         }
+        if (scenarios == null) {
+            scenarios = Boolean.TRUE;
+        }
+    }
+
+    /** Whether to generate traffic. Never null after construction. */
+    public boolean generateScenarios() {
+        return Boolean.TRUE.equals(scenarios);
     }
 }
