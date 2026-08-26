@@ -106,6 +106,12 @@ updates:
   # ---------------------------------------------------------------------------
   # Container base images
   # ---------------------------------------------------------------------------
+  #
+  # Every base image here is pinned to a line that a recorded decision chose, so
+  # a version bump is only ever safe within that line. Dependabot cannot know
+  # that, and on its first run it proposed moving off all three at once. The
+  # ignore rules below are the fix; each one names the decision it protects.
+  #
   - package-ecosystem: docker
     directories:
       - /apps/api
@@ -121,3 +127,25 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    ignore:
+      # Java 25 is the LTS this project targets (ADR-0003). Java 26 is not an
+      # LTS release, and moving to it is an architectural decision needing a
+      # research entry - not an automated pull request.
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
+
+      # Python is pinned to exactly 3.13 (ADR-0004, R-2026-08-25-06): numpy sets
+      # a >=3.12 floor and joblib - which model serialisation depends on from
+      # Phase 4 - declares support only through 3.13. A 3.14 bump would put the
+      # image ahead of what pyproject.toml permits and break `uv sync --frozen`.
+      # Minor is ignored as well as major, because for CPython the minor number
+      # is the compatibility boundary.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+      # nginx's even minor versions are the stable line and the odd ones are
+      # mainline. 1.30.x is stable - verified by digest against the `stable`
+      # tag - so a bump to 1.31.x is a move to mainline rather than an upgrade.
+      # Patch updates within 1.30.x still come through.
+      - dependency-name: "nginxinc/nginx-unprivileged"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

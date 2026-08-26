@@ -150,7 +150,7 @@ function Invoke-Help {
         'test-web'         = 'Unit tests for the console'
         'test-api'         = 'Tests for the Spring Boot service'
         'test-scoring'     = 'Tests for the scoring service'
-        'test-integration' = '(Phase 2) Testcontainers PostgreSQL and Kafka suites'
+        'test-integration' = 'Testcontainers PostgreSQL suites (requires Docker)'
         'test-e2e'         = 'Playwright browser, accessibility and responsive checks'
         'lint'             = 'Lint every application'
         'format'           = 'Format everything in place'
@@ -158,6 +158,7 @@ function Invoke-Help {
         'security'         = 'Scan the repository for committed secrets'
         'smoke'            = 'Verify the running stack actually serves'
         'docs-check'       = 'Check documentation formatting, links, and placeholders'
+        'contracts-check'  = 'Validate OpenAPI, AsyncAPI, and the event schemas'
         'clean'            = 'Remove build output (keeps dependencies and Docker volumes)'
     }
     foreach ($key in $targets.Keys) {
@@ -493,9 +494,9 @@ switch ($Target) {
         Invoke-Native $Scoring 'uv' @('run', 'pytest')
     }
     'test-web' { Invoke-Native $Web 'bun' @('run', 'test') }
-    'test-api' { Invoke-Native $Api '.\mvnw.cmd' @('-B', 'verify') }
+    'test-api' { Invoke-Native $Api '.\mvnw.cmd' @('-B', 'verify', '-DskipITs', '-Djacoco.skip=true') }
     'test-scoring' { Invoke-Native $Scoring 'uv' @('run', 'pytest') }
-    'test-integration' { Invoke-NotImplemented 'test-integration' 'Phase 2' 'Testcontainers suites arrive with the schema they verify, and' }
+    'test-integration' { Invoke-Native $Api '.\mvnw.cmd' @('-B', 'verify', '-DskipUnitTests=true') }
     'test-e2e' {
         Invoke-Native $Web 'bun' @('run', 'build')
         Invoke-Native $Web 'bun' @('run', 'test:e2e')
@@ -531,6 +532,7 @@ switch ($Target) {
         Invoke-Native $RepoRoot 'bun' @('run', 'format:check')
         Invoke-Native $RepoRoot 'bun' @('scripts/dev/check-docs.mjs')
     }
+    'contracts-check' { Invoke-Native $RepoRoot 'bun' @('scripts/dev/check-contracts.mjs') }
 
     'clean' {
         foreach ($path in @(

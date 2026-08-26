@@ -1,0 +1,41 @@
+{
+  "eventId": "01936b2a-8100-7000-8000-2f9c1d4e5a6c",
+  "eventType": "risk.assessed",
+  "schemaVersion": 1,
+  "occurredAt": "2026-08-25T21:14:07.512000Z",
+  "producer": "sentinelflow-api",
+  "correlationId": "01936b2a-7c4f-7000-8000-1a2b3c4d5e6f",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "aggregateType": "assessment",
+  "aggregateId": "01936b2a-8100-7000-8000-0102030405f6",
+  "payload": {
+    "assessmentId": "01936b2a-8100-7000-8000-0102030405f6",
+    "transactionId": "01936b2a-7c4f-7000-8000-9f8e7d6c5b4a",
+    "accountId": "01936b2a-7c4f-7000-8000-aabbccddeeff",
+    "ruleScore": 42,
+    "modelScore": 78.5,
+    "finalScore": 71.2,
+    "riskBand": "HIGH",
+    "degraded": false,
+    "modelVersion": "1.0.0",
+    "featureVersion": "1.0.0",
+    "policyVersion": "1.0.0",
+    "reasonCodes": [
+      {
+        "code": "VELOCITY_1H_EXCEEDED",
+        "description": "Six transactions on this account in the preceding hour, against a baseline of one.",
+        "contribution": 31.5,
+        "source": "RULE"
+      },
+      {
+        "code": "UNUSUAL_MERCHANT_CATEGORY",
+        "description": "First transaction with merchant category 5812 on this account.",
+        "contribution": 18.0,
+        "source": "MODEL"
+      }
+    ],
+    "scoringLatencyMs": 41,
+    "alertRaised": true,
+    "assessedAt": "2026-08-25T21:14:07.512000Z"
+  }
+}

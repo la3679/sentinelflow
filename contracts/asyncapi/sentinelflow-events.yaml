@@ -1,0 +1,217 @@
+asyncapi: 3.0.0
+
+info:
+  title: SentinelFlow events
+  version: 1.0.0
+  description: |
+    Every Kafka topic SentinelFlow publishes, and the contract for each.
+
+    **This document is authoritative.** Changing it means updating producers,
+    consumers, tests and documentation in the same change — see
+    [ADR-0006](../../docs/adr/0006-event-schema-and-versioning.md).
+
+    ## What every message carries
+
+    One envelope, on every topic, without exception. `payload` is the only part
+    that varies by event type. The envelope is versioned as a whole and
+    separately from payloads: `schemaVersion` describes the payload contract for
+    a given `eventType`, not the envelope.
+
+    ## Ordering, and what it does not guarantee
+
+    Kafka orders only within a partition.
+
+    - `transaction.created.v1` and `risk.assessed.v1` are keyed by **account
+      id**, giving per-account ordering. Velocity rules depend on this.
+    - `alert.created.v1` and `alert.updated.v1` are keyed by **alert id**,
+      giving per-alert ordering.
+
+    **There is no global ordering across accounts or alerts, and nothing may
+    assume one.**
+
+    ## Delivery
+
+    At-least-once, via a transactional outbox. **Consumers must be idempotent**
+    and deduplicate on `eventId` in durable storage. A duplicate is normal
+    traffic, not an incident.
+
+    ## Compatibility
+
+    Backward-compatible changes only at a given `schemaVersion`: add optional
+    fields, never remove, rename, retype, or change the meaning of one.
+    Consumers ignore unknown fields. A breaking change gets a new
+    `schemaVersion` and a new `.vN` topic, run alongside the old one until its
+    consumers have migrated.
+
+    ## Never in a payload
+
+    Secrets, credentials, tokens, or personal data — including in dead-letter
+    metadata. Events are long-lived, replayable, and readable by anything with
+    topic access.
+
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+  tags:
+    - name: synthetic-data
+      description: SentinelFlow operates only on fictional synthetic data.
+
+defaultContentType: application/json
+
+servers:
+  local:
+    host: localhost:29092
+    protocol: kafka
+    description: |
+      The local development broker from `compose.yaml`. Apache Kafka 4.2.1 in
+      KRaft mode, single node. Containers reach it as `kafka:9092`; a host
+      process reaches it as `localhost:29092`.
+
+      No authentication and no TLS: this binds to the developer's own machine
+      and carries only synthetic data. **It is not a deployment target.**
+
+channels:
+  transactionCreated:
+    address: transaction.created.v1
+    title: Transaction created
+    description: |
+      A transaction was accepted and durably persisted. Published through the
+      outbox, so its existence means the row was committed.
+
+      **Key:** account id.
+    messages:
+      transactionCreated:
+        $ref: "#/components/messages/transactionCreated"
+
+  riskAssessed:
+    address: risk.assessed.v1
+    title: Risk assessed
+    description: |
+      A transaction was scored and the assessment persisted. Carries every
+      version that contributed, because an assessment that cannot be attributed
+      to the configuration that produced it cannot be defended later.
+
+      **Key:** account id, matching `transaction.created.v1`.
+    messages:
+      riskAssessed:
+        $ref: "#/components/messages/riskAssessed"
+
+  alertCreated:
+    address: alert.created.v1
+    title: Alert created
+    description: |
+      An assessment opened an alert for human review.
+
+      **Key:** alert id.
+    messages:
+      alertCreated:
+        $ref: "#/components/messages/alertCreated"
+
+  alertUpdated:
+    address: alert.updated.v1
+    title: Alert updated
+    description: |
+      An alert changed: a state transition, an assignment, a priority change, or
+      a note. Carries both the previous and the new status, because a consumer
+      that only sees the new state cannot reconstruct the path — and the path is
+      what an audit asks about.
+
+      **Key:** alert id.
+    messages:
+      alertUpdated:
+        $ref: "#/components/messages/alertUpdated"
+
+  transactionProcessingDlq:
+    address: transaction.processing.dlq.v1
+    title: Dead-letter queue
+    description: |
+      Terminal processing failures: either classified non-retryable, or the
+      bounded retry budget was exhausted.
+
+      Carries enough to diagnose and reprocess, and nothing sensitive — no
+      stack trace, no secret, no unsanitised payload fragment. A DLQ is
+      long-lived storage that operations staff read.
+
+      **Key:** the original message key, so a failed record stays in the same
+      partition as the traffic it came from.
+    messages:
+      deadLetterRecord:
+        $ref: "#/components/messages/deadLetterRecord"
+
+operations:
+  publishTransactionCreated:
+    action: send
+    channel:
+      $ref: "#/channels/transactionCreated"
+    summary: The API publishes an accepted transaction.
+
+  consumeTransactionCreated:
+    action: receive
+    channel:
+      $ref: "#/channels/transactionCreated"
+    summary: The risk consumer scores an accepted transaction.
+
+  publishRiskAssessed:
+    action: send
+    channel:
+      $ref: "#/channels/riskAssessed"
+    summary: The API publishes a completed assessment.
+
+  publishAlertCreated:
+    action: send
+    channel:
+      $ref: "#/channels/alertCreated"
+    summary: The API publishes a newly opened alert.
+
+  publishAlertUpdated:
+    action: send
+    channel:
+      $ref: "#/channels/alertUpdated"
+    summary: The API publishes a change to an alert.
+
+  publishDeadLetter:
+    action: send
+    channel:
+      $ref: "#/channels/transactionProcessingDlq"
+    summary: A consumer dead-letters an event it cannot process.
+
+components:
+  messages:
+    transactionCreated:
+      name: TransactionCreated
+      title: transaction.created
+      contentType: application/json
+      payload:
+        $ref: "../schemas/event-envelope.v1.json"
+
+    riskAssessed:
+      name: RiskAssessed
+      title: risk.assessed
+      contentType: application/json
+      payload:
+        $ref: "../schemas/event-envelope.v1.json"
+
+    alertCreated:
+      name: AlertCreated
+      title: alert.created
+      contentType: application/json
+      payload:
+        $ref: "../schemas/event-envelope.v1.json"
+
+    alertUpdated:
+      name: AlertUpdated
+      title: alert.updated
+      contentType: application/json
+      payload:
+        $ref: "../schemas/event-envelope.v1.json"
+
+    deadLetterRecord:
+      name: DeadLetterRecord
+      title: Dead-letter record
+      contentType: application/json
+      description: |
+        Not an envelope — it *wraps* one, in `originalEvent`, unmodified, so
+        reprocessing replays exactly what failed rather than a reconstruction.
+      payload:
+        $ref: "../schemas/dlq-record.v1.json"

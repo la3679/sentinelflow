@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-25T22:20Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T14:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 1 complete; Phase 2 not started                                                                                                   |
-| Current phase        | Phase 1 — monorepo and developer foundation (complete, pending merge)                                                                            |
-| Current task         | Phase 1 gate met; merging PR #2, then Phase 2                                                                                                    |
+| Overall status       | active — Phase 2 deliverables complete and **executed** on `feat/domain-and-migrations`; PR next                                                 |
+| Current phase        | Phase 3 — ingestion, outbox, and Kafka (not started)                                                                                             |
+| Current task         | Phase 2 — open the pull request, get CI green on it, merge                                                                                       |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `chore/phase-1-foundation`                                                                                                                       |
+| Working branch       | `feat/domain-and-migrations` — branched from `4de1ff8`, eleven commits, **no PR yet**                                                            |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PR              | [#2](https://github.com/la3679/sentinelflow/pull/2) — draft, all six workflows green                                                             |
+| Open PRs             | four Dependabot major dev-dependency bumps, #9-#12 — see below                                                                                   |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -49,12 +49,44 @@ taken deliberately and is recorded in [ADR-0002](docs/adr/0002-monorepo-and-serv
 and [`docs/operations/LOVABLE_GITHUB_WORKFLOW.md`](docs/operations/LOVABLE_GITHUB_WORKFLOW.md),
 which also records the two honest routes back to a design session if one is ever wanted.
 
+## Branch stack and the outage blocking it
+
+**GitHub Actions has been in a declared `major_outage` since 15:11Z on 2026-08-26** (incident
+"Incident with Actions", plus "Disruption with some GitHub services" at 15:09Z). Runs queue and
+never start; two came back `startup_failure` in seconds on workflow files that were green half an
+hour earlier, and `gh run cancel` refuses stuck runs as "completed" while the API reports them
+`queued`. Git operations, the API, and Pull Requests are unaffected, so everything below is pushed.
+
+This was checked rather than assumed: every job already uses the generic `ubuntu-latest` pool, and
+the concurrency groups are per-`github.ref`, so neither a runner label nor a ghost run holding a
+group explains it.
+
+**Three branches, each stacked on the one before it. None is merged.**
+
+| Branch                       | Contains                                         | State                                                                      |
+| ---------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `feat/transaction-ingestion` | Ingestion endpoint, idempotency, problem details | PR [#26](https://github.com/la3679/sentinelflow/pull/26), **CI never ran** |
+| `feat/outbox-relay`          | The relay, Kafka transport, envelope             | pushed, **no PR** — would show #26's diff                                  |
+
+PR #25 was the ingestion pull request and was **closed deliberately**, not abandoned: GitHub had
+dispatched only three of six workflows for its head commit and left them stuck. #26 is the same
+branch, reopened, and it dispatched more workflows — which then queued too.
+
+**Order to land them in:** #26 first, then open a pull request for `feat/outbox-relay` once its base
+is on `main`. Do not merge the relay branch into `main` directly; it carries the ingestion commits.
+
+**Everything below was verified locally.** Under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1` on 2026-08-26,
+`./mvnw verify` on `feat/outbox-relay` gives **23 unit and 89 integration tests passing** with the
+coverage gate met, `docker build -f apps/api/Dockerfile apps/api` succeeds, and `check-contracts`,
+`check-docs` and `format:check` all pass. That is one machine, not CI, and it is not a substitute
+for it.
+
 ## Product status by phase
 
 - [x] **Phase 0 — research gate and Lovable/GitHub bootstrap**
 - [x] **Phase 1 — monorepo and developer foundation**
-- [ ] Phase 2 — contracts, domain, and database
-- [ ] Phase 3 — ingestion, outbox, and Kafka
+- [x] **Phase 2 — contracts, domain, and database**
+- [ ] **Phase 3 — ingestion, outbox, and Kafka** ← in progress, unmerged
 - [ ] Phase 4 — synthetic data and scoring
 - [ ] Phase 5 — alerts and investigations
 - [ ] Phase 6 — operations frontend
@@ -105,6 +137,97 @@ against the current schema and exercised locally before commit.
 `CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
 prompt-dump into something verified, with two generated screenshots.
 
+## Completed — Phase 2, merged as PR [#21](https://github.com/la3679/sentinelflow/pull/21)
+
+**The schema now runs.** Everything below was executed on 2026-08-26 against real PostgreSQL 18.6
+in Testcontainers, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`.
+
+**Testcontainers foundation.** One `postgres:18.6-alpine` container per JVM fork, exposed as a
+`@ServiceConnection` bean, image name from the `postgres.test.image` pom property. Flyway applies
+all six migrations to an empty database and Hibernate validates every mapping against the result;
+both are assertions in themselves.
+
+**All fifteen tables mapped**, and `ddl-auto: validate` accepts every one. Foreign keys are `UUID`
+fields rather than `@ManyToOne`, so no traversal is an implicit query. `TransactionRecord` is named
+around the collision with `jakarta.transaction.Transaction`. Invalid states are unconstructible, not
+merely constrained: `RiskAssessment` has `scored()` and `degraded()` factories and no public
+constructor, `Alert.transitionTo` sets `closedAt` from the target status, `OutboxEvent` derives its
+aggregate type from its event type, and `AuditLogEntry.byUser` requires the actor the `CHECK`
+requires.
+
+**Three defects, all found by running rather than reading.** `PostgreSQLContainer<?>` does not
+compile against Testcontainers 2.x. `spring.datasource.hikari.connection-timeout: 10s` failed
+startup with `NumberFormatException`, because that prefix binds onto `HikariDataSource` whose
+setters take a `long` — committed, unrun, and would have failed identically in production. And
+`spring-boot-flyway`, a separate module in Spring Boot 4, was missing: every `spring.flyway.*`
+property bound to nothing, no migration ran, and the only symptom was Hibernate reporting a missing
+table, which reads like a mapping defect and is not one.
+
+**Constraint, migration and mapping suites — 57 integration tests.** Every constraint test names the
+constraint it expects to fire, and where a rule has a permitted counterpart the counterpart is
+asserted too. `MigrationIT` covers what a constraint test cannot reach: the migration history, the
+PostgreSQL version `uuidv7()` needs, that no money column is floating point, that no timestamp lost
+its zone, and that the six deliberately-chosen indexes still exist and the partial ones are still
+partial.
+
+**Domain unit tests — 23.** `Money` and `UuidV7` had none. The UUIDv7 tests pin the clock, because a
+generator is trivially ordered when time passes between calls and index locality matters under a
+burst.
+
+**`Alert.version` resolved.** OpenAPI moved to `minimum: 0` with the reason stated in the schema;
+`alert-updated.v1.json` keeps `minimum: 1` and now says why.
+
+**Seed foundation.** Deterministic, idempotent, off by default everywhere, application code and
+never a migration. Parties only — customers, accounts, merchants, four fixed analyst logins; the
+scenario generator and `make seed` remain Phase 4. A `SeedManifest` carries the generator version,
+seed, profile, counts and a SHA-256 over the generated references.
+[`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md) records §13.5.
+
+**Diagrams.** [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md) and
+[`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md), drawn from
+`information_schema` on a database built by the migrations. `SchemaDocumentationIT` asserts the ER
+diagram's entity blocks are exactly the tables that exist.
+
+**Coverage gate.** LINE 0.50, BRANCH 0.40 — measured first at 52.4% / 46.9%, then set below the
+measurement. `make test-api` is now the unit half and skips JaCoCo; `make test-integration` is
+implemented; CI runs the full verify and enforces the gate.
+
+### Correction: the state file was wrong about the entity count
+
+This file and commit `78290dc` both claimed six of fifteen tables were mapped. **Four were.**
+`Merchant` and `Account` were described in that commit's message and never written. Git was right,
+the state file was wrong, and the discrepancy is recorded in
+[`docs/planning/SESSION_LOG.md`](docs/planning/SESSION_LOG.md) as the workflow rules require.
+
+## Acceptance criteria status — Phase 2 gate
+
+| Criterion                          | Status   | Evidence                                                                    |
+| ---------------------------------- | -------- | --------------------------------------------------------------------------- |
+| Migrations run from empty database | **pass** | Flyway applied 6/6 to `postgres:18.6-alpine`; `MigrationIT` asserts history |
+| Constraints tested                 | **pass** | `SchemaConstraintIT`, 29 tests, each naming the constraint it expects       |
+| Contracts validate in CI           | **pass** | `check-contracts.mjs` passes; `ci-repo` runs it on every push and PR        |
+| Docs match schema                  | **pass** | `SchemaDocumentationIT` asserts the ER diagram against `information_schema` |
+| OpenAPI / AsyncAPI / event schemas | **pass** | Delivered in the previous session, amended here for `Alert.version`         |
+| Domain model                       | **pass** | 15/15 tables mapped, `ddl-auto: validate` accepts all of them               |
+| Seed framework                     | **pass** | `DeterministicSeedLoader`, 6 tests; scenario generator is Phase 4           |
+| ER / data diagrams                 | **pass** | `docs/architecture/`, both generated from the live schema                   |
+
+**CI green, verified.** PR [#21](https://github.com/la3679/sentinelflow/pull/21) merged on
+2026-08-26 with all ten required checks passing, and all six workflows passed again on `main` at
+`c38934f`. The GitHub runner ran the Testcontainers suites for real — its log shows the six
+migrations applied and 23 unit plus 57 integration tests — so this is not a claim resting on one
+machine.
+
+**One thing blocked the merge and was fixed separately.** Trivy began failing the scoring and web
+image scans on **CVE-2026-14456** (OpenSSL, unbounded memory growth in the QUIC server path). Both
+are required checks, so it blocked every pull request in the repository, and it was nothing to do
+with Phase 2 — `main` was green the day before and the advisory is newer. The base images could not
+be bumped because neither had been rebuilt with the fix, so PR
+[#22](https://github.com/la3679/sentinelflow/pull/22) takes the patched package from each
+distribution at build time, pinned, with a recorded condition for removing the block once the base
+images catch up. Not a `.trivyignore`: the vulnerability is genuinely patched and genuinely
+available.
+
 ## Acceptance criteria status — Phase 1 gate
 
 | Criterion                           | Status   | Evidence                                                                        |
@@ -118,7 +241,24 @@ prompt-dump into something verified, with two generated screenshots.
 
 ## Test and verification evidence
 
-Every figure below came from a run on **2026-08-25**. Nothing here is estimated.
+Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-26 — Phase 2
+
+| Command                                      | Result                                                        |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)             | **PASS** — 23 unit, 57 integration, coverage check met        |
+| `./mvnw verify -DskipITs -Djacoco.skip=true` | **PASS** — 23/23, no Docker needed                            |
+| JaCoCo over both suites                      | 62.0% lines (432/697), 63.8% branches (60/94)                 |
+| Flyway against `postgres:18.6-alpine`        | **PASS** — 6/6 migrations applied to an empty database        |
+| Hibernate `ddl-auto: validate`               | **PASS** — all 15 mappings accepted                           |
+| `bun scripts/dev/check-contracts.mjs`        | **PASS**                                                      |
+| `bun scripts/dev/check-docs.mjs`             | **PASS** — 89 links across 33 files, 0 broken, 0 placeholders |
+| `bun run format:check` (repository-wide)     | **PASS**                                                      |
+| `bun run typecheck` (web)                    | **PASS**                                                      |
+| `bun run test` (web)                         | **PASS** — 24/24                                              |
+
+### 2026-08-25 — Phase 1
 
 | Command                                  | Result                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------- |
@@ -158,33 +298,80 @@ this repository. None has been measured.** Phase 9 measures them.
 | 0002 | One monorepo, `apps/{api,scoring,web}`, two services, CI not path-filtered                          |
 | 0003 | Java 25 LTS + Spring Boot 4.1.1; dependency versions inherited from the BOM                         |
 | 0004 | Python 3.13 via uv for `apps/scoring`                                                               |
+| 0005 | Outbox relay: polling with `FOR UPDATE SKIP LOCKED`, jittered bounded retry, `FAILED` is terminal   |
+| 0006 | Event envelope, five business topics, account-keyed ordering, at-least-once with an outbox          |
+| 0007 | Decimal money as JSON strings, UUIDv7 keys, `timestamptz`, forward-only Flyway migrations           |
 | 0009 | Adopt Lovable's TanStack Start foundation; render client-side so Spring Boot stays the sole backend |
 
-**Still needing an ADR:** 0005 Kafka outbox and delivery semantics · 0006 event schema and
-versioning · 0007 Flyway and money representation · 0008 scoring-service boundary · 0010 model and
-evaluation choice · 0011 SSE versus WebSockets · 0012 authentication · 0013 observability ·
-0014 deployment strategy.
+**Still needing an ADR:** 0008 scoring-service boundary · 0010 model and evaluation choice · 0011
+SSE versus WebSockets · 0012 authentication · 0013 observability · 0014 deployment strategy.
 
-**Contracts:** none yet — `contracts/` is created in Phase 2 with its first schema.
+**Contracts:** `contracts/` exists and is validated in CI — OpenAPI 3.1 for `/api/v1`,
+AsyncAPI 3.0 for the five topics, and seven JSON Schemas. `make contracts-check` compiles every
+schema, validates every example, and asserts the deliberately-invalid ones are rejected.
 
 ## Known issues and technical debt
 
 - **Node 22.19.0 on the reference machine** passed its LTS end date (2026-07-28). `engines`
   requires Node 24. Bun runs everything, so nothing is blocked, but local Node should be upgraded.
-- **Default `JAVA_HOME` points at JDK 17.** JDK 25 is installed at `%USERPROFILE%\.jdks`;
-  `make bootstrap` warns rather than fails, because `make up` builds the API in Docker.
+- **Default `JAVA_HOME` points at JDK 17.** JDK 25 is at `~/.jdks/jdk-25.0.4.1+1`;
+  `make bootstrap` warns rather than fails, because `make up` builds the API in Docker. Hit
+  directly on 2026-08-26: `./mvnw compile` fails with `release version 25 not supported` unless
+  `JAVA_HOME` is set for the command. Spotless passes regardless, because formatting does not
+  compile — a green formatter is not a green build.
+- **Docker Desktop does not start quickly on the reference machine.** Start it before any session
+  that touches persistence: every suite except the 23 unit tests needs it, and `make test-api`
+  exists precisely so the fast half can run without it.
+- ~~**`Alert.version` disagrees between the contract and the mapping.**~~ **Resolved 2026-08-26.**
+  OpenAPI moved to `minimum: 0` with the reason written into the schema; `alert-updated.v1.json`
+  keeps `minimum: 1` and now says why.
 - **The published Temurin 25 image is one critical-patch build behind the local JDK.** Containers
   build on `25.0.4+7`, local `./mvnw` runs on `25.0.4.1+1`. Both are Java 25 LTS. Revisit when
   Adoptium publishes `25.0.4.1`.
 - **`noUnusedLocals` / `noUnusedParameters` are still `false`** in `apps/web/tsconfig.json`.
-- **Coverage thresholds are not enforced** in any component. Deliberate: a threshold set against a
-  scaffold measures how much of a scaffold is exercised. Set them in Phases 2 and 4.
+- **Coverage thresholds are enforced in `apps/api` only** — LINE 0.50, BRANCH 0.40, set from a
+  measurement on 2026-08-26 and raised only when a phase genuinely raises coverage. `apps/web` and
+  `apps/scoring` still have none; set them in Phases 4 and 6.
 - **Google Fonts is loaded from a remote host.** Self-host in Phase 6 so the local-first stack has
   no external runtime dependency.
 - **Screen-reader behaviour is unverified.** axe is not a substitute for a manual pass. Phase 6.
 - **The console still renders from `src/mocks/`.** Replaced in Phase 6, once the API has endpoints.
 - **CI is not path-filtered**, so every push runs every component. Deliberate (ADR-0002); revisit
   when runtime justifies job-level change detection.
+- **Two Dockerfiles pin an OpenSSL package version by hand** (`apps/scoring`, `apps/web`), to take
+  the CVE-2026-14456 fix from the distribution before the base images ship it. Both blocks say how
+  to check whether the base image has caught up and should be deleted when it has. If a distribution
+  rotates the pinned version out of its archive first, the build fails there with a clear message
+  and the fix is the same deletion.
+- **`make` is not installed on the reference machine**, so Makefile targets are exercised there
+  through `scripts/dev/sf.ps1` or by running the underlying command directly. Both are changed
+  together, every time; a Makefile edit without the matching runner edit is a defect.
+- **`ProcessedEvent`, `AuditLogEntry`, `RegisteredModel`, `AlertAction`, `Role`, `User` and
+  `UserRole` have mappings and no callers.** They are validated against the schema and otherwise
+  untouched, which is most of the remaining coverage gap. Phases 3 to 5 reach them.
+
+## Open Dependabot pull requests
+
+Four, all **major** dev-dependency bumps, deliberately kept out of the grouped minor/patch pull
+request so each gets its own review and its own CI run:
+
+| PR  | Bump                         | Note                                                   |
+| --- | ---------------------------- | ------------------------------------------------------ |
+| #9  | `@types/node` 22 → 26        | Low risk; the project targets Node 24+, so 22 is stale |
+| #10 | `globals` 15 → 17            | Low risk, ESLint configuration only                    |
+| #11 | `@vitejs/plugin-react` 5 → 6 | Needs a build and browser check                        |
+| #12 | `eslint` 9 → 10              | Major; flat-config changes likely, review carefully    |
+
+Each needs the same two steps: the lockfile workflow regenerates `bun.lock` on push, then
+`gh pr close <n> && gh pr reopen <n>` re-triggers CI — a push made with the default `GITHUB_TOKEN`
+cannot start workflow runs. See
+[`docs/operations/BRANCH_PROTECTION.md`](docs/operations/BRANCH_PROTECTION.md).
+
+Three earlier Dependabot pull requests were **closed with reasons** rather than merged, because
+each would have broken a recorded decision: Temurin 25 → 26 (not an LTS, ADR-0003), Python
+3.13 → 3.14 (joblib, ADR-0004), and nginx 1.30 stable → 1.31 mainline (verified by digest).
+`.github/dependabot.yml` now carries ignore rules naming each decision, so none will be proposed
+again.
 
 ## Blockers and required user input
 
@@ -192,14 +379,25 @@ None.
 
 ## Next three actions
 
-1. **Merge PR #2.** Mark it ready for review, confirm all nine required checks are green on the
-   head commit, merge with a merge commit (not a squash — the phase history is the point), then
-   verify `main` and delete the branch.
-2. **Begin Phase 2 — contracts and domain.** Write ADR-0006 (event schema and versioning) and
-   ADR-0007 (Flyway and money representation) _before_ the schema, then create `contracts/` with
-   the OpenAPI baseline and the transaction/risk event schemas.
-3. **Add the first Flyway migrations and their Testcontainers PostgreSQL tests.** Real PostgreSQL,
-   never H2. Set a JaCoCo and a pytest coverage threshold once there is real behaviour to measure.
+Read "Branch stack and the outage blocking it" first. Nothing merges until GitHub Actions recovers,
+and none of these actions is code.
+
+1. **Check whether Actions has recovered, then land the stack in order.** `curl -s
+https://www.githubstatus.com/api/v2/summary.json` names the component state directly. When it is
+   operational: watch PR [#26](https://github.com/la3679/sentinelflow/pull/26) to green and merge
+   it, then rebase or merge `main` into `feat/outbox-relay`, open its pull request, and merge that.
+   If runs are still stuck after the incident closes, closing and reopening the pull request
+   re-dispatches the workflows — it did dispatch more of them than a plain push had.
+2. **Continue Phase 3 — the idempotent consumer and the dead-letter path.** The producer half is
+   done; the consumer half is not. `processed_events` exists and is tested at the schema level, and
+   ADR-0006 §4 fixes the semantics: deduplicate on `eventId` per consumer, insert the ledger row in
+   the same transaction as the effect, classify failures rather than retrying indiscriminately, and
+   send non-retryable ones straight to `transaction.processing.dlq.v1`. Build it on
+   `feat/outbox-relay` if the stack has still not landed, and say so in the branch name.
+3. **Clear the four Dependabot pull requests, #9 to #12.** Open since Phase 1, and they need CI as
+   much as anything else does, so they wait on the same recovery. Each needs the lockfile workflow
+   to regenerate `bun.lock` on push, then `gh pr close <n> && gh pr reopen <n>` to re-trigger CI,
+   because a push made with the default `GITHUB_TOKEN` cannot start workflow runs.
 
 ## Session startup commands
 

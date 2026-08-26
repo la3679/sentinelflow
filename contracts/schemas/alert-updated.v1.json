@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelflow.example/schemas/alert-updated.v1.json",
+  "title": "alert.updated payload, v1",
+  "description": "Published on `alert.updated.v1` for every change to an alert after creation: a state transition, an assignment, or both.\n\nCarries BOTH the previous and the new status. A consumer that only ever sees the new state cannot reconstruct the path an alert took, and the path is what an audit asks about.\n\nKeyed by ALERT id, so one alert's updates arrive in order.",
+
+  "type": "object",
+  "properties": {
+    "alertId": { "$ref": "common.v1.json#/$defs/uuid" },
+    "alertReference": { "$ref": "common.v1.json#/$defs/alertReference" },
+
+    "changeType": {
+      "type": "string",
+      "description": "What kind of change this was. Explicit so a consumer can filter without comparing before-and-after fields.",
+      "enum": ["STATUS_TRANSITION", "ASSIGNMENT", "PRIORITY_CHANGE", "NOTE_ADDED"]
+    },
+
+    "previousStatus": { "$ref": "common.v1.json#/$defs/alertStatus" },
+    "status": { "$ref": "common.v1.json#/$defs/alertStatus" },
+
+    "previousAssignee": {
+      "oneOf": [{ "$ref": "common.v1.json#/$defs/uuid" }, { "type": "null" }],
+      "description": "Who held the alert before, or null when it was unassigned."
+    },
+    "assignee": {
+      "oneOf": [{ "$ref": "common.v1.json#/$defs/uuid" }, { "type": "null" }],
+      "description": "Who holds it now, or null if it was released."
+    },
+
+    "priority": { "$ref": "common.v1.json#/$defs/alertPriority" },
+
+    "actorId": {
+      "$ref": "common.v1.json#/$defs/uuid",
+      "description": "Who made this change. Every alert mutation is attributable - an unattributable change to a reviewed decision is not defensible."
+    },
+    "actorRole": {
+      "type": "string",
+      "enum": ["ANALYST", "ADMINISTRATOR", "AUDITOR", "SYSTEM"]
+    },
+
+    "version": {
+      "type": "integer",
+      "description": "Optimistic-lock version of the alert AFTER this change. Lets a consumer detect a gap, and lets a late-arriving duplicate be discarded on ordering rather than only on eventId. Minimum 1, unlike Alert.version in the REST contract, and deliberately so: an alert is raised at version 0 and this event only ever describes a change, so by the time one is published the version has already been incremented at least once.",
+      "minimum": 1
+    },
+
+    "occurredAt": { "$ref": "common.v1.json#/$defs/timestamp" }
+  },
+
+  "required": [
+    "alertId",
+    "alertReference",
+    "changeType",
+    "previousStatus",
+    "status",
+    "previousAssignee",
+    "assignee",
+    "priority",
+    "actorId",
+    "actorRole",
+    "version",
+    "occurredAt"
+  ],
+
+  "additionalProperties": false
+}

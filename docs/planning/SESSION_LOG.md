@@ -165,3 +165,332 @@ None.
 
 Merge PR #2, then Phase 2: ADR-0006 and ADR-0007 before any schema, then `contracts/`, the first
 Flyway migrations, and their Testcontainers PostgreSQL tests.
+
+### Post-merge — Dependabot's first run
+
+Phase 1 merged as [#2](https://github.com/la3679/sentinelflow/pull/2). Dependabot then acted on
+its new configuration within a minute and opened four pull requests, three of which would have
+broken a recorded decision:
+
+- **Temurin 25 → 26.** Java 26 is not an LTS release; ADR-0003 pins 25 LTS on purpose.
+- **Python 3.13 → 3.14.** ADR-0004 and R-2026-08-25-06 pin exactly 3.13 because joblib declares
+  support only through it. It would also have put the image ahead of `pyproject.toml` and broken
+  `uv sync --frozen`.
+- **nginx 1.30.4 → 1.31.3.** nginx uses even minors for stable and odd for mainline, so this is a
+  move to mainline. Verified by digest rather than assumed: `1.30.4-alpine3.24` and
+  `stable-alpine3.24` resolve to the same image.
+
+All three were closed with the reason stated on the pull request, and `dependabot.yml` now carries
+ignore rules that name the decision each one protects. Patch updates still flow, which is where
+security fixes actually arrive.
+
+The fourth revealed something structural. Dependabot edits `apps/web/package.json` and never
+regenerates `bun.lock` — and specifically does not for a Bun workspace
+([dependabot-core#11602](https://github.com/dependabot/dependabot-core/issues/11602),
+[#14223](https://github.com/dependabot/dependabot-core/issues/14223)). Every npm pull request it
+opens therefore fails at `bun install --frozen-lockfile`. A probe confirmed Bun is _not_ a separate
+`package-ecosystem`: GitHub folded it into `npm_and_yarn`, so the declaration was already right and
+only the lockfile handling is missing.
+
+Dropping `--frozen-lockfile` would have made the red go away and quietly destroyed the
+reproducibility the phase gate had just tested. Instead a workflow regenerates the lockfile and
+pushes it onto the Dependabot branch — the only workflow in this repository with `contents: write`,
+gated on the Dependabot actor.
+
+It then produced its own lesson. The workflow's comment claimed the lockfile commit re-runs CI. It
+does not: a push made with the default `GITHUB_TOKEN` cannot start workflow runs, so the pull
+request ended up correct and with **zero checks**, which a required-checks ruleset reads as blocked.
+`gh pr close && gh pr reopen` fixes it, verified by running it — all ten checks then passed,
+including a `vite` 8.1.5 → 8.2.2 bump. The comment was corrected, because an inaccurate comment in
+the one workflow holding write access is worse than none.
+
+Four major dev-dependency bumps (#9–#12) remain open by design, each awaiting its own review.
+
+### Phase 2 begins — decisions before schema
+
+Two ADRs and the contract baseline, in that order, and all three before a single migration exists.
+
+**ADR-0007** settles money, identifiers, time, and how the schema may change. The decision most
+worth its argument is money as a **JSON string**: `JSON.parse` produces a `double`, so a JSON
+number is silently rounded by every JavaScript consumer before application code sees it. There is
+now an `examples/invalid/money-as-number.json` fixture that fails the build if that rule is ever
+relaxed.
+
+**ADR-0006** settles the event contract. The one that constrains the most is the partition key:
+transaction and risk events are keyed by **account**, not transaction, because Kafka orders only
+within a partition and velocity rules need one account's events in order. Keying by transaction
+would have spread an account across every partition and destroyed exactly the ordering the rules
+depend on. The consequence — a hot account is a hot partition — is written down rather than left to
+be discovered.
+
+Exactly-once was rejected as a goal rather than quietly claimed. It is not achievable across a
+database, a broker and an HTTP call without distributed transactions; at-least-once with idempotent
+consumers reaches the same observable outcome and is honest about how.
+
+**`contracts/`** then makes all of it enforceable. Seven JSON Schemas, an AsyncAPI document and an
+OpenAPI baseline, plus a checker wired into CI.
+
+The part that makes it a contract rather than documentation is the negative cases: the checker
+asserts that deliberately-invalid examples are **rejected**. That was verified by breaking a schema
+on purpose — deleting `const: "NEW"` from `alert-created.v1.json` makes the check exit 1 and name
+the fixture that should have failed.
+
+Two defects in the checker itself surfaced from running it. AJV registers a schema under its own
+`$id` as well as the supplied key, so a second registration collided on all seven schemas. And the
+AsyncAPI parser given only a file's contents has no base path, so every `../schemas/*.json`
+reference failed to resolve; it needs `fromFile`. Both are the same lesson as Phase 1's ten: reading
+the code would not have found either.
+
+### Phase 2 continues — the schema, and a session that could not run it
+
+The six Flyway migrations covering all fifteen tables in §9 are written, along with the domain
+value types and the first six JPA entities. **None of it has been executed.** Docker Desktop was
+not running when this session started; it was launched and had still not brought its engine up by
+the time the checkpoint threshold arrived. Nothing here is claimed to work.
+
+What _was_ run, on 2026-08-26: `./mvnw spotless:apply` and `./mvnw compile` under
+`~/.jdks/jdk-25.0.4.1+1` (both exit 0), `bun run format:check` (pass), `check-docs.mjs` (77 links
+across 30 files, 0 broken), and `check-contracts.mjs` (pass). Compilation is evidence the Java is
+well-formed. It is not evidence that a single migration applies or that a single mapping matches
+its table, and `ddl-auto: validate` means the service will refuse to start if any of them do not.
+
+The default `JAVA_HOME` on the reference machine still points at JDK 17, which is already recorded
+as known debt. It surfaced here as `release version 25 not supported` — worth noting that Spotless
+passed anyway, because formatting does not compile. A green formatter is not a green build.
+
+Three schema constraints took the most thought and are the ones the constraint tests will target
+first. `transactions (account_id, idempotency_key)` **is** the idempotency guarantee — an
+application-level check-then-insert has a window between its two statements and this does not.
+`risk_assessments_degraded_consistent` makes a half-degraded assessment unrepresentable, which is
+what a partially-failed scoring call would otherwise persist and a consumer would later read as a
+real model output. `model_registry_single_active_idx` allows exactly one `ACTIVE` model, because a
+second one makes "which model scored this" ambiguous for every assessment written while it lasted.
+
+One contract tension surfaced and is **not yet resolved**: OpenAPI gives `Alert.version` and
+`AlertTransitionRequest.expectedVersion` a `minimum` of 1, while Hibernate's `@Version` seeds a new
+entity at 0. The schema currently permits `version >= 0`. Either the contract moves to 0 with a
+stated reason or the mapping compensates; picking one is a Phase 2 action, not something to leave
+for whoever writes the alert service in Phase 5 to discover.
+
+A defect in `scripts/claude/checkpoint.mjs` was found by reading its own output: `run` trims, which
+removes the leading space of the **first** porcelain line only, so a fixed-offset slice dropped the
+first character of that path and left every other one intact. It printed `pps/api/pom.xml`. Fixed
+and verified. A helper that exists to stop facts being typed from memory and typed wrong is worse
+than nothing when it corrupts one authoritatively.
+
+---
+
+## Session 4 — 2026-08-26 — Phase 2: running the schema, and everything that found
+
+| Field           | Value                                                                          |
+| --------------- | ------------------------------------------------------------------------------ |
+| Start / end UTC | 2026-08-26T13:20Z / 2026-08-26T14:05Z                                          |
+| Starting SHA    | `67ac508` on `feat/domain-and-migrations`                                      |
+| Ending SHA      | `4eca035` on `feat/domain-and-migrations`                                      |
+| Objective       | Execute the unrun Phase 2 schema, finish the mappings, and close the phase out |
+
+**Outcome:** six commits. The schema that had been written and never run now runs, all fifteen
+tables are mapped and validated, and the constraint suite, the seed foundation and the two diagrams
+Phase 2 owes are in place.
+
+### The session's actual subject: nothing had been executed
+
+The previous session committed six migrations, three domain types and four entity mappings without
+a database. Everything below came out of finally running it, and none of it was visible by reading.
+
+**Three defects in the first `./mvnw verify`, in the order they surfaced.**
+
+`PostgreSQLContainer<?>` does not compile. Testcontainers 2.x moved the class to
+`org.testcontainers.postgresql` and dropped the self-referential type parameter, so every example
+written against 1.x is wrong here.
+
+`spring.datasource.hikari.connection-timeout: 10s` failed startup with `NumberFormatException`.
+Everything under that prefix binds straight onto `HikariDataSource`, whose setters take a `long`;
+Boot's `Duration` conversion never gets a chance. That was committed, unrun, and would have failed
+identically in production.
+
+`spring-boot-flyway` was absent. In Spring Boot 4 the autoconfiguration is its own module.
+`flyway-core` was on the classpath, every `spring.flyway.*` property bound to nothing, no migration
+ran — and the only symptom was Hibernate reporting `missing table [customers]`, which reads exactly
+like a mapping defect and is not one. That is the one worth remembering: the error named the wrong
+layer.
+
+### A state-file discrepancy, corrected in favour of Git
+
+`PROJECT_STATE.md` and commit `78290dc` both said six of fifteen tables were mapped. Four were.
+`Merchant` and `Account` were described in that commit's own message and never written. Git is
+right; the state file is corrected and this is the note the workflow rules require.
+
+### Alert.version, resolved rather than carried forward
+
+OpenAPI required `minimum: 1`; Hibernate seeds a new `@Version` at 0; the `CHECK` permits 0. The
+contract moved to `minimum: 0` with the reason written into the schema. The version is an opaque
+concurrency token — a client echoes it back as `expectedVersion` and compares it for equality —
+so bending the mapping would have bought a translation layer whose only job was hiding the ORM's
+counter from someone who cannot interpret it anyway. `alert-updated.v1.json` keeps `minimum: 1`
+and now says why: that event only ever describes a change, so the version has already been
+incremented by the time one is published.
+
+### What the tests are actually asserting
+
+Every constraint test names the constraint it expects to fire. "Something failed" would let a test
+pass on a fixture typo, a missing not-null, or a foreign key nobody meant to trip, which is how a
+constraint quietly stops being tested while its test stays green. Where a rule has a permitted
+counterpart the counterpart is asserted too — the same idempotency key on a _different_ account
+must succeed — because a schema that rejects everything also passes a suite that only checks for
+rejection.
+
+Two things the run corrected in the tests themselves. The optimistic-lock test first re-read the
+alert _after_ the winning write, which is not stale; it now detaches before the winner commits. And
+it asserts `jakarta.persistence.OptimisticLockException`, not Spring's translated type, because
+translation happens in a `@Repository` proxy and that test drives the `EntityManager` directly.
+
+`make test-api` and `make test-integration` are now different things. The service cannot start
+without PostgreSQL, so leaving every test in one target would have made `make test` require Docker,
+which is not what "all standard suites" has meant here.
+
+### Seed determinism is a specification claim, not an observation
+
+The loader uses only `java.util.Random` and only its single-argument `nextInt(int)`. The
+two-argument form is a `RandomGenerator` default method whose implementation the specification does
+not pin, and the entire claim is that seed `20260826` reproduces on someone else's machine.
+
+The manifest checksums generated _references_, not identifiers: identifiers are UUIDv7 and embed
+the millisecond they were minted, so two identical runs necessarily differ there and hashing them
+would prove nothing. Row contents are asserted directly instead.
+
+The data is synthetic by construction rather than by anonymisation — there is no column for a name,
+an address or a card number anywhere — and a test asserts no such column has appeared, so adding
+one fails rather than quietly giving the seed somewhere to put it.
+
+### Documentation that cannot go stale silently
+
+`DATA_MODEL.md` deliberately does not repeat the column lists; the migrations are authoritative and
+a duplicated list misleads someone eventually. `SchemaDocumentationIT` asserts the ER diagram's
+entity blocks are exactly the tables that exist, because to a compiler a diagram is prose and
+nothing else in the build would notice it drifting.
+
+### Tests and results — every figure from a run on 2026-08-26
+
+| Command                                      | Result                                                 |
+| -------------------------------------------- | ------------------------------------------------------ |
+| `./mvnw verify` (JDK 25.0.4.1+1)             | **PASS** — 23 unit, 57 integration, coverage check met |
+| `./mvnw verify -DskipITs -Djacoco.skip=true` | **PASS** — 23/23                                       |
+| JaCoCo, both suites                          | 62.0% lines (432/697), 63.8% branches (60/94)          |
+| `bun scripts/dev/check-contracts.mjs`        | **PASS**                                               |
+| `bun scripts/dev/check-docs.mjs`             | **PASS** — 89 links across 33 files, 0 broken          |
+| `bun run format:check`                       | **PASS**                                               |
+| `bun run typecheck` (web)                    | **PASS**                                               |
+| `bun run test` (web)                         | **PASS** — 24/24                                       |
+
+The coverage floor was set to 0.50 line / 0.40 branch after the first measurement of 52.4% / 46.9%,
+deliberately below it: a threshold at the measurement fails the next honest refactor, and one chosen
+before a measurement is a guess. The later 62.0% / 63.8% is the same gate with the seed and
+documentation suites added.
+
+`make` is still absent on the reference machine, so the Makefile changes were verified by running
+the equivalent Maven invocations directly and the PowerShell runner was updated in the same commit.
+
+### Addendum — Phase 2 merged, and the CVE that blocked it
+
+PR [#21](https://github.com/la3679/sentinelflow/pull/21) merged at `c38934f`. All ten required
+checks passed, and all six workflows passed again on `main` afterwards. The GitHub runner ran the
+Testcontainers suites for real — its log shows six migrations applied and 23 unit plus 57
+integration tests — so the phase's evidence no longer rests on one machine.
+
+It did not merge on the first attempt. `Build and scan scoring` and `Build and scan web` failed on
+**CVE-2026-14456**, an OpenSSL denial of service via unbounded memory growth in the QUIC server
+path. Both are required checks, so it blocked every pull request in the repository — and it had
+nothing to do with Phase 2. `main` was green the day before; the advisory is newer than its last
+container run.
+
+The obvious fix was unavailable: neither base image had been rebuilt with the patch.
+`python:3.13-slim-trixie` still shipped `3.5.6-1~deb13u2` and
+`nginx-unprivileged:1.30.4-alpine3.24` still shipped `3.5.7-r0`, both checked by running them rather
+than assumed. But both distributions had published the fix, so the update was taken from the archive
+at build time — pinned to the exact fixed version, so an image stays a function of its Dockerfile
+rather than of the day it was built, and with the removal condition written beside it.
+
+A `.trivyignore` would have been faster and wrong. The rule here is that a security finding is never
+suppressed to go green, and the distinguishing fact was that this one is genuinely patched and
+genuinely available: suppressing it would have traded a real fix for a quiet one. Both images were
+rebuilt and scanned locally with Trivy 0.70.0 under CI's own flags — 0 findings, exit 0 — and the
+web image was checked with `id` to confirm it still runs as uid 101 after the `USER root` layer.
+
+That went out as PR [#22](https://github.com/la3679/sentinelflow/pull/22), merged first, then
+`main` was merged into the Phase 2 branch. Keeping it separate mattered: a security fix and a schema
+phase are not one change, and a reviewer looking for why an OpenSSL version is pinned should not
+have to find it inside a database commit.
+
+---
+
+## Session 5 — 2026-08-26 — Phase 3 begun, then blocked by a GitHub Actions outage
+
+| Field           | Value                                                                     |
+| --------------- | ------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-26T14:35Z / 2026-08-26T16:00Z                                     |
+| Starting SHA    | `7dd5eee` on `main`                                                       |
+| Ending SHA      | `55f37f7` on `feat/outbox-relay`, stacked on `feat/transaction-ingestion` |
+| Objective       | Phase 3: the relay decision, ingestion, and the outbox drain              |
+
+**Outcome:** ADR-0005 written and merged. Ingestion and the relay are written, tested locally, and
+pushed — and unmerged, because GitHub Actions went down partway through.
+
+### What was built
+
+**ADR-0005** decides the relay before the relay exists: polling rather than logical decoding,
+`FOR UPDATE SKIP LOCKED` for the batch claim, exponential backoff with full jitter bounded at ten
+attempts, `FAILED` as terminal and non-automatic to revive, and five metrics from the first commit
+including both depth and age — depth alone cannot tell a busy relay from a stuck one.
+
+**Ingestion** turns the schema's idempotency constraint into a product guarantee. The service's
+lookup is an optimisation, not the guarantee: eight concurrent submissions of one key all pass it,
+and `transactions_idempotency_unique` is what makes exactly one transaction and one outbox event
+exist. Three outcomes kept distinct — 202 created, 200 replayed, 409 for a key reused with a
+different payload, because answering 200 there would leave a caller believing a transaction it never
+submitted was recorded.
+
+**The relay** drains that outbox to Kafka, claim and publish and status update in one transaction.
+
+### Defects found by running, not reading
+
+- **Jackson coerced a JSON number into the money `String` field.** `"value": 1249.99` was accepted,
+  the money pattern then matched, and ADR-0007's central rule had been broken by the parser before
+  any of this project's code ran — with whatever the sender's own `double` had rounded to.
+- **`default-property-inclusion: non_null` dropped `deviceReference`** from the event payload, which
+  the schema requires present and null.
+- **`spring-boot-kafka` was missing**, exactly as `spring-boot-flyway` had been: in Spring Boot 4 the
+  autoconfiguration is its own module, so the library alone means no `KafkaTemplate` and every
+  `spring.kafka.*` property binding to nothing. Second time this shape has bitten; worth expecting a
+  third.
+- **`KafkaTemplate.send` does not always return a failed future** — it throws synchronously when the
+  producer cannot fetch metadata, which escaped the publisher's contract.
+- **A unit test read `../../contracts`.** `apps/api/Dockerfile` builds from a module-only context, so
+  it failed inside the image build where CI runs the unit suite, and could not fail locally. Contract
+  tests that read repository files are ITs now, by rule.
+
+### The outage
+
+`Build and scan api` and `Build and scan web` failed on **CVE-2026-14456**, a new OpenSSL advisory,
+before any of this. That was fixed properly rather than suppressed — see the Phase 2 addendum — and
+merged as its own pull request.
+
+Then Actions itself went down. GitHub declared `major_outage` at **15:11Z**; runs from 15:05 onward
+queue and never start, two returned `startup_failure` in seconds on unchanged workflow files, and
+`gh run cancel` refuses stuck runs as "completed" while the API still reports them `queued`.
+
+Three explanations were checked before concluding it was upstream. Every job already uses the generic
+`ubuntu-latest` pool, so there is no narrow label to widen. The concurrency groups are per
+`github.ref` with `cancel-in-progress: true`, so a ghost run holding a group would have _cancelled_
+one of a queued pair rather than leaving both — and a group lock does not produce a `startup_failure`
+either. The status API confirmed the rest.
+
+Closing PR #25 and opening #26 on the same branch was worth doing and did dispatch more workflows
+than a plain push had, but nothing executes while the incident is open.
+
+### What that leaves
+
+Two branches pushed and unmerged, stacked. `./mvnw verify` on the tip gives 23 unit and 89
+integration tests passing with the coverage gate met, the api image builds, and the contract, docs
+and formatting checks pass — on one machine, which is not CI and is not claimed to be. Landing order
+and the recovery procedure are in `PROJECT_STATE.md`.

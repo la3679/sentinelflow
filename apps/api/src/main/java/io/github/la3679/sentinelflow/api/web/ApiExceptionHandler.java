@@ -1,0 +1,150 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+package io.github.la3679.sentinelflow.api.web;
+
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
+
+import jakarta.servlet.http.HttpServletRequest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import io.github.la3679.sentinelflow.api.service.exception.IdempotencyConflictException;
+import io.github.la3679.sentinelflow.api.service.exception.UnknownReferenceException;
+
+/**
+ * The single place an exception becomes a response body.
+ *
+ * <p>RFC 9457 {@code application/problem+json} throughout, which Spring's {@link ProblemDetail}
+ * produces natively. Every response carries the request's correlation identifier, so a caller
+ * reporting a failure hands over something that finds the exact request in the logs.
+ *
+ * <p><strong>Nothing internal escapes.</strong> No stack trace, no SQL fragment, no class name, no
+ * message from an exception this code did not write. The unhandled case returns a fixed sentence
+ * and logs the real cause server-side — an error response is read by whoever sent the request,
+ * which in a real deployment includes people who should learn nothing from it. That is also why
+ * this class exists at all rather than the exception reaching Spring's default handler.
+ *
+ * <p>Handled once, here. Per {@code .claude/rules/java.md}, no layer below catches and logs and
+ * rethrows on the way up: one log line, written where the decision about what to do is made.
+ */
+@RestControllerAdvice
+public class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    /**
+     * Problem type URIs. Stable, dereferenceable-looking, and versioned with the API - a client may
+     * branch on these, so they are part of the contract rather than decoration.
+     */
+    private static final String TYPE_PREFIX = "https://sentinelflow.example/problems/";
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ProblemDetail onValidationFailure(MethodArgumentNotValidException exception, HttpServletRequest request) {
+        ProblemDetail problem = problem(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "validation-failed",
+                "Validation failed",
+                "One or more fields are invalid. See errors.",
+                request);
+
+        // Sorted by field name so a client diffing two responses sees a stable
+        // order, and so a test can assert one.
+        List<FieldProblem> errors = new ArrayList<>();
+        for (FieldError fieldError : exception.getBindingResult().getFieldErrors()) {
+            // getDefaultMessage is the Bean Validation message from this
+            // application's own annotations, never anything the caller sent.
+            errors.add(new FieldProblem(fieldError.getField(), fieldError.getDefaultMessage()));
+        }
+        errors.sort(Comparator.comparing(FieldProblem::field));
+        problem.setProperty("errors", errors);
+        return problem;
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ProblemDetail onUnreadableBody(HttpMessageNotReadableException exception, HttpServletRequest request) {
+        // The parser's own message names offsets, field paths and sometimes the
+        // offending value. None of that goes to the client; the log keeps it.
+        log.debug("Rejected an unreadable request body", exception);
+        return problem(
+                HttpStatus.BAD_REQUEST,
+                "malformed-request",
+                "Malformed request",
+                "The request body is not valid JSON, or a field has the wrong type.",
+                request);
+    }
+
+    @ExceptionHandler(UnknownReferenceException.class)
+    ProblemDetail onUnknownReference(UnknownReferenceException exception, HttpServletRequest request) {
+        // 422, not 404: the request is well-formed and the route exists; the
+        // entity it names does not. A 404 here would say the endpoint is
+        // missing, which is a different problem for a client to chase.
+        ProblemDetail problem = problem(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "unknown-reference",
+                "Unknown reference",
+                "No " + exception.field() + " matches the reference supplied.",
+                request);
+        problem.setProperty("errors", List.of(new FieldProblem(exception.field(), "No such " + exception.field())));
+        return problem;
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    ProblemDetail onIdempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request) {
+        return problem(
+                HttpStatus.CONFLICT,
+                "idempotency-conflict",
+                "Idempotency key reused with a different payload",
+                "This idempotency key was already used on this account for a different transaction. "
+                        + "Returning the original result would hide a key-generation bug, so the request is refused.",
+                request);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    ProblemDetail onNoResource(NoResourceFoundException exception, HttpServletRequest request) {
+        return problem(HttpStatus.NOT_FOUND, "not-found", "Not found", "No handler for this path.", request);
+    }
+
+    @ExceptionHandler(Exception.class)
+    ProblemDetail onUnhandled(Exception exception, HttpServletRequest request) {
+        UUID correlationId = CorrelationIdFilter.currentOrNew(request);
+        // The only place the real exception is recorded. Logged with the
+        // correlation identifier so the fixed sentence the caller receives can
+        // still be traced back to this line.
+        log.error("Unhandled exception serving {} {}", request.getMethod(), request.getRequestURI(), exception);
+
+        ProblemDetail problem = problem(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "internal-error",
+                "Internal error",
+                "The request could not be completed. Quote the correlation identifier when reporting this.",
+                request);
+        problem.setProperty("correlationId", correlationId.toString());
+        return problem;
+    }
+
+    private static ProblemDetail problem(
+            HttpStatus status, String type, String title, String detail, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setType(URI.create(TYPE_PREFIX + type));
+        problem.setTitle(title);
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty(
+                "correlationId", CorrelationIdFilter.currentOrNew(request).toString());
+        return problem;
+    }
+
+    /** One field-level failure, matching the `errors` array in the OpenAPI `Problem` schema. */
+    public record FieldProblem(String field, String message) {}
+}

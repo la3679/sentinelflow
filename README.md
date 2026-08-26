@@ -374,17 +374,20 @@ repository provisions a billable resource.
 
 ## Documentation
 
-| Area           | Start here                                                                       |
-| -------------- | -------------------------------------------------------------------------------- |
-| Resume state   | [`PROJECT_STATE.md`](PROJECT_STATE.md)                                           |
-| Decisions      | [`docs/adr/`](docs/adr/)                                                         |
-| Research       | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                 |
-| Planning       | [`docs/planning/`](docs/planning/)                                               |
-| Operations     | [`docs/operations/`](docs/operations/)                                           |
-| Frontend audit | [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md)         |
-| Development    | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md) |
-| Contributing   | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                             |
-| Security       | [`SECURITY.md`](SECURITY.md)                                                     |
+| Area            | Start here                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| Resume state    | [`PROJECT_STATE.md`](PROJECT_STATE.md)                                                   |
+| Data model      | [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md)                     |
+| The main flow   | [`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) |
+| Data provenance | [`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md)                           |
+| Decisions       | [`docs/adr/`](docs/adr/)                                                                 |
+| Research        | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                         |
+| Planning        | [`docs/planning/`](docs/planning/)                                                       |
+| Operations      | [`docs/operations/`](docs/operations/)                                                   |
+| Frontend audit  | [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md)                 |
+| Development     | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md)         |
+| Contributing    | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                     |
+| Security        | [`SECURITY.md`](SECURITY.md)                                                             |
 
 ## Roadmap
 

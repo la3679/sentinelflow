@@ -1,0 +1,847 @@
+openapi: 3.1.0
+
+info:
+  title: SentinelFlow API
+  version: 1.0.0
+  summary: Transaction ingestion, risk assessment, and alert operations over synthetic data.
+  description: |
+    **SentinelFlow is an independent, educational project operating on fictional
+    synthetic data.** It executes no financial transaction and makes no
+    financial decision.
+
+    This document is the **baseline contract** for `/api/v1`, written before the
+    handlers exist so that implementation is reviewed against it rather than
+    the reverse. Endpoints are marked with the phase that delivers them; an
+    endpoint present here is not necessarily running yet. See
+    `docs/planning/IMPLEMENTATION_PLAN.md`.
+
+    ## Conventions
+
+    - **Money is a decimal string with an explicit currency**, never a JSON
+      number. `JSON.parse` produces a `double`, so a JSON number is rounded by
+      every JavaScript consumer before application code sees it. See
+      [ADR-0007](../../docs/adr/0007-money-identifiers-and-schema-migrations.md).
+    - **Identifiers are UUIDv7.** Synthetic references such as `ACC-000123` are
+      human-readable handles, never keys.
+    - **Timestamps are ISO 8601 UTC** with an explicit offset.
+    - **Every list endpoint is paged, with a server-enforced maximum.** An
+      endpoint whose response grows with the dataset is a denial-of-service
+      primitive.
+    - **Errors are RFC 9457 `application/problem+json`** and never contain a
+      stack trace, a SQL fragment, or an internal class name.
+    - **`X-Correlation-Id`** is accepted on every request and echoed on every
+      response, tying an API call to its logs, spans and events.
+
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: |
+      The local development stack from `compose.yaml`. Binds to the developer's
+      own machine and holds only synthetic data. **Not a deployment target.**
+
+tags:
+  - name: transactions
+    description: Ingestion and retrieval. Phase 3.
+  - name: alerts
+    description: The alert workflow. Phase 5.
+  - name: reports
+    description: Aggregates for the console. Phase 5.
+  - name: model
+    description: Read-only model and policy metadata. Phase 4.
+
+paths:
+  /transactions:
+    post:
+      tags: [transactions]
+      operationId: ingestTransaction
+      summary: Ingest a transaction (Phase 3)
+      description: |
+        Accepts a transaction, persists it and its outbox record in one
+        database transaction, and returns immediately. Scoring happens
+        asynchronously; the response is `202 Accepted`, not `201 Created`,
+        because the assessment does not exist yet.
+
+        **Idempotent.** `idempotencyKey` is unique per account: resubmitting the
+        same key returns the original result rather than creating a second
+        transaction.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransactionRequest"
+      responses:
+        "202":
+          description: Accepted for processing.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionAccepted"
+        "200":
+          description: |
+            The idempotency key was already used. The original result is
+            returned unchanged, and nothing new was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: |
+            The idempotency key was reused with a *different* payload. This is a
+            client bug, and returning the original result would hide it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+    get:
+      tags: [transactions]
+      operationId: listTransactions
+      summary: List transactions (Phase 3)
+      description: Paged and filterable. Never unbounded.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+        - name: accountReference
+          in: query
+          schema:
+            $ref: "#/components/schemas/AccountReference"
+        - name: riskBand
+          in: query
+          schema:
+            $ref: "#/components/schemas/RiskBand"
+        - name: occurredAfter
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: occurredBefore
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: A page of transactions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /transactions/{transactionId}:
+    get:
+      tags: [transactions]
+      operationId: getTransaction
+      summary: Get one transaction (Phase 3)
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TransactionId"
+      responses:
+        "200":
+          description: The transaction.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /transactions/{transactionId}/assessment:
+    get:
+      tags: [transactions]
+      operationId: getTransactionAssessment
+      summary: Get a transaction's risk assessment (Phase 4)
+      description: |
+        `404` while scoring is still in flight is a normal outcome, not an
+        error condition: ingestion is asynchronous and the assessment is
+        created after the transaction.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/TransactionId"
+      responses:
+        "200":
+          description: The assessment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskAssessment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /alerts:
+    get:
+      tags: [alerts]
+      operationId: listAlerts
+      summary: List alerts (Phase 5)
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/AlertStatus"
+        - name: priority
+          in: query
+          schema:
+            $ref: "#/components/schemas/AlertPriority"
+        - name: assigneeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of alerts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /alerts/{alertId}:
+    get:
+      tags: [alerts]
+      operationId: getAlert
+      summary: Get one alert (Phase 5)
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "200":
+          description: The alert.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /alerts/{alertId}/transition:
+    post:
+      tags: [alerts]
+      operationId: transitionAlert
+      summary: Transition an alert (Phase 5)
+      description: |
+        Moves an alert to a new status. Only transitions the state machine
+        permits are accepted; an illegal one is `409`, not `400`, because the
+        request is well-formed and the *state* is what rejects it.
+
+        Requires `expectedVersion` for optimistic locking: two analysts acting
+        on the same alert must not silently overwrite each other.
+
+        Every transition is written to the audit log with the actor.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertTransitionRequest"
+      responses:
+        "200":
+          description: The alert after the transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: |
+            The caller's role does not permit this transition. An `AUDITOR` is
+            read-only, and this is enforced here — the console disabling a
+            button is a convenience, never the boundary.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The transition is illegal from the current state, or `expectedVersion` is stale.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /alerts/{alertId}/history:
+    get:
+      tags: [alerts]
+      operationId: getAlertHistory
+      summary: Get an alert's audit trail (Phase 5)
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AlertId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: A page of actions taken on this alert, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertActionPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /models/active:
+    get:
+      tags: [model]
+      operationId: getActiveModel
+      summary: Get the active model's metadata (Phase 4)
+      description: |
+        **Read-only.** Model activation and policy mutation are deliberately not
+        exposed in v1: doing so safely needs authorization, validation, rollback
+        and audit behaviour that does not exist yet, and a half-built promotion
+        endpoint is worse than none.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Metadata for the active model.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelMetadata"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No model has been promoted yet.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Phase 8. No authentication is enforced before then.
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: |
+        Ties this request to its logs, spans and events. Generated by the server
+        when absent, and echoed on every response either way.
+      schema:
+        type: string
+        format: uuid
+
+    Page:
+      name: page
+      in: query
+      description: Zero-based page index.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    Size:
+      name: size
+      in: query
+      description: |
+        Page size. **Capped at 200 by the server**, which rejects a larger value
+        rather than silently clamping it — silently returning less than was
+        asked for is how a client ends up with a quiet data-loss bug.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+    TransactionId:
+      name: transactionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    AlertId:
+      name: alertId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    CorrelationId:
+      description: The correlation id for this request.
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    NotFound:
+      description: No such resource.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    UnprocessableEntity:
+      description: The request is well-formed but fails validation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Money:
+      type: string
+      description: |
+        A decimal amount as a **string**, never a JSON number. Scale at most 4,
+        matching `NUMERIC(19,4)`. See ADR-0007.
+      pattern: '^-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$'
+      examples: ["1249.99", "0.0001"]
+
+    Currency:
+      type: string
+      description: ISO 4217 alphabetic code. Never implicit.
+      pattern: "^[A-Z]{3}$"
+      examples: ["USD"]
+
+    Amount:
+      type: object
+      description: The only shape in which an amount appears in this API.
+      properties:
+        value:
+          $ref: "#/components/schemas/Money"
+        currency:
+          $ref: "#/components/schemas/Currency"
+      required: [value, currency]
+      additionalProperties: false
+
+    AccountReference:
+      type: string
+      pattern: "^ACC-[0-9]{6}$"
+      examples: ["ACC-000123"]
+
+    RiskBand:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+
+    AlertStatus:
+      type: string
+      enum: [NEW, IN_REVIEW, ESCALATED, CONFIRMED_SUSPICIOUS, DISMISSED_FALSE_POSITIVE, CLOSED]
+
+    AlertPriority:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, URGENT]
+
+    ReasonCode:
+      type: object
+      description: One contributing factor, with how much it contributed.
+      properties:
+        code:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{2,63}$"
+        description:
+          type: string
+          maxLength: 500
+        contribution:
+          type: number
+          minimum: -100
+          maximum: 100
+        source:
+          type: string
+          enum: [RULE, MODEL]
+      required: [code, description, contribution, source]
+      additionalProperties: false
+
+    PageMeta:
+      type: object
+      description: |
+        Paging metadata. `totalElements` is a count, not an estimate; if that
+        becomes too costly to compute it will be replaced by keyset paging in a
+        new version rather than quietly turned into an approximation.
+      properties:
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1 }
+        totalElements: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+      required: [page, size, totalElements, totalPages]
+      additionalProperties: false
+
+    Problem:
+      type: object
+      description: |
+        RFC 9457. Never contains a stack trace, a SQL fragment, or an internal
+        class name.
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        correlationId: { type: string, format: uuid }
+        errors:
+          type: array
+          description: Field-level validation failures, when applicable.
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+            required: [field, message]
+            additionalProperties: false
+      required: [type, title, status]
+
+    TransactionRequest:
+      type: object
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Unique per account. Resubmitting returns the original result.
+        accountReference:
+          $ref: "#/components/schemas/AccountReference"
+        merchantReference:
+          type: string
+          pattern: "^MER-[0-9]{4}$"
+        type:
+          type: string
+          enum: [PURCHASE, REFUND, TRANSFER, WITHDRAWAL, DEPOSIT]
+        channel:
+          type: string
+          enum: [CARD_PRESENT, CARD_NOT_PRESENT, ONLINE_TRANSFER, ATM, DIRECT_DEBIT]
+        amount:
+          $ref: "#/components/schemas/Amount"
+        originCountry:
+          type: string
+          pattern: "^[A-Z]{2}$"
+        deviceReference:
+          type: [string, "null"]
+          pattern: "^DEV-[0-9a-f]{12}$"
+        occurredAt:
+          type: string
+          format: date-time
+          description: When the transaction took place, distinct from when it was ingested.
+      required:
+        [
+          idempotencyKey,
+          accountReference,
+          merchantReference,
+          type,
+          channel,
+          amount,
+          originCountry,
+          occurredAt,
+        ]
+      additionalProperties: false
+
+    TransactionAccepted:
+      type: object
+      properties:
+        transactionId: { type: string, format: uuid }
+        transactionReference: { type: string, pattern: "^TXN-[0-9]{6}$" }
+        correlationId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [ACCEPTED]
+          description: Accepted for processing. The assessment does not exist yet.
+      required: [transactionId, transactionReference, correlationId, status]
+      additionalProperties: false
+
+    Transaction:
+      type: object
+      properties:
+        transactionId: { type: string, format: uuid }
+        transactionReference: { type: string, pattern: "^TXN-[0-9]{6}$" }
+        accountReference:
+          $ref: "#/components/schemas/AccountReference"
+        merchantReference: { type: string, pattern: "^MER-[0-9]{4}$" }
+        merchantCategoryCode: { type: string, pattern: "^[0-9]{4}$" }
+        type: { type: string }
+        channel: { type: string }
+        amount:
+          $ref: "#/components/schemas/Amount"
+        originCountry: { type: string, pattern: "^[A-Z]{2}$" }
+        occurredAt: { type: string, format: date-time }
+        ingestedAt: { type: string, format: date-time }
+        processingStatus:
+          type: string
+          enum: [PENDING, ASSESSED, FAILED]
+        riskBand:
+          oneOf:
+            - $ref: "#/components/schemas/RiskBand"
+            - type: "null"
+          description: Null until an assessment exists.
+      required:
+        [
+          transactionId,
+          transactionReference,
+          accountReference,
+          merchantReference,
+          amount,
+          occurredAt,
+          ingestedAt,
+          processingStatus,
+        ]
+      additionalProperties: false
+
+    TransactionPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        page:
+          $ref: "#/components/schemas/PageMeta"
+      required: [content, page]
+      additionalProperties: false
+
+    RiskAssessment:
+      type: object
+      properties:
+        assessmentId: { type: string, format: uuid }
+        transactionId: { type: string, format: uuid }
+        ruleScore: { type: number, minimum: 0, maximum: 100 }
+        modelScore:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 100
+          description: Null when scoring was unavailable and the assessment degraded to rules.
+        finalScore: { type: number, minimum: 0, maximum: 100 }
+        riskBand:
+          $ref: "#/components/schemas/RiskBand"
+        degraded:
+          type: boolean
+          description: Explicit rather than inferred from a null modelScore.
+        modelVersion: { type: [string, "null"] }
+        featureVersion: { type: [string, "null"] }
+        policyVersion: { type: string }
+        reasonCodes:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/ReasonCode"
+        scoringLatencyMs: { type: integer, minimum: 0 }
+        assessedAt: { type: string, format: date-time }
+      required:
+        [
+          assessmentId,
+          transactionId,
+          ruleScore,
+          modelScore,
+          finalScore,
+          riskBand,
+          degraded,
+          policyVersion,
+          reasonCodes,
+          assessedAt,
+        ]
+      additionalProperties: false
+
+    Alert:
+      type: object
+      properties:
+        alertId: { type: string, format: uuid }
+        alertReference: { type: string, pattern: "^ALT-[0-9]{4}$" }
+        transactionId: { type: string, format: uuid }
+        assessmentId: { type: string, format: uuid }
+        status:
+          $ref: "#/components/schemas/AlertStatus"
+        priority:
+          $ref: "#/components/schemas/AlertPriority"
+        assigneeId: { type: [string, "null"], format: uuid }
+        summary: { type: string, maxLength: 500 }
+        riskBand:
+          $ref: "#/components/schemas/RiskBand"
+        finalScore: { type: number }
+        version:
+          type: integer
+          minimum: 0
+          description: |
+            Optimistic-lock version. Pass it back as `expectedVersion` to mutate.
+
+            **An opaque token.** A newly raised alert is at version 0 and each
+            accepted mutation increments it, but a client must never read
+            meaning into the magnitude — only compare it for equality. The
+            minimum is 0 rather than 1 because the persistence layer seeds a new
+            version at 0 and the alternative was a translation layer whose only
+            job would be to hide that from a client that cannot interpret it
+            anyway. See `docs/adr/0007-*` and the `Alert` JPA mapping.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        closedAt: { type: [string, "null"], format: date-time }
+      required:
+        [
+          alertId,
+          alertReference,
+          transactionId,
+          assessmentId,
+          status,
+          priority,
+          summary,
+          riskBand,
+          finalScore,
+          version,
+          createdAt,
+          updatedAt,
+        ]
+      additionalProperties: false
+
+    AlertPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Alert"
+        page:
+          $ref: "#/components/schemas/PageMeta"
+      required: [content, page]
+      additionalProperties: false
+
+    AlertTransitionRequest:
+      type: object
+      properties:
+        targetStatus:
+          $ref: "#/components/schemas/AlertStatus"
+        expectedVersion:
+          type: integer
+          minimum: 0
+          description: |
+            The version the caller believes the alert is at. A mismatch is a
+            `409`, so two analysts cannot silently overwrite each other.
+
+            0 is a legitimate value: it is the version of an alert nobody has
+            acted on yet, which is exactly the alert most likely to be
+            transitioned first.
+        note:
+          type: string
+          maxLength: 2000
+          description: |
+            Sanitised on the way in. Rendered as text, never as markup, and
+            escaped in CSV export to prevent spreadsheet formula injection.
+      required: [targetStatus, expectedVersion]
+      additionalProperties: false
+
+    AlertAction:
+      type: object
+      properties:
+        actionId: { type: string, format: uuid }
+        alertId: { type: string, format: uuid }
+        actorId: { type: string, format: uuid }
+        actorRole:
+          type: string
+          enum: [ANALYST, ADMINISTRATOR, AUDITOR, SYSTEM]
+        actionType:
+          type: string
+          enum: [CREATED, ASSIGNED, UNASSIGNED, TRANSITIONED, NOTE_ADDED, PRIORITY_CHANGED]
+        previousStatus:
+          oneOf:
+            - $ref: "#/components/schemas/AlertStatus"
+            - type: "null"
+        newStatus:
+          oneOf:
+            - $ref: "#/components/schemas/AlertStatus"
+            - type: "null"
+        note: { type: [string, "null"], maxLength: 2000 }
+        correlationId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+      required: [actionId, alertId, actorId, actorRole, actionType, occurredAt]
+      additionalProperties: false
+
+    AlertActionPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertAction"
+        page:
+          $ref: "#/components/schemas/PageMeta"
+      required: [content, page]
+      additionalProperties: false
+
+    ModelMetadata:
+      type: object
+      description: |
+        Read-only. Includes the limitations of the active model, because a
+        metric without its caveats invites a conclusion the metric does not
+        support.
+      properties:
+        modelVersion: { type: string }
+        featureVersion: { type: string }
+        policyVersion: { type: string }
+        status:
+          type: string
+          enum: [CANDIDATE, ACTIVE, RETIRED]
+        trainedAt: { type: string, format: date-time }
+        promotedAt: { type: [string, "null"], format: date-time }
+        metrics:
+          type: object
+          description: |
+            Evaluation results for imbalanced data. Accuracy is deliberately
+            absent: with this class balance it is close to meaningless and
+            publishing it invites a false conclusion.
+          properties:
+            precision: { type: number, minimum: 0, maximum: 1 }
+            recall: { type: number, minimum: 0, maximum: 1 }
+            prAuc: { type: number, minimum: 0, maximum: 1 }
+            operatingThreshold: { type: number, minimum: 0, maximum: 100 }
+            evaluatedOnRows: { type: integer, minimum: 1 }
+          required: [precision, recall, prAuc, operatingThreshold, evaluatedOnRows]
+          additionalProperties: false
+        limitations:
+          type: array
+          description: Known limitations, stated plainly rather than omitted.
+          items: { type: string }
+      required:
+        [modelVersion, featureVersion, policyVersion, status, trainedAt, metrics, limitations]
+      additionalProperties: false

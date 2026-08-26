@@ -1,0 +1,93 @@
+name: Dependabot — regenerate bun.lock
+
+# Dependabot edits apps/web/package.json but does not regenerate bun.lock, and
+# specifically does not do so for a Bun workspace:
+#   https://github.com/dependabot/dependabot-core/issues/11602
+#   https://github.com/dependabot/dependabot-core/issues/14223
+#
+# Every npm pull request it opens therefore fails at
+# `bun install --frozen-lockfile` with "lockfile had changes, but lockfile is
+# frozen". Without this, the npm half of Dependabot is permanently broken, and a
+# bot whose pull requests always fail red is worse than no bot: people learn to
+# ignore it.
+#
+# The alternative - dropping --frozen-lockfile from CI - was rejected. A frozen
+# install is what makes a build reproducible, and weakening a real guarantee to
+# accommodate a tooling gap is the wrong trade.
+#
+# This regenerates the lockfile and pushes it back onto the Dependabot branch.
+#
+# KNOWN LIMITATION, verified rather than assumed: a push made with the default
+# GITHUB_TOKEN does not start further workflow runs, so CI does not re-run by
+# itself after the lockfile lands. The pull request is then correct but has no
+# checks, and a required-checks ruleset leaves it blocked.
+#
+# Remedy, one line and no extra credentials:
+#
+#     gh pr close <n> && gh pr reopen <n>
+#
+# Avoiding this would need a personal access token or a GitHub App token, which
+# is a standing credential with write access to the repository. That is a larger
+# and more permanent security surface than a manual re-trigger on a weekly bot
+# pull request is worth.
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/package.json"
+      - "package.json"
+
+# Least privilege, and no more: the write is needed to push the regenerated
+# lockfile onto the pull request branch, and nothing else is granted.
+permissions:
+  contents: write
+
+concurrency:
+  group: dependabot-lockfile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    name: Regenerate bun.lock
+    # Dependabot only. A pull request from a fork cannot set this actor, and a
+    # human changing package.json is expected to commit their own lockfile.
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # Check out the pull request branch itself rather than the merge
+          # commit, so the push below has somewhere real to go.
+          ref: ${{ github.head_ref }}
+          # The default token cannot start further workflow runs on push. See
+          # the KNOWN LIMITATION at the top of this file: the lockfile lands
+          # correctly, but CI has to be re-triggered.
+          persist-credentials: true
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.0"
+
+      # Deliberately not --frozen-lockfile: regenerating the lockfile is the
+      # entire point of this job.
+      - name: Resolve dependencies
+        run: bun install
+
+      - name: Commit the lockfile if it changed
+        run: |
+          if git diff --quiet -- bun.lock; then
+            echo "bun.lock already matches the manifests; nothing to do."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bun.lock
+          git commit -m "chore(deps): regenerate bun.lock
+
+          Dependabot updates the manifest but not bun.lock in a Bun workspace,
+          so the frozen install in CI fails without this. See
+          dependabot/dependabot-core#11602."
+          git push

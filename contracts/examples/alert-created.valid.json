@@ -1,0 +1,30 @@
+{
+  "eventId": "01936b2a-8300-7000-8000-2f9c1d4e5a6e",
+  "eventType": "alert.created",
+  "schemaVersion": 1,
+  "occurredAt": "2026-08-25T21:14:07.640000Z",
+  "producer": "sentinelflow-api",
+  "correlationId": "01936b2a-7c4f-7000-8000-1a2b3c4d5e6f",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "aggregateType": "alert",
+  "aggregateId": "01936b2a-8300-7000-8000-0a0b0c0d0e0f",
+  "payload": {
+    "alertId": "01936b2a-8300-7000-8000-0a0b0c0d0e0f",
+    "alertReference": "ALT-0007",
+    "assessmentId": "01936b2a-8100-7000-8000-0102030405f6",
+    "transactionId": "01936b2a-7c4f-7000-8000-9f8e7d6c5b4a",
+    "accountId": "01936b2a-7c4f-7000-8000-aabbccddeeff",
+    "status": "NEW",
+    "priority": "HIGH",
+    "riskBand": "HIGH",
+    "finalScore": 71.2,
+    "summary": "Six transactions in one hour on an account with a baseline of one, at an unseen merchant category.",
+    "topReasonCode": {
+      "code": "VELOCITY_1H_EXCEEDED",
+      "description": "Six transactions on this account in the preceding hour, against a baseline of one.",
+      "contribution": 31.5,
+      "source": "RULE"
+    },
+    "createdAt": "2026-08-25T21:14:07.640000Z"
+  }
+}
