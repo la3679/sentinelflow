@@ -49,12 +49,44 @@ taken deliberately and is recorded in [ADR-0002](docs/adr/0002-monorepo-and-serv
 and [`docs/operations/LOVABLE_GITHUB_WORKFLOW.md`](docs/operations/LOVABLE_GITHUB_WORKFLOW.md),
 which also records the two honest routes back to a design session if one is ever wanted.
 
+## Branch stack and the outage blocking it
+
+**GitHub Actions has been in a declared `major_outage` since 15:11Z on 2026-08-26** (incident
+"Incident with Actions", plus "Disruption with some GitHub services" at 15:09Z). Runs queue and
+never start; two came back `startup_failure` in seconds on workflow files that were green half an
+hour earlier, and `gh run cancel` refuses stuck runs as "completed" while the API reports them
+`queued`. Git operations, the API, and Pull Requests are unaffected, so everything below is pushed.
+
+This was checked rather than assumed: every job already uses the generic `ubuntu-latest` pool, and
+the concurrency groups are per-`github.ref`, so neither a runner label nor a ghost run holding a
+group explains it.
+
+**Three branches, each stacked on the one before it. None is merged.**
+
+| Branch                       | Contains                                         | State                                                                      |
+| ---------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `feat/transaction-ingestion` | Ingestion endpoint, idempotency, problem details | PR [#26](https://github.com/la3679/sentinelflow/pull/26), **CI never ran** |
+| `feat/outbox-relay`          | The relay, Kafka transport, envelope             | pushed, **no PR** — would show #26's diff                                  |
+
+PR #25 was the ingestion pull request and was **closed deliberately**, not abandoned: GitHub had
+dispatched only three of six workflows for its head commit and left them stuck. #26 is the same
+branch, reopened, and it dispatched more workflows — which then queued too.
+
+**Order to land them in:** #26 first, then open a pull request for `feat/outbox-relay` once its base
+is on `main`. Do not merge the relay branch into `main` directly; it carries the ingestion commits.
+
+**Everything below was verified locally.** Under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1` on 2026-08-26,
+`./mvnw verify` on `feat/outbox-relay` gives **23 unit and 89 integration tests passing** with the
+coverage gate met, `docker build -f apps/api/Dockerfile apps/api` succeeds, and `check-contracts`,
+`check-docs` and `format:check` all pass. That is one machine, not CI, and it is not a substitute
+for it.
+
 ## Product status by phase
 
 - [x] **Phase 0 — research gate and Lovable/GitHub bootstrap**
 - [x] **Phase 1 — monorepo and developer foundation**
 - [x] **Phase 2 — contracts, domain, and database**
-- [ ] **Phase 3 — ingestion, outbox, and Kafka** ← current
+- [ ] **Phase 3 — ingestion, outbox, and Kafka** ← in progress, unmerged
 - [ ] Phase 4 — synthetic data and scoring
 - [ ] Phase 5 — alerts and investigations
 - [ ] Phase 6 — operations frontend
@@ -347,30 +379,25 @@ None.
 
 ## Next three actions
 
-Phase 2 is merged. Start from `main` and branch before editing.
+Read "Branch stack and the outage blocking it" first. Nothing merges until GitHub Actions recovers,
+and none of these actions is code.
 
-1. **Write ADR-0005 — outbox relay mechanics.** ADR-0006 settled the semantics (at-least-once,
-   account-keyed, an outbox); the relay's own behaviour is undecided and should be decided before it
-   is written, not documented after. It needs to answer: polling versus logical decoding, how a
-   batch is claimed so two instances cannot publish the same row twice, the backoff schedule and its
-   ceiling, when an event moves from `PENDING` to `FAILED` rather than being retried again, and what
-   an operator does with a `FAILED` row. The schema already carries `attempt_count`, `last_error`
-   and `next_attempt_at`, so the ADR is choosing a policy over columns that exist.
-2. **Build the validated ingestion endpoint.** `POST /api/v1/transactions` against the OpenAPI
-   contract: Bean Validation on the DTO, RFC 9457 problem details, no JPA entity on the boundary,
-   and the idempotency path returning the original result rather than a conflict. The constraint
-   that makes it correct — `transactions_idempotency_unique` — is already tested at the schema
-   level; this is what turns it into a product guarantee. Then the outbox write in the same
-   transaction, which is the atomicity ADR-0006 depends on.
-3. **Clear the four open Dependabot pull requests, #9 to #12.** Open since Phase 1. Each needs the
-   same two steps: let the lockfile workflow regenerate `bun.lock` on push, then
-   `gh pr close <n> && gh pr reopen <n>` to re-trigger CI, because a push made with the default
-   `GITHUB_TOKEN` cannot start workflow runs. `#11` (`@vitejs/plugin-react` 5 → 6) needs a build and
-   a browser check; `#12` (`eslint` 9 → 10) is a major with likely flat-config changes.
-
-[`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) is the
-design for all of Phase 3 and is marked as design rather than as a running system. Remove that
-marking as each step becomes real.
+1. **Check whether Actions has recovered, then land the stack in order.** `curl -s
+https://www.githubstatus.com/api/v2/summary.json` names the component state directly. When it is
+   operational: watch PR [#26](https://github.com/la3679/sentinelflow/pull/26) to green and merge
+   it, then rebase or merge `main` into `feat/outbox-relay`, open its pull request, and merge that.
+   If runs are still stuck after the incident closes, closing and reopening the pull request
+   re-dispatches the workflows — it did dispatch more of them than a plain push had.
+2. **Continue Phase 3 — the idempotent consumer and the dead-letter path.** The producer half is
+   done; the consumer half is not. `processed_events` exists and is tested at the schema level, and
+   ADR-0006 §4 fixes the semantics: deduplicate on `eventId` per consumer, insert the ledger row in
+   the same transaction as the effect, classify failures rather than retrying indiscriminately, and
+   send non-retryable ones straight to `transaction.processing.dlq.v1`. Build it on
+   `feat/outbox-relay` if the stack has still not landed, and say so in the branch name.
+3. **Clear the four Dependabot pull requests, #9 to #12.** Open since Phase 1, and they need CI as
+   much as anything else does, so they wait on the same recovery. Each needs the lockfile workflow
+   to regenerate `bun.lock` on push, then `gh pr close <n> && gh pr reopen <n>` to re-trigger CI,
+   because a push made with the default `GITHUB_TOKEN` cannot start workflow runs.
 
 ## Session startup commands
 
