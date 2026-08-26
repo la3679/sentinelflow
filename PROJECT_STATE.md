@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-26T14:05Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T20:30Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 2 deliverables complete and **executed** on `feat/domain-and-migrations`; PR next                                                 |
-| Current phase        | Phase 3 — ingestion, outbox, and Kafka (not started)                                                                                             |
-| Current task         | Phase 2 — open the pull request, get CI green on it, merge                                                                                       |
+| Overall status       | active — Phase 3 complete and merged; Phase 4 next                                                                                               |
+| Current phase        | Phase 4 — synthetic data and scoring (not started)                                                                                               |
+| Current task         | ADR-0008, the scoring-service boundary, before Phase 4's first handler is written                                                                |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/domain-and-migrations` — branched from `4de1ff8`, eleven commits, **no PR yet**                                                            |
+| Working branch       | none — `main` is current                                                                                                                         |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | four Dependabot major dev-dependency bumps, #9-#12 — see below                                                                                   |
+| Open PRs             | none                                                                                                                                             |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -49,45 +49,34 @@ taken deliberately and is recorded in [ADR-0002](docs/adr/0002-monorepo-and-serv
 and [`docs/operations/LOVABLE_GITHUB_WORKFLOW.md`](docs/operations/LOVABLE_GITHUB_WORKFLOW.md),
 which also records the two honest routes back to a design session if one is ever wanted.
 
-## Branch stack and the outage blocking it
+## The Actions outage, and how it ended
 
-**GitHub Actions has been in a declared `major_outage` since 15:11Z on 2026-08-26** (incident
-"Incident with Actions", plus "Disruption with some GitHub services" at 15:09Z). Runs queue and
-never start; two came back `startup_failure` in seconds on workflow files that were green half an
-hour earlier, and `gh run cancel` refuses stuck runs as "completed" while the API reports them
-`queued`. Git operations, the API, and Pull Requests are unaffected, so everything below is pushed.
+**GitHub Actions was in a declared `major_outage` from 15:11Z on 2026-08-26.** Runs queued and never
+started, two returned `startup_failure` in seconds on workflow files that had been green half an hour
+earlier, and `gh run cancel` refused stuck runs as "completed" while the API still reported them
+`queued`. Git, the API and Pull Requests were unaffected throughout.
 
-This was checked rather than assumed: every job already uses the generic `ubuntu-latest` pool, and
-the concurrency groups are per-`github.ref`, so neither a runner label nor a ghost run holding a
-group explains it.
+**It cleared the same day**, and everything it had blocked has since landed. Recorded here because
+the recovery had one non-obvious step worth keeping:
 
-**Three branches, each stacked on the one before it. None is merged.**
+**The seven stranded runs never recovered and never will.** Actions returning to `operational` did
+not revive them — each still reports `queued` through the API while `gh run cancel` refuses it as
+"completed". They are permanently stuck. Fresh runs had to be dispatched, and
+`gh pr close <n> && gh pr reopen <n>` is what does it, because a `reopened` event re-triggers every
+workflow that listens on `pull_request`.
 
-| Branch                       | Contains                                         | State                                                                      |
-| ---------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------- |
-| `feat/transaction-ingestion` | Ingestion endpoint, idempotency, problem details | PR [#26](https://github.com/la3679/sentinelflow/pull/26), **CI never ran** |
-| `feat/outbox-relay`          | The relay, Kafka transport, envelope             | pushed, **no PR** — would show #26's diff                                  |
-
-PR #25 was the ingestion pull request and was **closed deliberately**, not abandoned: GitHub had
-dispatched only three of six workflows for its head commit and left them stuck. #26 is the same
-branch, reopened, and it dispatched more workflows — which then queued too.
-
-**Order to land them in:** #26 first, then open a pull request for `feat/outbox-relay` once its base
-is on `main`. Do not merge the relay branch into `main` directly; it carries the ingestion commits.
-
-**Everything below was verified locally.** Under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1` on 2026-08-26,
-`./mvnw verify` on `feat/outbox-relay` gives **23 unit and 89 integration tests passing** with the
-coverage gate met, `docker build -f apps/api/Dockerfile apps/api` succeeds, and `check-contracts`,
-`check-docs` and `format:check` all pass. That is one machine, not CI, and it is not a substitute
-for it.
+**If this happens again:** check `curl -s https://www.githubstatus.com/api/v2/summary.json` for the
+component state rather than inferring it from stuck runs, then close and reopen the pull request once
+Actions is operational. Do not chase runner labels or concurrency groups first — both were ruled out
+last time, and neither explains a `startup_failure` on an unchanged workflow file.
 
 ## Product status by phase
 
 - [x] **Phase 0 — research gate and Lovable/GitHub bootstrap**
 - [x] **Phase 1 — monorepo and developer foundation**
 - [x] **Phase 2 — contracts, domain, and database**
-- [ ] **Phase 3 — ingestion, outbox, and Kafka** ← in progress, unmerged
-- [ ] Phase 4 — synthetic data and scoring
+- [x] **Phase 3 — ingestion, outbox, and Kafka**
+- [ ] **Phase 4 — synthetic data and scoring** ← next
 - [ ] Phase 5 — alerts and investigations
 - [ ] Phase 6 — operations frontend
 - [ ] Phase 7 — observability and resilience
@@ -95,7 +84,7 @@ for it.
 - [ ] Phase 9 — performance and documentation
 - [ ] Phase 10 — release
 
-## Completed since last checkpoint — Phase 1
+## Completed — Phase 1
 
 **Monorepo.** The console moved from the repository root to `apps/web/`, and `apps/api` and
 `apps/scoring` were created alongside it. The root is a Bun workspace holding the single Node
@@ -136,6 +125,96 @@ against the current schema and exercised locally before commit.
 **Documentation.** ADR-0002, `LOVABLE_GITHUB_WORKFLOW.md`, `BRANCH_PROTECTION.md`,
 `CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
 prompt-dump into something verified, with two generated screenshots.
+
+## Completed — Phase 3, merged as PRs [#26](https://github.com/la3679/sentinelflow/pull/26), [#27](https://github.com/la3679/sentinelflow/pull/27) and [#28](https://github.com/la3679/sentinelflow/pull/28)
+
+**The pipeline runs end to end.** A transaction posted to the API is written with its outbox row in
+one transaction, published to Kafka by the relay, consumed idempotently, and either handled or
+dead-lettered with a classified reason. Everything below was executed on 2026-08-26 against real
+PostgreSQL 18.6 and real Kafka 4.2.1 in Testcontainers, and reproduced on the GitHub runner.
+
+**Ingestion (#26).** Single and bounded batch ingestion with Bean Validation at the boundary, RFC
+9457 problem details, and idempotency that the database enforces rather than the application. The
+pre-insert lookup is an optimisation; `transactions_idempotency_unique` is the guarantee, and the
+service is written to lose that race gracefully rather than to pretend it cannot happen. Three
+outcomes stay distinct: 202 created, 200 replayed, 409 for a key reused with a different payload.
+
+**The relay (#27).** Polling with `FOR UPDATE SKIP LOCKED`, claim and publish and status update in
+one transaction, bounded retry with full jitter, `FAILED` terminal. Three gauges — pending depth,
+failed depth, and the age of the oldest unpublished event — because depth alone cannot tell a busy
+relay from a stuck one.
+
+**The consumer (#28).** The other half of the at-least-once bargain:
+
+- **The ledger row and the effect are one transaction, row first.** The claim is
+  `INSERT ... ON CONFLICT DO NOTHING`, so a second delivery does nothing; if the effect throws, the
+  rollback takes the claim with it and the retry is genuinely a first attempt. Not exception-driven,
+  because a constraint violation marks a PostgreSQL transaction rollback-only and the ordinary
+  duplicate case could then not commit.
+- **Failures are classified rather than retried indiscriminately.** An unreadable envelope, an
+  unknown `eventType`, an unsupported `schemaVersion` and a payload of the wrong shape go straight to
+  `transaction.processing.dlq.v1` after one attempt. A handler's exception is retried on a bounded,
+  fully-jittered schedule and dead-lettered as `RETRY_EXHAUSTED` when the budget runs out.
+- **Retries block the partition on purpose.** A non-blocking retry topic would free it at the cost of
+  the per-account ordering ADR-0006 §2 keys these events by, which velocity rules depend on. The
+  budget is deliberately an order of magnitude shorter than the relay's: the relay waits for a broker
+  holding one row, a consumer holds up everything queued behind it.
+- **`FullJitterBackOff` is written rather than configured.** Spring's `ExponentialBackOff` grew a
+  `jitter` property that perturbs the interval by plus-or-minus jitter; ADR-0006 §4 asks for a
+  uniform draw across the whole window. Different distributions, one name — a test asserts which one
+  this is.
+- **Dead-lettering a transaction event marks the transaction `FAILED`**, meaning the pipeline will
+  not assess it rather than that it was rejected. Left `PENDING` it would wait for something that is
+  not coming.
+- **No `TransactionCreatedHandler` implementation ships.** Scoring is Phase 4 and is the first thing
+  that will genuinely act on one. The consumer injects a `List` and dispatches to every
+  implementation, so Phase 4 adds a bean rather than editing the consumer, and the tests register
+  their own handler through that same seam. A no-op implementation would be dead code pretending to
+  be a feature.
+
+### The one thing the DLQ deliberately cannot hold
+
+`dlq-record.v1.json` requires `originalEvent` to be a complete valid envelope, and ADR-0006 §4
+forbids copying an unsanitised payload fragment onto a topic operations staff read. A message that is
+not an envelope at all therefore has no legitimate representation in a dead-letter record.
+
+Relaxing the schema was considered and rejected — it would carve an exception into an accepted ADR
+quietly. Instead such a message is logged at `ERROR` with its exact topic, partition and offset,
+counted under `sentinelflow_consumer_undeliverable_total`, and its offset committed. The original
+bytes stay readable at those coordinates for as long as retention holds them, and the partition does
+not stop. An integration test publishes malformed JSON ahead of a valid event and asserts the valid
+one is still handled.
+
+### Defects found by running, not reading
+
+- **The `@KafkaListener` broke twenty-three existing tests.** A listener container whose bootstrap
+  address does not resolve fails the whole application context at startup rather than retrying, so
+  every Postgres-only suite failed with `No resolvable bootstrap urls`. Fixed with
+  `sentinelflow.consumer.enabled`, mirroring the relay's flag: on by default, off in
+  `AbstractPostgresTest`.
+- **A `@TestConfiguration` implementing the interface it provides is injected twice**, so every
+  delivery would have been counted twice. The configuration and the handler are separate classes now.
+- Earlier in the phase: Jackson coercing a JSON number into the money `String` field;
+  `default-property-inclusion: non_null` dropping a required nullable field from an event payload;
+  `spring-boot-kafka` missing exactly as `spring-boot-flyway` had been; `KafkaTemplate.send` throwing
+  synchronously rather than returning a failed future; and a unit test reading `../../contracts`,
+  which cannot work inside the module-only Docker context where CI runs the unit suite.
+
+## Acceptance criteria status — Phase 3 gate
+
+| Criterion                                     | Status   | Evidence                                                                         |
+| --------------------------------------------- | -------- | -------------------------------------------------------------------------------- |
+| Duplicate submission cannot duplicate data    | **pass** | `TransactionIngestionIT`; 8 threads race one key, one transaction and one event  |
+| Event survives temporary Kafka unavailability | **pass** | `OutboxRelayIT` — publication fails, row stays `PENDING`, retried, never lost    |
+| Consumer retry and DLQ tests pass             | **pass** | `TransactionCreatedConsumerIT`, 9 tests against a real broker                    |
+| Duplicate delivery cannot duplicate an effect | **pass** | `IdempotentEventProcessorIT`, 5 tests including an 8-thread race                 |
+| Trace and correlation evidence exists         | **pass** | `correlationId` on the envelope, the outbox row and the MDC while a handler runs |
+| Metrics baseline                              | **pass** | 3 outbox gauges, 3 counters; every one named in `docs/operations/RUNBOOKS.md`    |
+| Integration tests with Kafka and PostgreSQL   | **pass** | Testcontainers throughout; nothing in the messaging suites is mocked             |
+
+**CI green, verified.** All ten required checks passed on #26, #27 and #28, and the api job ran the
+Testcontainers suites on the runner rather than merely compiling them — its log shows 41 unit and 107
+integration tests and the coverage gate met. This is not a claim resting on one machine.
 
 ## Completed — Phase 2, merged as PR [#21](https://github.com/la3679/sentinelflow/pull/21)
 
@@ -243,6 +322,23 @@ available.
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
 
+### 2026-08-26 — Phase 3
+
+Local run under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`, then reproduced on the GitHub runner.
+
+| Command                                  | Result                                                        |
+| ---------------------------------------- | ------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)         | **PASS** — 41 unit, 107 integration, coverage gate met        |
+| The same, on the GitHub runner           | **PASS** — 41 and 107, same counts, gate met                  |
+| JaCoCo over both suites                  | 77.6% lines (944/1216), 66.1% branches (144/218)              |
+| `bun scripts/dev/check-contracts.mjs`    | **PASS**                                                      |
+| `bun scripts/dev/check-docs.mjs`         | **PASS** — 98 links across 34 files, 0 broken, 0 placeholders |
+| `bun run format:check` (repository-wide) | **PASS**                                                      |
+| `bun install --frozen-lockfile`          | **PASS** on every Dependabot branch after regeneration        |
+
+The coverage gate was ratcheted from LINE 0.50 / BRANCH 0.40 to **0.70 / 0.60** — measured first,
+then set below the measurement, as the previous turn of the ratchet was.
+
 ### 2026-08-26 — Phase 2
 
 | Command                                      | Result                                                        |
@@ -320,7 +416,7 @@ schema, validates every example, and asserts the deliberately-invalid ones are r
   `JAVA_HOME` is set for the command. Spotless passes regardless, because formatting does not
   compile — a green formatter is not a green build.
 - **Docker Desktop does not start quickly on the reference machine.** Start it before any session
-  that touches persistence: every suite except the 23 unit tests needs it, and `make test-api`
+  that touches persistence: every suite except the 41 unit tests needs it, and `make test-api`
   exists precisely so the fast half can run without it.
 - ~~**`Alert.version` disagrees between the contract and the mapping.**~~ **Resolved 2026-08-26.**
   OpenAPI moved to `minimum: 0` with the reason written into the schema; `alert-updated.v1.json`
@@ -329,9 +425,10 @@ schema, validates every example, and asserts the deliberately-invalid ones are r
   build on `25.0.4+7`, local `./mvnw` runs on `25.0.4.1+1`. Both are Java 25 LTS. Revisit when
   Adoptium publishes `25.0.4.1`.
 - **`noUnusedLocals` / `noUnusedParameters` are still `false`** in `apps/web/tsconfig.json`.
-- **Coverage thresholds are enforced in `apps/api` only** — LINE 0.50, BRANCH 0.40, set from a
-  measurement on 2026-08-26 and raised only when a phase genuinely raises coverage. `apps/web` and
-  `apps/scoring` still have none; set them in Phases 4 and 6.
+- **Coverage thresholds are enforced in `apps/api` only** — LINE 0.70, BRANCH 0.60, ratcheted on
+  2026-08-26 from 0.50/0.40 after Phase 3 measured 77.6% and 66.1%. Raised only when a phase
+  genuinely raises coverage, and never lowered to go green. `apps/web` and `apps/scoring` still
+  have none; set them in Phases 4 and 6.
 - **Google Fonts is loaded from a remote host.** Self-host in Phase 6 so the local-first stack has
   no external runtime dependency.
 - **Screen-reader behaviour is unverified.** axe is not a substitute for a manual pass. Phase 6.
@@ -343,33 +440,54 @@ schema, validates every example, and asserts the deliberately-invalid ones are r
   to check whether the base image has caught up and should be deleted when it has. If a distribution
   rotates the pinned version out of its archive first, the build fails there with a clear message
   and the fix is the same deletion.
+- **`apps/web` lint reports 23 warnings, not the 7 this file used to record.**
+  `eslint-plugin-react-refresh` 0.4.26 to 0.5.4 — an earlier grouped Dependabot bump, already on
+  `main` — flags a TanStack Start route file's `Route` export that `allowConstantExport` used to
+  cover. Zero errors, so nothing is blocked, and it is **not** caused by the ESLint 10 bump, which
+  was the obvious and wrong suspect. The fix is `allowExportNames: ["Route"]` in
+  `eslint.config.js`; Phase 6 owns that file.
+- **`RetryStateTracker` measures the failures one process saw.** `attemptCount` and `firstFailedAt`
+  in a dead-letter record are captured from the listener's own retry callbacks, so a restart or a
+  rebalance mid-retry restarts the clock. They undercount in that case rather than overcounting, and
+  the Javadoc and `RUNBOOKS.md` both say so.
+- **A message that is not a readable envelope is never dead-lettered.** Deliberate, and recorded in
+  the Phase 3 section above and in `DeadLetterRecoverer`'s Javadoc: the DLQ schema requires a valid
+  envelope, and ADR-0006 §4 forbids copying unsanitised content onto an operational topic. It is
+  logged with its coordinates and counted under `sentinelflow_consumer_undeliverable_total`.
+- **Reprocessing a dead-lettered event and reviving a `FAILED` outbox row are both manual.**
+  ADR-0005 §5 makes each an administrator-only, audited operation, and the endpoint that exposes it
+  is Phase 5 work. Until then `RUNBOOKS.md` describes doing it by hand and says to record who did it.
 - **`make` is not installed on the reference machine**, so Makefile targets are exercised there
   through `scripts/dev/sf.ps1` or by running the underlying command directly. Both are changed
   together, every time; a Makefile edit without the matching runner edit is a defect.
-- **`ProcessedEvent`, `AuditLogEntry`, `RegisteredModel`, `AlertAction`, `Role`, `User` and
-  `UserRole` have mappings and no callers.** They are validated against the schema and otherwise
-  untouched, which is most of the remaining coverage gap. Phases 3 to 5 reach them.
+- **`AuditLogEntry`, `RegisteredModel`, `AlertAction`, `Role`, `User` and `UserRole` have
+  mappings and no callers.** They are validated against the schema and otherwise untouched, which
+  is most of the remaining coverage gap. Phases 4 and 5 reach them. `ProcessedEvent` left this
+  list in Phase 3.
 
-## Open Dependabot pull requests
+## Dependabot
 
-Four, all **major** dev-dependency bumps, deliberately kept out of the grouped minor/patch pull
-request so each gets its own review and its own CI run:
+**All four major dev-dependency bumps are merged**, on 2026-08-26: `@types/node` 22 to 26 (#9),
+`globals` 15 to 17 (#10), `@vitejs/plugin-react` 5 to 6 (#11), and `eslint` 9 to 10 (#12). Each was
+kept out of the grouped minor/patch pull request deliberately so it got its own review and its own
+CI run, and each was verified locally — typecheck, build, lint and unit tests — before being pushed.
 
-| PR  | Bump                         | Note                                                   |
-| --- | ---------------------------- | ------------------------------------------------------ |
-| #9  | `@types/node` 22 → 26        | Low risk; the project targets Node 24+, so 22 is stale |
-| #10 | `globals` 15 → 17            | Low risk, ESLint configuration only                    |
-| #11 | `@vitejs/plugin-react` 5 → 6 | Needs a build and browser check                        |
-| #12 | `eslint` 9 → 10              | Major; flat-config changes likely, review carefully    |
+**The lockfile workflow has a gap worth knowing before the next batch.**
+`dependabot-bun-lockfile.yml` regenerates `bun.lock`, because Dependabot does not do it for a Bun
+workspace. Its header documents the known limitation that a push made with the default
+`GITHUB_TOKEN` cannot start further workflow runs, with `gh pr close <n> && gh pr reopen <n>` as the
+remedy.
 
-Each needs the same two steps: the lockfile workflow regenerates `bun.lock` on push, then
-`gh pr close <n> && gh pr reopen <n>` re-triggers CI — a push made with the default `GITHUB_TOKEN`
-cannot start workflow runs. See
-[`docs/operations/BRANCH_PROTECTION.md`](docs/operations/BRANCH_PROTECTION.md).
+That remedy re-triggers CI. **It does not re-trigger the lockfile job**, because the job is gated on
+`github.actor == 'dependabot[bot]'` and a human reopening the pull request is the actor. So a
+Dependabot pull request whose lockfile was never regenerated will, on reopen, dispatch every workflow
+and skip the one that would have fixed them — reporting `skipping`, which reads like success. Hit on
+#11. The fix is to regenerate `bun.lock` by hand and push, which also starts CI, since the push is
+made with a real account.
 
 Three earlier Dependabot pull requests were **closed with reasons** rather than merged, because
-each would have broken a recorded decision: Temurin 25 → 26 (not an LTS, ADR-0003), Python
-3.13 → 3.14 (joblib, ADR-0004), and nginx 1.30 stable → 1.31 mainline (verified by digest).
+each would have broken a recorded decision: Temurin 25 to 26 (not an LTS, ADR-0003), Python
+3.13 to 3.14 (joblib, ADR-0004), and nginx 1.30 stable to 1.31 mainline (verified by digest).
 `.github/dependabot.yml` now carries ignore rules naming each decision, so none will be proposed
 again.
 
@@ -379,25 +497,23 @@ None.
 
 ## Next three actions
 
-Read "Branch stack and the outage blocking it" first. Nothing merges until GitHub Actions recovers,
-and none of these actions is code.
+Phase 3 is merged and `main` is green. None of these is blocked.
 
-1. **Check whether Actions has recovered, then land the stack in order.** `curl -s
-https://www.githubstatus.com/api/v2/summary.json` names the component state directly. When it is
-   operational: watch PR [#26](https://github.com/la3679/sentinelflow/pull/26) to green and merge
-   it, then rebase or merge `main` into `feat/outbox-relay`, open its pull request, and merge that.
-   If runs are still stuck after the incident closes, closing and reopening the pull request
-   re-dispatches the workflows — it did dispatch more of them than a plain push had.
-2. **Continue Phase 3 — the idempotent consumer and the dead-letter path.** The producer half is
-   done; the consumer half is not. `processed_events` exists and is tested at the schema level, and
-   ADR-0006 §4 fixes the semantics: deduplicate on `eventId` per consumer, insert the ledger row in
-   the same transaction as the effect, classify failures rather than retrying indiscriminately, and
-   send non-retryable ones straight to `transaction.processing.dlq.v1`. Build it on
-   `feat/outbox-relay` if the stack has still not landed, and say so in the branch name.
-3. **Clear the four Dependabot pull requests, #9 to #12.** Open since Phase 1, and they need CI as
-   much as anything else does, so they wait on the same recovery. Each needs the lockfile workflow
-   to regenerate `bun.lock` on push, then `gh pr close <n> && gh pr reopen <n>` to re-trigger CI,
-   because a push made with the default `GITHUB_TOKEN` cannot start workflow runs.
+1. **Write ADR-0008 — the scoring-service boundary.** It is the last decision standing between here
+   and Phase 4's first line of code, and it has to settle what crosses the boundary and how failure
+   behaves: synchronous HTTP from the consumer or an event round trip, what the API does when scoring
+   is unavailable (the `degraded` factory on `RiskAssessment` exists and nothing constructs one yet),
+   what the timeout and retry budget are given that a consumer's retry blocks its partition, and
+   which of the two services owns the threshold that turns a score into an alert. ADR-0006 §4 already
+   classifies a scoring 5xx as retryable, so the ADR is constrained rather than open.
+2. **Phase 4 — synthetic data and scoring.** The scenario generator and `make seed` (the Phase 2 seed
+   loader covers parties only), the FastAPI scoring endpoints, feature engineering, and the first
+   real `TransactionCreatedHandler` — which registers into the list the consumer already injects, so
+   no change to the consumer is needed. Set coverage thresholds for `apps/scoring` while its code is
+   being written, not after.
+3. **Self-host Google Fonts, or defer it deliberately.** Small, and the only remaining external
+   runtime dependency in a stack that claims to be local-first. Currently carried as Phase 6 work; it
+   is worth ten minutes now if Phase 4 stalls on anything.
 
 ## Session startup commands
 
