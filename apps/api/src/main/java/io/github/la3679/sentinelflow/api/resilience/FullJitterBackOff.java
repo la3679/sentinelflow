@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-package io.github.la3679.sentinelflow.api.messaging.consumer;
+package io.github.la3679.sentinelflow.api.resilience;
 
 import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
@@ -24,22 +24,51 @@ import org.springframework.util.backoff.BackOffExecution;
  * ten lines is cheaper than configuring something into approximately the right behaviour and
  * leaving the next reader to work out which they got.
  *
+ * <p><strong>Two callers, deliberately.</strong> The listener container retries a delivery with it,
+ * and {@code ScoringClient} retries a single HTTP call with it. Both are a thread sleeping before it
+ * tries the same thing again, and both are bounded by an attempt count — so one implementation is
+ * the honest arrangement, and it is why this moved out of {@code messaging.consumer} rather than
+ * being copied into a second package.
+ *
  * <p>The schedule matches {@code OutboxBatchProcessor.backoffFor} deliberately — the same decision
  * appears in ADR-0005 §3 and ADR-0006 §4 — but the two are not shared code. One is a delay written
  * to a database column and read back by a different process; this one is a thread sleeping inside a
  * listener container. A single implementation would have to be parameterised on both, and the
  * coupling would outlive whichever of the two changed first.
  */
-class FullJitterBackOff implements BackOff {
+public class FullJitterBackOff implements BackOff {
 
     private final long baseMillis;
     private final long ceilingMillis;
     private final int maxAttempts;
 
-    FullJitterBackOff(Duration base, Duration ceiling, int maxAttempts) {
+    public FullJitterBackOff(Duration base, Duration ceiling, int maxAttempts) {
         this.baseMillis = base.toMillis();
         this.ceilingMillis = ceiling.toMillis();
         this.maxAttempts = maxAttempts;
+    }
+
+    /**
+     * The largest total delay this schedule can draw across every retry it permits.
+     *
+     * <p>Exists so a caller can prove its own budget rather than estimate it, and lives here so the
+     * schedule is written once. Computing it from {@code ceiling x retries} instead — the obvious
+     * approximation — overstates it badly: the window grows from {@code base} and only reaches the
+     * ceiling after several attempts, so the first two retries of the scoring client's schedule can
+     * draw at most 200 ms and 400 ms rather than a second each.
+     *
+     * <p>Each draw is {@code nextLong(0, window)}, exclusive of the bound, so a window contributes at
+     * most {@code window - 1}.
+     */
+    public static Duration worstCaseTotalDelay(Duration base, Duration ceiling, int maxAttempts) {
+        long baseMillis = base.toMillis();
+        long ceilingMillis = ceiling.toMillis();
+        long total = 0;
+        for (int failures = 1; failures < maxAttempts; failures++) {
+            long window = failures >= 32 ? ceilingMillis : Math.min(baseMillis << failures, ceilingMillis);
+            total += Math.max(0, window - 1);
+        }
+        return Duration.ofMillis(total);
     }
 
     @Override

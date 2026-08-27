@@ -24,8 +24,10 @@ import io.github.la3679.sentinelflow.api.domain.TransactionChannel;
 import io.github.la3679.sentinelflow.api.domain.TransactionType;
 import io.github.la3679.sentinelflow.api.scoring.payload.AccountContext;
 import io.github.la3679.sentinelflow.api.scoring.payload.Amount;
+import io.github.la3679.sentinelflow.api.scoring.payload.ReasonContribution;
 import io.github.la3679.sentinelflow.api.scoring.payload.RecentTransaction;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreRequest;
+import io.github.la3679.sentinelflow.api.scoring.payload.ScoreResponse;
 import io.github.la3679.sentinelflow.api.scoring.payload.TransactionToScore;
 
 /**
@@ -85,6 +87,49 @@ class ScoringPayloadContractIT {
     @DisplayName("ScoreRequest's fields are exactly the contract's")
     void scoreRequestMatchesTheContract() {
         assertRecordMatchesSchema(ScoreRequest.class, "ScoreRequest");
+    }
+
+    @Test
+    @DisplayName("ScoreResponse's fields are exactly the contract's")
+    void scoreResponseMatchesTheContract() {
+        // The mirror of the request-side risk, and the more dangerous direction:
+        // a field the contract gained and this record did not is a value the
+        // service sends and this application silently discards. A discarded
+        // featureVersion is a score nobody can attribute.
+        assertRecordMatchesSchema(ScoreResponse.class, "ScoreResponse");
+    }
+
+    @Test
+    @DisplayName("ReasonContribution's fields are exactly the contract's")
+    void reasonContributionMatchesTheContract() {
+        assertRecordMatchesSchema(ReasonContribution.class, "ReasonContribution");
+    }
+
+    @Test
+    @DisplayName("every field the contract requires on a response is one this record has")
+    void everyRequiredResponseFieldIsPresent() {
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schemas().get("ScoreResponse").get("required");
+        List<String> inRecord = new ArrayList<>();
+        for (RecordComponent component : ScoreResponse.class.getRecordComponents()) {
+            inRecord.add(component.getName());
+        }
+
+        assertThat(inRecord)
+                .as("the service is required to send each of these, so a caller that cannot bind one " + "has lost it")
+                .containsAll(required);
+    }
+
+    @Test
+    @DisplayName("the score range the response carries is the contract's")
+    void theScoreRangeIsTheContracts() {
+        Map<String, Object> modelScore = properties("ScoreResponse").get("modelScore");
+
+        assertThat(((Number) modelScore.get("minimum")).intValue()).isZero();
+        assertThat(((Number) modelScore.get("maximum")).intValue())
+                .as("the rule score and the model score share this scale, because one alerting "
+                        + "threshold has to mean the same thing under either (ADR-0008 §4)")
+                .isEqualTo(100);
     }
 
     @Test

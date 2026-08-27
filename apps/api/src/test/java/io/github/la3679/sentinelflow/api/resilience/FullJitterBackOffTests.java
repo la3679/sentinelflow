@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-package io.github.la3679.sentinelflow.api.messaging.consumer;
+package io.github.la3679.sentinelflow.api.resilience;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

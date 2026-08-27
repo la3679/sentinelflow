@@ -1341,3 +1341,108 @@ circuit breaker, then persisted assessments, then `make replay`.
 objects carrying `description`, `contribution` and `source`. `RuleReason` already produces all four.
 Which the column holds should be decided once, with the contract, the entity and the event changed
 together.
+
+---
+
+## Session 13 — 2026-08-27 — the scoring client, and an ADR that argued for a property it did not have
+
+Phase 4's thirteenth piece: `ScoringClient` with ADR-0008 §3's resilience, and ADR-0011 deciding what
+a rule score and a model score combine into. Two commits on `feat/scoring-client`.
+
+**This session was stopped at a checkpoint rather than finished.** The workflow that joins the
+ruleset, the client and the policy into a persisted assessment is designed and specified and not
+written. Everything below is landed and green.
+
+### What was built
+
+**`ScoringClient`.** Posts an assembled `ScoreRequest` to `/v1/score` with a 1 s connect and 2 s read
+timeout, two retries with full jitter, and a circuit breaker. Three outcomes, deliberately not
+interchangeable: a score; `ScoringUnavailableException`, from which the caller degrades to rules;
+`ScoringRejectedException`, which the caller dead-letters. Collapsing the last two into "scoring
+failed" is the mistake the class exists to prevent.
+
+**The breaker counts only unavailability.** A service answering 422 in a millisecond is not sick.
+Opening on it would turn every later transaction into a degraded assessment and hide the contract
+mismatch behind a system that still appears to work. Hand-written rather than taken from a library:
+one threshold, one timer and three states, against a decision already made in an ADR that a library
+would make us restate in its own terms. Consecutive failures rather than a rolling rate, because a
+rate window either opens on a quiet minute or refuses to open under a flood.
+
+**`FullJitterBackOff` moved to a new `resilience` package and became public.** It has two callers now
+— a listener retrying a delivery, this client retrying a call — and both are a thread sleeping before
+it tries the same thing again. Copying it to avoid the move would have been the drift its own comment
+argues against.
+
+### The budget was a sentence; it is now a startup validation
+
+ADR-0008 §3 says the whole call is under ten seconds "by construction". Making that a real check
+needed the jitter counted properly: the obvious estimate, `ceiling x retries`, adds two seconds and
+puts the ADR's own numbers at 11 s — over its own limit. The schedule's windows for two retries are
+actually 200 ms and 400 ms, so the true worst case is 9.6 s.
+
+`FullJitterBackOff.worstCaseTotalDelay` computes it where the schedule is defined, so the check and
+the behaviour cannot disagree. A test pins the distinction, because the naive version fails silently
+in the safe direction — it would just refuse configurations that are fine.
+
+### The finding: ADR-0011's first draft claimed a property its own formula does not have
+
+The draft rejected `max(rule, model)` partly because "two independent signals both at 60 should not
+land in the same place as one at 60 and one at 0". A test written straight from that sentence failed:
+under `max(rule, 0.6 x model + 0.4 x rule)`, `combine(60, 60)` and `combine(60, 0)` are **both 60**.
+The floor discards corroboration exactly as `max` does.
+
+The formula was kept and the ADR was corrected rather than the test. The defence is better than the
+original claim: the model's features and the rules' indicators are computed from the same account
+context, so they are not independent observations, and treating agreement as corroboration would
+count one observation twice. **The rules set a floor and the model escalates above it.** A model can
+raise a score and never lower one — one sentence, and an analyst can hold the whole policy in it.
+
+The ADR records the wrong claim, the failing test and the defence, rather than presenting the
+conclusion as though it had been obvious from the start.
+
+### `reason_codes` had been the wrong shape since Phase 2
+
+`risk_assessments.reason_codes` was mapped as `List<String>` while
+`contracts/schemas/common.v1.json` and `sentinelflow-api.yaml` had always described an object — a
+code, a description, a contribution and a source. Nothing had noticed because **nothing wrote the
+column**. The first write would also have been the first time the two had to agree, which is to say
+the mismatch was scheduled to be discovered by the feature that depended on it.
+
+`jsonb` is why the fix needed no migration, and also why it went unseen for two phases. The entity is
+now `List<ReasonCode>`, and `EntityMappingIT` round-trips the objects through PostgreSQL rather than
+asserting the intent.
+
+`ReasonCode.noIndicators()` came out of the same reading. The column's `CHECK` requires at least one
+reason and its own comment says an assessment with no reason cannot be defended to anyone — but a
+transaction that trips nothing is the _ordinary_ case, so an assessment for one would have violated
+the constraint on the first quiet transaction. "The ruleset examined this and found nothing" is an
+explanation; an empty array is the absence of one.
+
+`alerts.top_reason_code` has the identical mismatch and is deliberately untouched: alerts are Phase 5,
+nothing writes that column either, and it should be settled there in one change across the contract,
+the entity and the event. Recorded in `PROJECT_STATE.md`.
+
+### Tests and results — every figure from a run on 2026-08-27
+
+| Command                                    | Result                                            |
+| ------------------------------------------ | ------------------------------------------------- |
+| `./mvnw verify -DskipITs` (JDK 25.0.4.1+1) | **PASS** — 132 unit tests, 41 of them new         |
+| `./mvnw verify -DskipUnitTests=true`       | **PASS** — 158 integration tests, JaCoCo gate met |
+| `bun run format:check`                     | **PASS** — repository-wide                        |
+| `bun scripts/dev/check-docs.mjs`           | **PASS** — 146 links across 41 files              |
+
+The client is tested against a real socket rather than a mocked `RestClient`: a read timeout, a
+refused connection and a 2xx with an empty body only exist at the transport, and a mock would have
+passed while the shipped timeouts were attached to nothing. `apps/scoring` was not re-run; nothing in
+it changed this session.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: `RiskAssessmentService` and the handler that drives it, then
+`make replay`, then Phase 4's gate. The three client outcomes map straight onto ADR-0008 §2's table,
+and `ScoringRejectedException` has to become a `NonRetryableEventException` so a contract mismatch
+dead-letters rather than quietly degrading.

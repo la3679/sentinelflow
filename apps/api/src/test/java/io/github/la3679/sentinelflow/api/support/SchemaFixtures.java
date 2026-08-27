@@ -91,7 +91,7 @@ public final class SchemaFixtures {
                     risk_band, degraded, model_version, feature_version, policy_version,
                     reason_codes, scoring_latency_ms, alert_raised, assessed_at)
                 VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', false, '1.0.0', '1.0.0', '1.0.0',
-                        '["VELOCITY_SPIKE"]'::jsonb, 12, true, now())
+                        '[{"code":"VELOCITY_5M_HIGH","description":"Synthetic reason for a schema test","contribution":25,"source":"RULE"}]'::jsonb, 12, true, now())
                 RETURNING id
                 """, UUID.class, transactionId);
     }

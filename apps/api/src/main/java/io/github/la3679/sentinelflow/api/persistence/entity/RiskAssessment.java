@@ -16,6 +16,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import io.github.la3679.sentinelflow.api.domain.ReasonCode;
 import io.github.la3679.sentinelflow.api.domain.RiskBand;
 
 /**
@@ -70,10 +71,16 @@ public class RiskAssessment extends AbstractEntity {
      * The one place JSONB is the honest representation: a reason list is genuinely variable in
      * length, and nothing queries or constrains an individual member. The domain does not live in
      * here - every other field on this entity is a column.
+     *
+     * <p><strong>Objects, not strings.</strong> This was a list of bare codes from Phase 2 until the
+     * assessment workflow landed, while {@code contracts/schemas/common.v1.json} had always described
+     * a code, a description, a contribution and a source. Nothing noticed because nothing wrote the
+     * column; the first write was also the first time the two had to agree. See
+     * {@link ReasonCode}.
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "reason_codes", nullable = false, updatable = false)
-    private List<String> reasonCodes;
+    private List<ReasonCode> reasonCodes;
 
     @Column(name = "scoring_latency_ms", nullable = false, updatable = false)
     private int scoringLatencyMs;
@@ -108,7 +115,7 @@ public class RiskAssessment extends AbstractEntity {
             String modelVersion,
             String featureVersion,
             String policyVersion,
-            List<String> reasonCodes,
+            List<ReasonCode> reasonCodes,
             int scoringLatencyMs,
             boolean alertRaised,
             Instant assessedAt) {
@@ -139,7 +146,7 @@ public class RiskAssessment extends AbstractEntity {
             BigDecimal finalScore,
             RiskBand riskBand,
             String policyVersion,
-            List<String> reasonCodes,
+            List<ReasonCode> reasonCodes,
             boolean alertRaised,
             Instant assessedAt) {
         RiskAssessment assessment = new RiskAssessment(transactionId, assessmentVersion, policyVersion);
@@ -194,7 +201,7 @@ public class RiskAssessment extends AbstractEntity {
         return policyVersion;
     }
 
-    public List<String> getReasonCodes() {
+    public List<ReasonCode> getReasonCodes() {
         return List.copyOf(reasonCodes);
     }
 

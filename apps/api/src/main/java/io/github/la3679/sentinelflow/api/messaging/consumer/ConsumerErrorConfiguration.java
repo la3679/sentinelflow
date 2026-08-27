@@ -5,6 +5,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 
+import io.github.la3679.sentinelflow.api.resilience.FullJitterBackOff;
+
 /**
  * What happens when a listener throws: how often it is retried, and where it goes when it stops
  * being retried.

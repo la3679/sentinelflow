@@ -132,7 +132,7 @@ exists.
 - FastAPI scoring service (`/health/live`, `/health/ready`, `/v1/model`, `/v1/score`)
 - Spring scoring client with timeout, bounded retry, and circuit breaker
 - Persisted risk assessments with full model and policy metadata
-- ADR-0008 scoring-service boundary · ADR-0010 model and evaluation choice
+- ADR-0008 scoring-service boundary · ADR-0010 model and evaluation choice · ADR-0011 risk banding and the final score
 
 **Gate** — training reproducible from a documented command · evaluation report generated · model
 checksum and version stored · service contracts and failure behaviour tested.
@@ -167,7 +167,7 @@ attempts fail as expected · API documented.
 - Loading, empty, error, and permission-denied states everywhere
 - Accessibility tests (axe) and Playwright end-to-end journeys
 - Current screenshots with synthetic data
-- ADR-0011 SSE versus WebSockets
+- ADR-0015 SSE versus WebSockets
 
 **Gate** — no dead controls · keyboard and accessibility checks pass · the core end-to-end journey
 passes · Lovable diffs reviewed and merged safely.

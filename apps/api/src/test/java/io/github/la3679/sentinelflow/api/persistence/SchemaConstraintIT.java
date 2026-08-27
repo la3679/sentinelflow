@@ -240,7 +240,7 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                                 risk_band, degraded, model_version, feature_version, policy_version,
                                 reason_codes, scoring_latency_ms, alert_raised, assessed_at)
                             VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', true, NULL, NULL, '1.0.0',
-                                    '["RULE_ONLY"]'::jsonb, 0, false, now())
+                                    '[{"code":"RULE_ONLY","description":"d","contribution":0,"source":"RULE"}]'::jsonb, 0, false, now())
                             """, transactionId));
         }
 
@@ -255,7 +255,7 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                                 risk_band, degraded, model_version, feature_version, policy_version,
                                 reason_codes, scoring_latency_ms, alert_raised, assessed_at)
                             VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', false, NULL, NULL, '1.0.0',
-                                    '["VELOCITY_SPIKE"]'::jsonb, 12, false, now())
+                                    '[{"code":"VELOCITY_5M_HIGH","description":"d","contribution":25,"source":"RULE"}]'::jsonb, 12, false, now())
                             """, transactionId));
         }
 
