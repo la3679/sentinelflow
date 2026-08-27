@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-27T15:30Z                                                                                                                                |
+| Last updated UTC     | 2026-08-27T17:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 4: the model is served, and the rules floor is the one that ships                                                                 |
-| Current phase        | Phase 4 — synthetic data and scoring (twelve of fourteen pieces done)                                                                            |
-| Current task         | the Spring scoring client, ADR-0008 §3's timeouts, retry and circuit breaker                                                                     |
+| Overall status       | active — Phase 4: the client and the policy exist; the workflow that uses them does not                                                          |
+| Current phase        | Phase 4 — synthetic data and scoring (thirteen of fifteen pieces done)                                                                           |
+| Current task         | `RiskAssessmentService` and the `TransactionCreatedHandler` that drives it                                                                       |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/rules-baseline`                                                                                                                            |
+| Working branch       | `feat/scoring-client`                                                                                                                            |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#44](https://github.com/la3679/sentinelflow/pull/44) — the rules baseline                                                                       |
+| Open PRs             | [#45](https://github.com/la3679/sentinelflow/pull/45) — the scoring client and ADR-0011                                                          |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -128,7 +128,7 @@ prompt-dump into something verified, with two generated screenshots.
 
 ## In progress — Phase 4
 
-Twelve pieces have landed. What remains is the client that calls the scoring service, the assessments it persists, and the replay that demonstrates both.
+Thirteen pieces have landed. What remains is the workflow that joins the ruleset, the client and the policy into a persisted assessment, and the replay that demonstrates it.
 
 **[ADR-0008](docs/adr/0008-scoring-service-boundary.md), merged as PR
 [#29](https://github.com/la3679/sentinelflow/pull/29).** Written before either side of the boundary
@@ -522,6 +522,57 @@ stack is healthy**, and if the API is looping, re-run the plain
 `docker compose up -d --force-recreate --wait api`. Worth hardening the target itself when `make
 replay` is written, since it will do the same dance.
 
+### The scoring client and ADR-0011, merged as PR [#45](https://github.com/la3679/sentinelflow/pull/45)
+
+**`ScoringClient` calls `/v1/score` inside ADR-0008 §3's budget** and returns one of three outcomes
+that are deliberately not interchangeable: a score; unavailable, which the caller degrades from; and
+rejected, which the caller dead-letters. Collapsing the last two into "scoring failed" is what the
+class exists to prevent — one is a dependency being briefly down, the other is two services in one
+repository disagreeing about a contract.
+
+The circuit breaker counts **only** unavailability. A service answering 422 in a millisecond is not
+sick, and opening on it would turn every later transaction into a degraded assessment and hide the
+defect behind a system that still looks healthy. It is hand-written: one threshold, one timer, three
+states, against a decision already made in an ADR that a library would make us express again in its
+own terms.
+
+**The budget is now a startup validation rather than a sentence.** Getting there needed the jitter
+counted from the real schedule — `ceiling x retries` overstates the first two retries fivefold and
+fails ADR-0008's own numbers at 11 s, where the true worst case is 9.6 s.
+`FullJitterBackOff.worstCaseTotalDelay` computes it where the schedule is defined. `FullJitterBackOff`
+itself moved to a new `resilience` package and became public: it now has two callers, and both are a
+thread sleeping before it tries the same thing again.
+
+**ADR-0011 decides the final score**: `max(rule, 0.6 x model + 0.4 x rule)` when scoring answered,
+the rule score unchanged when it did not, banded from configured inclusive lower bounds validated at
+startup.
+
+### The ADR's first draft claimed a property its own formula does not have
+
+It argued against `max(rule, model)` partly on the grounds that the formula rewards corroboration.
+The test written from that sentence failed: with the floor, `combine(60, 60)` and `combine(60, 0)`
+are both 60, so agreement adds nothing.
+
+The formula was kept and the ADR was corrected. Counting agreement would be double-counting: the
+model's features and the rules' indicators are computed from the same account context and are not
+independent observations. **The rules set a floor and the model escalates above it** — a model can
+raise a score and never lower one, which is a property an analyst can be told in one sentence. The
+ADR now records the wrong claim, the failing test, and the defence, rather than presenting the
+conclusion as though it had been obvious.
+
+### `reason_codes` had been the wrong shape since Phase 2
+
+`risk_assessments.reason_codes` was mapped as a list of bare strings while
+`contracts/schemas/common.v1.json` and the API contract had always described an object with a code, a
+description, a contribution and a source. Nothing had noticed because **nothing wrote the column** —
+the first write would also have been the first time the two had to agree. `jsonb` is why it needed no
+migration, and also why it sat unseen.
+
+`ReasonCode.noIndicators()` came out of the same reading. The column's `CHECK` requires at least one
+reason and its comment says an assessment with no reason cannot be defended to anyone — but a
+transaction that trips nothing is the ordinary case, so something has to be said about it. "The
+ruleset examined this and found nothing" is an explanation; an empty array is the absence of one.
+
 ### What remains in Phase 4
 
 | Piece                                       | State                                                           |
@@ -537,10 +588,11 @@ replay` is written, since it will do the same dance.
 | Reproducible training, evaluation, registry | **done** (#41) — `make train`                                   |
 | Model card and `EVALUATION.md`              | **done** (#41) — the card is generated, never hand-written      |
 | `/v1/score` and `/v1/model` implementations | **done** (#43) — served from the registry entry                 |
-| Spring scoring client with resilience       | not started — consumes the assembler, does not write one        |
+| Spring scoring client with resilience       | **done** (#45) — timeouts, retry, breaker; not yet called       |
+| ADR-0011, the final score and the bands     | **done** (#45) — `RiskPolicyProperties`, validated at startup   |
+| The assessment workflow that joins them     | not started — service, handler, persisted assessments           |
 | Off-hours generator defect                  | **fixed** (#38) — found while building the export               |
-| Persisted risk assessments                  | not started                                                     |
-| `make replay`                               | not started — lands with the client, see below                  |
+| `make replay`                               | not started — lands with the workflow, see below                |
 
 **`make replay` is deliberately still unimplemented and still fails loudly.** The transaction shapes
 it would replay are generated today by `make seed`. Its own value is in the operational scenarios
@@ -749,6 +801,20 @@ available.
 ## Test and verification evidence
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-27 — Phase 4, the scoring client and ADR-0011
+
+| Command                                    | Result                                            |
+| ------------------------------------------ | ------------------------------------------------- |
+| `./mvnw verify -DskipITs` (JDK 25.0.4.1+1) | **PASS** — 132 unit tests                         |
+| `./mvnw verify -DskipUnitTests=true`       | **PASS** — 158 integration tests, JaCoCo gate met |
+| `bun run format:check` (repository-wide)   | **PASS**                                          |
+| `bun scripts/dev/check-docs.mjs`           | **PASS** — 141 links across 40 files              |
+
+The client is tested against a real socket rather than a mocked `RestClient`: a read timeout, a
+refused connection and a 2xx with an empty body only exist at the transport, and a mock would pass
+while the shipped timeouts were attached to nothing. `apps/scoring` was not re-run — nothing in it
+changed.
 
 ### 2026-08-27 — Phase 4, the rules baseline
 
@@ -1003,29 +1069,35 @@ None.
 
 ## Next three actions
 
-Phase 4 is in progress and `main` is green. Nothing is blocked. The model is served, the rules floor
-is the one that ships, and what remains is the caller and what it writes down.
+Phase 4 is in progress and `main` is green. Nothing is blocked. The ruleset, the scoring client and
+the policy all exist and are tested; **nothing joins them yet**, which is the next piece and the one
+that makes the pipeline end-to-end.
 
-1. **The Spring scoring client.** ADR-0008 §3's timeouts, bounded retry with jitter, and circuit
-   breaker. The breaker is load-bearing: without it every record in a backlog pays the full timeout
-   before degrading. It **consumes `AccountContextAssembler`** rather than writing a second one and
-   sends exactly the `ScoreRequest` the assembler already produces for the export, so the request side
-   is tested from both ends and a mismatch is a bug in one of them rather than an open question. A
-   422 is never retried and dead-letters (ADR-0006 §4); a 503 is retried within budget and then
-   degrades to rules alone.
-2. **Persisted risk assessments.** The first real `TransactionCreatedHandler` registers into the list
-   `TransactionCreatedConsumer` already injects, so the consumer needs no change. `RuleEngine` and the
-   client both feed it; `RiskAssessment.scored` and `.degraded` are the only two shapes, and the
-   database enforces both. **One mismatch to resolve first:** `risk_assessments.reason_codes` is a
-   `List<String>` on the entity, while `contracts/schemas/common.v1.json` and the API's `ReasonCode`
-   are objects carrying `description`, `contribution` and `source`. `RuleReason` already produces all
-   four. Decide which the column holds and make the contract, the entity and the event agree in one
-   change rather than three.
-3. **`make replay`, which lands with the client.** It still fails loudly and deliberately: the
-   scenarios worth replaying are §8.3's operational ones — a scoring-service outage, a malformed event
-   reaching the dead-letter path — and neither exists to replay until the client does. Revisit the
-   `compose.yaml` health dependency recorded under "Known issues" in the same change, and harden
-   `make export-dataset`'s second recreate while there, for the reason recorded above.
+1. **`RiskAssessmentService`, and the handler that drives it.** One method: assemble the request with
+   `AccountContextAssembler`, evaluate `RuleEngine`, call `ScoringClient`, combine through
+   `RiskPolicyProperties`, band it, and persist `RiskAssessment.scored` or `.degraded`. The three
+   client outcomes map straight onto the three rows in ADR-0008 §2's table, and `ScoringRejectedException`
+   must become a `NonRetryableEventException` so the record dead-letters rather than degrading.
+   `ScoringTransactionCreatedHandler` implements the port the consumer already injects a list of, so
+   the consumer itself needs no change. Everything runs inside `IdempotentEventProcessor`'s
+   transaction, which is what makes "processed" and "the assessment exists" one fact.
+   **Reasons are the rules' plus the model's**, both as `ReasonCode` objects with a `source`, capped
+   at the column's 20, and `ReasonCode.noIndicators()` when the list would otherwise be empty.
+2. **`make replay`.** It still fails loudly and deliberately. The scenarios worth replaying are
+   §8.3's operational ones — a scoring-service outage and a poison event reaching the dead-letter
+   path — and both become replayable the moment the workflow above exists. Revisit the `compose.yaml`
+   health dependency under "Known issues" in the same change, and harden `make export-dataset`'s
+   second recreate while there.
+3. **Close Phase 4 against its gate.** Training reproducible from a documented command · evaluation
+   report generated · model checksum and version stored · service contracts and failure behaviour
+   tested. The first three are done; the fourth needs the workflow's failure paths covered by an IT
+   against real PostgreSQL, not only the client's own unit tests.
+
+**One shape decision deferred, deliberately.** `alerts.top_reason_code` is a string on the entity
+while `contracts/schemas/alert-created.v1.json` describes an object, which is the same mismatch
+`risk_assessments.reason_codes` had. It is untouched here because alerts are Phase 5 and nothing
+writes that column either; settle it there, in one change across the contract, the entity and the
+event.
 
 ### Before resuming, note the local database is on the LOCAL profile
 
