@@ -84,13 +84,22 @@ class SchemaDocumentationIT extends AbstractPostgresTest {
     }
 
     @Test
-    @DisplayName("the flow document is marked as design rather than as a running system")
+    @DisplayName("the flow document separates what runs from what is still design")
     void flowDocumentDoesNotClaimToBeImplemented() {
-        // Phases 3 and 4 build this flow. Until they do, the page has to say so
-        // where a reader will see it, or the diagram becomes a claim that the
-        // pipeline works.
+        // A sequence diagram is a claim that the pipeline works unless the page
+        // says which parts of it do not. This asserts the page still draws that
+        // line rather than asserting where the line is: the strings below move
+        // every time a phase lands, and that is the point - the assertion fails
+        // when a phase ships and nobody updated the page, which is exactly when
+        // the diagram starts lying.
         String flow = read("TRANSACTION_TO_ALERT.md");
 
-        assertThat(flow).contains("Phase 2 status").contains("nothing here is a claim that the flow runs today");
+        assertThat(flow)
+                .as("the status banner names the phase the page describes")
+                .contains("Phase 4 status");
+        assertThat(flow)
+                .as("alert creation is the part of this flow that does not run yet, and the page "
+                        + "has to say so where a reader will see it")
+                .contains("Alert creation is Phase 5");
     }
 }

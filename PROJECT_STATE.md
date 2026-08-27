@@ -865,8 +865,8 @@ Every figure below came from a run on the date its section names. Nothing here i
 
 | Command                                    | Result                                                        |
 | ------------------------------------------ | ------------------------------------------------------------- |
-| `./mvnw verify` (JDK 25.0.4.1+1)           | **PASS** — 146 unit tests, 172 integration tests              |
-| JaCoCo, both suites                        | 85.7% lines (1793/2092), 76.9% branches (362/471)             |
+| `./mvnw verify` (JDK 25.0.4.1+1)           | **PASS** — 147 unit tests, 172 integration tests              |
+| JaCoCo, both suites                        | 85.7% lines (1794/2093), 76.9% branches (362/471)             |
 | `bun scripts/dev/check-contracts.mjs`      | **PASS** — every schema, example and API document             |
 | `bun scripts/dev/check-docs.mjs`           | **PASS** — 153 links across 41 files                          |
 | `bunx prettier --check`                    | **PASS** — every file touched                                 |

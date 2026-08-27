@@ -337,8 +337,8 @@ assessment:
 
 | Suite                             | Command                | Result                                            |
 | --------------------------------- | ---------------------- | ------------------------------------------------- |
-| API — full verify                 | `./mvnw verify`        | **146 unit + 172 integration passed**, gate met   |
-| API — coverage                    | JaCoCo, both suites    | 85.7% lines (1793/2092), 76.9% branches (362/471) |
+| API — full verify                 | `./mvnw verify`        | **147 unit + 172 integration passed**, gate met   |
+| API — coverage                    | JaCoCo, both suites    | 85.7% lines (1794/2093), 76.9% branches (362/471) |
 | Documentation links, placeholders | `make docs-check`      | **PASS** — 153 links across 41 files, 0 broken    |
 | Contracts                         | `make contracts-check` | **PASS** — every schema, example and API document |
 | Formatting, repository-wide       | `make format-check`    | **PASS**                                          |

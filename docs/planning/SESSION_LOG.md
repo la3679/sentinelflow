@@ -1572,8 +1572,8 @@ degraded path exists for.
 
 | Command                                        | Result                                                         |
 | ---------------------------------------------- | -------------------------------------------------------------- |
-| `./mvnw verify` (JDK 25.0.4.1+1)               | **PASS** — 146 unit tests, 172 integration tests               |
-| JaCoCo, both suites                            | 85.7% lines (1793/2092), 76.9% branches (362/471)              |
+| `./mvnw verify` (JDK 25.0.4.1+1)               | **PASS** — 147 unit tests, 172 integration tests               |
+| JaCoCo, both suites                            | 85.7% lines (1794/2093), 76.9% branches (362/471)              |
 | `bun scripts/dev/check-contracts.mjs`          | **PASS** — every schema, example and API document              |
 | `bun scripts/dev/check-docs.mjs`               | **PASS**                                                       |
 | `bunx prettier --check`                        | **PASS** — every file touched                                  |
@@ -1582,6 +1582,12 @@ degraded path exists for.
 
 Coverage ratcheted to LINE 0.80 and BRANCH 0.70, from 0.70 and 0.60. `apps/scoring` was not re-run;
 nothing in it changed this session.
+
+**Correction, same session.** Two commit messages on this branch — the h2c fix and the handler — quote
+"146 unit tests". The figure was correct when the handler landed and stale by one when the h2c fix
+added its own regression test; the true count on the branch tip is 147. Recorded here rather than
+rewritten into the commits, because this repository does not rewrite published history. Every other
+figure in those messages stands.
 
 ### Blockers
 

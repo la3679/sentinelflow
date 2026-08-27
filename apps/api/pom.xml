@@ -330,7 +330,7 @@
             The coverage floor. Measured, then set below the measurement.
 
             Phase 4's assessment workflow raised it: on 2026-08-27 a full
-            `./mvnw verify` covered 85.7% of lines (1793/2092) and 76.9% of
+            `./mvnw verify` covered 85.7% of lines (1794/2093) and 76.9% of
             branches (362/471), so these are 80% and 70%.
 
             They were 70% and 60%, set the same way from Phase 3's 77.6%
