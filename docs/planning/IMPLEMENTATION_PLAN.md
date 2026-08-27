@@ -132,6 +132,10 @@ exists.
 - FastAPI scoring service (`/health/live`, `/health/ready`, `/v1/model`, `/v1/score`)
 - Spring scoring client with timeout, bounded retry, and circuit breaker
 - Persisted risk assessments with full model and policy metadata
+- `make replay`: the operational scenarios from §8.3 that nothing else produces — a temporary
+  scoring-service outage and a malformed event reaching the dead-letter path. The transaction
+  shapes are `make seed`'s; the HTTP replay endpoint is API surface and waits for the
+  authorization and rate limiting of later phases
 - ADR-0008 scoring-service boundary · ADR-0010 model and evaluation choice · ADR-0011 risk banding and the final score
 
 **Gate** — training reproducible from a documented command · evaluation report generated · model

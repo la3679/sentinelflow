@@ -1446,3 +1446,148 @@ Recorded in `PROJECT_STATE.md`: `RiskAssessmentService` and the handler that dri
 `make replay`, then Phase 4's gate. The three client outcomes map straight onto ADR-0008 §2's table,
 and `ScoringRejectedException` has to become a `NonRetryableEventException` so a contract mismatch
 dead-letters rather than quietly degrading.
+
+---
+
+## Session 14 — 2026-08-27 — the workflow, and three defects that were invisible until the stack ran it
+
+Phase 4's last two pieces: `RiskAssessmentService`, the handler that drives it, and `make replay`.
+Eight commits on `feat/assessment-workflow`.
+
+**The headline is not the workflow.** It is that running the finished pipeline against the local
+stack — rather than against Testcontainers, which is all any previous session had done — found three
+defects that every suite in the repository was green through, and one of them meant no transaction
+could be scored at all.
+
+### What was built
+
+**A contract correction, before anything used it.** `common.v1.json` described `reasonCode.contribution`
+as "points this factor contributed to the final score", bounded to ±100. True of a rule, where the
+contribution is the configured weight and the reasons sum to the rule score. False of the model,
+whose contribution is `coefficient x standardised value` on the log-odds scale before calibration —
+it explains the ranking and sums to nothing, which the scoring contract already said in its own
+words. The bound went with the description rather than being kept as a safety net: a log-odds
+contribution has no natural ceiling, so honouring a bound means clamping, and clamping changes a
+number an analyst reads without saying so.
+
+**`ruleset_version`, which had nowhere to go.** V4 gave `risk_assessments` a model version, a feature
+version and a policy version and no column for the ruleset. `RuleOutcome`'s Javadoc said the ruleset
+version is "persisted on the assessment", the labelled export records it in its manifest, and the
+configuration comment promises it moves whenever a weight or a threshold does. Nothing had noticed,
+for the same reason the `reason_codes` shape mismatch went unnoticed for two phases: nothing had ever
+written the table, so no code had been forced to put every version it depends on somewhere.
+
+V8 adds it NOT NULL with no default and no backfill, and refuses loudly with an explanation if it
+ever finds a row — there is nothing to backfill, and a default would be a fabricated version attached
+to rows nobody can attribute. It is not nullable on a degraded assessment either, which is the point
+of putting it beside `policy_version` rather than beside `model_version`: the rules are the half that
+always runs, and a degraded assessment is made of nothing else.
+
+**`RiskAssessmentService`.** Assembles the request, evaluates the ruleset in process, calls the
+scoring client, combines through `RiskPolicyProperties`, bands the result and writes the row — with
+the transaction's move to `ASSESSED` and the `risk.assessed` outbox row in the same database
+transaction as the ledger row that records the event as handled. Three outcomes straight off
+ADR-0008 §2's table, and `ScoringRejectedException` is deliberately not caught: absorbing a contract
+mismatch as a degraded assessment hides a defect behind a dashboard that still looks healthy.
+
+**Reasons are grouped by source, not sorted as one list.** A rule weight of 10 and a log-odds
+contribution of 1.2 are not comparable magnitudes, and interleaving them by size ranks them against
+each other on the strength of a comparison that means nothing. Rules lead, because they are the half
+an analyst can check. The ordering is applied in the service rather than trusted from the
+`RuleOutcome` — the same argument `RuleEngine` makes about re-windowing history, and found by a test
+that supplied its reasons unsorted and got them back that way.
+
+**`ScoringTransactionCreatedHandler`.** The first implementation of the port Phase 3 left open, and a
+translation and nothing else: it turns the service's three outcomes into the two answers a Kafka
+consumer understands. The translation lives there and not in the service because "dead letter" is a
+delivery concept, and Phase 5's rescoring endpoint will call the same method from an HTTP request
+that has no partition to block.
+
+### Registering the first handler broke a delivery test, which is the useful part
+
+`TransactionCreatedConsumerIT` asserted that a successfully handled transaction stays `PENDING`. That
+stopped being true, because scoring correctly moves it to `ASSESSED`. The suite's subject is
+delivery — deduplication, retry classification, dead-lettering — so the scoring handler is replaced
+there with a no-op rather than the assertion being rewritten to describe the risk workflow. That is
+exactly the coupling `TransactionCreatedHandler` exists to prevent, showing up the first time it
+could.
+
+### Three defects that only running the stack could find
+
+**Nothing created the Kafka topics.** ADR-0006 §3 decided it — "topics are created explicitly, never
+by broker auto-creation, which is disabled in `compose.yaml`" — the setting was applied, and the step
+in between was never built. The stack came up with all seven services healthy and no message could be
+published on it: `UNKNOWN_TOPIC_OR_PARTITION`, once a second, for ever, behind a green API. It
+survived three phases because Testcontainers auto-creates. A one-shot `kafka-topics` service now
+creates all five before the API starts, with three partitions on the operational topics — on a
+single-partition topic every ordering assertion passes for the wrong reason.
+
+**The scoring client asked uvicorn to speak HTTP/2.** With the topics fixed, the relay drained a
+backlog of 20,073 outbox rows and every single scoring call was rejected: 13,455 assessments written
+degraded, 6,224 events dead-lettered, not one model score. The scoring service's log carried an
+"Unsupported upgrade request" warning for every "request rejected" line — 7,240 against 7,242.
+
+The JDK's `HttpClient` defaults to `HTTP_2`, which against an `http://` URI means every request
+carries `Upgrade: h2c`. uvicorn serves HTTP/1.1 only: it refuses the upgrade, fails to read the body
+that came with it, and answers 422 naming the whole body as invalid. The client then correctly
+classified that as a rejection and correctly dead-lettered it — the system working exactly as
+designed on top of a request that should never have been sent, which is also why the failure was
+visible within minutes rather than showing up later as a model that mysteriously never contributed.
+
+Pinned to HTTP/1.1. The test asserts the **wire** rather than the setting: `ScoringClientTests` and
+`RiskAssessmentWorkflowIT` were both green throughout, because `com.sun.net.httpserver` answers an
+upgrade attempt by ignoring it — which is precisely the difference between a stub and the thing it
+stands for. The new assertion is that no request carries an `Upgrade` header at all, verified by
+removing the fix and watching it fail.
+
+**Two PowerShell targets had never worked.** `Invoke-NativeCapture` takes no working directory, and
+`Invoke-Seed` and `Invoke-ExportDataset` had been calling it with one since they were written, so
+both died on "a positional parameter cannot be found". A `(?m)^api$` match never matched either,
+because the anchor sits after the carriage return the platform leaves on the line. Both found by
+running `.\scripts\dev\sf.ps1 replay` rather than by reading it.
+
+### `make replay`
+
+The operational scenarios from §8.3 that nothing else produces. The transaction shapes are `make
+seed`'s and replaying them again would be a second implementation; the HTTP replay endpoint is API
+surface that needs authorization and rate limiting, and shipping an unbounded one to satisfy a
+Makefile target would be the wrong trade. The script says both rather than leaving the gaps to be
+discovered.
+
+The outage scenario stops the scoring container, posts transactions, prints the degraded assessments,
+restarts it, waits out the breaker's open window and prints the scored ones. The poison scenario
+publishes **two** records, because there are two outcomes and only one is a dead letter: a well-formed
+envelope at an unsupported schema version is dead-lettered, while a record that is not a readable
+envelope at all is deliberately not — the DLQ schema requires a valid envelope and ADR-0006 §4 forbids
+copying unsanitised content onto an operational topic, so it is counted and logged instead. The first
+draft published only the second kind and then waited for a dead-letter record that correctly never
+came.
+
+`compose.yaml` also now waits for scoring with `service_started` rather than `service_healthy`.
+Readiness is 503 when no model is loaded, so a registry the image could not serve stopped the API
+from starting at all — the opposite of ADR-0008 §3, where an unreachable scoring service is what the
+degraded path exists for.
+
+### Tests and results — every figure from a run on 2026-08-27
+
+| Command                                        | Result                                                         |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)               | **PASS** — 146 unit tests, 172 integration tests               |
+| JaCoCo, both suites                            | 85.7% lines (1793/2092), 76.9% branches (362/471)              |
+| `bun scripts/dev/check-contracts.mjs`          | **PASS** — every schema, example and API document              |
+| `bun scripts/dev/check-docs.mjs`               | **PASS**                                                       |
+| `bunx prettier --check`                        | **PASS** — every file touched                                  |
+| `./scripts/dev/replay.sh` (both scenarios)     | **PASS** — 4 degraded, then 4 scored; DLQ +1; undeliverable +1 |
+| `.\scripts\dev\sf.ps1 replay` (both scenarios) | **PASS** — same outcomes on the reference Windows path         |
+
+Coverage ratcheted to LINE 0.80 and BRANCH 0.70, from 0.70 and 0.60. `apps/scoring` was not re-run;
+nothing in it changed this session.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`. Phase 4's gate is met once the pull request merges; Phase 5 opens with
+alert creation attaching to a band that already exists and is already persisted.

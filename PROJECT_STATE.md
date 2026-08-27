@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-27T17:05Z                                                                                                                                |
+| Last updated UTC     | 2026-08-27T20:10Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 4: the client and the policy exist; the workflow that uses them does not                                                          |
-| Current phase        | Phase 4 — synthetic data and scoring (thirteen of fifteen pieces done)                                                                           |
-| Current task         | `RiskAssessmentService` and the `TransactionCreatedHandler` that drives it                                                                       |
+| Overall status       | active — Phase 4: the pipeline is end to end and scored; open PR awaiting merge                                                                  |
+| Current phase        | Phase 4 — synthetic data and scoring (all fifteen pieces done, on a branch)                                                                      |
+| Current task         | merge `feat/assessment-workflow`, then close Phase 4 against its gate                                                                            |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | none — `main` is current                                                                                                                         |
+| Working branch       | `feat/assessment-workflow` — pushed, CI green, pull request open                                                                                 |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none                                                                                                                                             |
+| Open PRs             | one — the assessment workflow                                                                                                                    |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -128,7 +128,7 @@ prompt-dump into something verified, with two generated screenshots.
 
 ## In progress — Phase 4
 
-Thirteen pieces have landed. What remains is the workflow that joins the ruleset, the client and the policy into a persisted assessment, and the replay that demonstrates it.
+All fifteen pieces have landed, the last two on `feat/assessment-workflow`: the workflow that joins the ruleset, the client and the policy into a persisted assessment, and the replay that demonstrates it.
 
 **[ADR-0008](docs/adr/0008-scoring-service-boundary.md), merged as PR
 [#29](https://github.com/la3679/sentinelflow/pull/29).** Written before either side of the boundary
@@ -573,6 +573,65 @@ reason and its comment says an assessment with no reason cannot be defended to a
 transaction that trips nothing is the ordinary case, so something has to be said about it. "The
 ruleset examined this and found nothing" is an explanation; an empty array is the absence of one.
 
+### The assessment workflow, on `feat/assessment-workflow`
+
+**`RiskAssessmentService` is the one method that runs the pieces in order.** Assemble the request,
+evaluate the ruleset in process, call the scoring client, combine through `RiskPolicyProperties`,
+band it, and write the row — with the transaction's move to `ASSESSED` and the `risk.assessed`
+outbox row in the same database transaction as the ledger row that records the event as handled.
+Three outcomes straight off ADR-0008 §2's table, and `ScoringRejectedException` is deliberately not
+caught: absorbing a contract mismatch as a degraded assessment hides a defect behind a dashboard that
+still looks healthy.
+
+**Reasons are grouped by source rather than sorted as one list.** A rule weight of 10 and a log-odds
+contribution of 1.2 are not comparable magnitudes, and interleaving them by size would rank them
+against each other on the strength of a comparison that means nothing. Rules lead, because they sum
+to the rule score and are the half an analyst can check. `risk-assessed.v1.json` now says so.
+
+**`ScoringTransactionCreatedHandler` is a translation and nothing else.** It turns the service's
+three outcomes into the two answers a Kafka consumer understands, and it lives in the messaging
+boundary rather than the service because "dead letter" is a delivery concept — Phase 5's rescoring
+endpoint will call the same method from an HTTP request that has no partition to block.
+
+### Two contract corrections the first write forced
+
+**A model contribution is not points added to the final score.** `common.v1.json` described
+`reasonCode.contribution` as exactly that and bounded it to ±100. True of a rule; false of the model,
+whose contribution is `coefficient x standardised value` on the log-odds scale before calibration.
+The bound went with the description rather than being kept as a safety net: a log-odds contribution
+has no natural ceiling, so honouring a bound means clamping, and clamping changes a number an analyst
+reads without saying so.
+
+**The rule score had no version to be defended by.** V4 gave `risk_assessments` a model version, a
+feature version and a policy version and no column for the ruleset — while `RuleOutcome`'s Javadoc,
+the export manifest and the configuration comment all said the ruleset version is persisted on the
+assessment. Unnoticed for the same reason the `reason_codes` shape was: nothing had ever written the
+table. V8 adds it NOT NULL with no default and no backfill, and refuses loudly if it ever finds a
+row.
+
+### Registering the first handler broke a delivery test, which is the useful part
+
+`TransactionCreatedConsumerIT` asserted that a successfully handled transaction stays `PENDING`, and
+that stopped being true because scoring correctly moves it to `ASSESSED`. The suite's subject is
+delivery, so the scoring handler is replaced there with a no-op rather than the assertion being
+rewritten to describe the risk workflow — exactly the coupling the port exists to prevent, showing up
+the first time it could.
+
+### Three defects that only running the compose stack could find
+
+Every suite in the repository was green through all three. They are recorded at length under "Next
+three actions", and the short form is:
+
+- **Nothing created the Kafka topics**, though ADR-0006 §3 decided they are created explicitly and
+  disabled auto-creation. Seven healthy services and no publishable message.
+- **The scoring client negotiated HTTP/2 against uvicorn**, so every request was refused: 13,455
+  degraded assessments and 6,224 dead letters before it was traced.
+- **Two PowerShell targets had never worked at all.**
+
+The generalisable part is that Testcontainers and the compose stack are not the same system —
+Testcontainers auto-creates topics, and `com.sun.net.httpserver` ignores an upgrade attempt uvicorn
+refuses — and only one of the two is what a demo runs on.
+
 ### What remains in Phase 4
 
 | Piece                                       | State                                                           |
@@ -590,15 +649,15 @@ ruleset examined this and found nothing" is an explanation; an empty array is th
 | `/v1/score` and `/v1/model` implementations | **done** (#43) — served from the registry entry                 |
 | Spring scoring client with resilience       | **done** (#45) — timeouts, retry, breaker; not yet called       |
 | ADR-0011, the final score and the bands     | **done** (#45) — `RiskPolicyProperties`, validated at startup   |
-| The assessment workflow that joins them     | not started — service, handler, persisted assessments           |
+| The assessment workflow that joins them     | **done** — service, handler, persisted assessments              |
 | Off-hours generator defect                  | **fixed** (#38) — found while building the export               |
-| `make replay`                               | not started — lands with the workflow, see below                |
+| `make replay`                               | **done** — the two operational scenarios, both paths            |
 
-**`make replay` is deliberately still unimplemented and still fails loudly.** The transaction shapes
-it would replay are generated today by `make seed`. Its own value is in the operational scenarios
-§8.3 lists — a temporary scoring-service outage, a malformed event reaching the dead-letter path —
-and neither exists to replay until the scoring client does. It lands with the pieces it demonstrates
-rather than ahead of them.
+**`make replay` is implemented, and narrower than the name suggests.** It replays the two
+operational scenarios §8.3 lists that nothing else produces — a temporary scoring-service outage and
+a malformed event reaching the dead-letter path. The transaction shapes are `make seed`'s, and the
+HTTP replay endpoint §10 lists is API surface that waits for the authorization and rate limiting of
+later phases. Both the bash script and the PowerShell runner were run end to end on 2026-08-27.
 
 **Rapid fan-in is not expressible at all**, and `docs/data/DATA_PROVENANCE.md` says so rather than
 leaving it as a silent gap: `transactions` records an account and a merchant and has no counterparty
@@ -802,6 +861,28 @@ available.
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
 
+### 2026-08-27 — Phase 4, the assessment workflow and `make replay`
+
+| Command                                    | Result                                                        |
+| ------------------------------------------ | ------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)           | **PASS** — 146 unit tests, 172 integration tests              |
+| JaCoCo, both suites                        | 85.7% lines (1793/2092), 76.9% branches (362/471)             |
+| `bun scripts/dev/check-contracts.mjs`      | **PASS** — every schema, example and API document             |
+| `bun scripts/dev/check-docs.mjs`           | **PASS** — 153 links across 41 files                          |
+| `bunx prettier --check`                    | **PASS** — every file touched                                 |
+| `./scripts/dev/replay.sh` (both scenarios) | **PASS** — 4 degraded then 4 scored; DLQ +1; undeliverable +1 |
+| `.\scripts\dev\sf.ps1 replay`              | **PASS** — same outcomes on the reference Windows path        |
+
+Coverage ratcheted to LINE 0.80 and BRANCH 0.70, from 0.70 and 0.60.
+
+**The h2c defect was found by running, not by testing.** `ScoringClientTests` and
+`RiskAssessmentWorkflowIT` were both green while every request to the real scoring service was being
+refused, because `com.sun.net.httpserver` ignores the upgrade attempt uvicorn refuses. The new
+assertion is on the wire — no `Upgrade` header on any request — and was verified by removing the fix
+and watching it fail.
+
+`apps/scoring` was not re-run; nothing in it changed.
+
 ### 2026-08-27 — Phase 4, the scoring client and ADR-0011
 
 | Command                                    | Result                                            |
@@ -989,15 +1070,13 @@ checks.
   build on `25.0.4+7`, local `./mvnw` runs on `25.0.4.1+1`. Both are Java 25 LTS. Revisit when
   Adoptium publishes `25.0.4.1`.
 - **`noUnusedLocals` / `noUnusedParameters` are still `false`** in `apps/web/tsconfig.json`.
-- **`compose.yaml` makes the API wait for scoring to be _healthy_.** Readiness is 503 when no model
-  is loaded, so a registry the image could not serve would block the API from starting at all —
-  which contradicts ADR-0008 §3, where an unreachable scoring service is exactly what the degraded
-  path exists for. It does not bite today, because the image now carries the artifact and reports
-  ready. **Revisit with the Spring client**, which is the change that makes degradation real: the
-  likely answer is `service_started` for that one dependency, and it should land with the retry and
-  breaker that prove it rather than ahead of them.
-- **Coverage thresholds are enforced in `apps/api` only** — LINE 0.70, BRANCH 0.60, ratcheted on
-  2026-08-26 from 0.50/0.40 after Phase 3 measured 77.6% and 66.1%. `apps/scoring` gained its own
+- ~~**`compose.yaml` makes the API wait for scoring to be _healthy_.**~~ **Resolved 2026-08-27.**
+  It is `service_started` now, in the branch that made degradation real. Ordering is still declared,
+  so the ordinary case is a warm dependency rather than a first transaction scored against a
+  container still importing scikit-learn.
+- **Coverage thresholds are enforced in `apps/api` only** — LINE 0.80, BRANCH 0.70, ratcheted on
+  2026-08-27 from 0.70/0.60 after the assessment workflow measured 85.7% and 76.9%; those had been
+  ratcheted on 2026-08-26 from 0.50/0.40 after Phase 3 measured 77.6% and 66.1%. `apps/scoring` gained its own
   floor with the feature pipeline — `fail_under = 90`, measured at 95.9%. Both are ratchets: raised
   only when a change genuinely raises coverage, never lowered to go green. **`apps/web` still has
   none**; it gets one in Phase 6.
@@ -1034,8 +1113,14 @@ checks.
   together, every time; a Makefile edit without the matching runner edit is a defect.
 - **`AuditLogEntry`, `RegisteredModel`, `AlertAction`, `Role`, `User` and `UserRole` have
   mappings and no callers.** They are validated against the schema and otherwise untouched, which
-  is most of the remaining coverage gap. Phases 4 and 5 reach them. `ProcessedEvent` left this
-  list in Phase 3.
+  is most of the remaining coverage gap. Phase 5 reaches them. `ProcessedEvent` left this list in
+  Phase 3 and `RiskAssessment` left it in Phase 4.
+- **Nothing verifies that the compose stack's Kafka topics match the AsyncAPI contract.** The
+  one-shot `kafka-topics` service creates the five the design names, and it is a second place the
+  topic names are written — `EventTopics` and `EventTopicsTests` hold the other. A drift between
+  them would show up as a producer retrying `UNKNOWN_TOPIC_OR_PARTITION` behind a healthy stack,
+  which is exactly the symptom that hid for three phases. Worth an assertion when Phase 7 touches
+  the stack's observability.
 
 ## Dependabot
 
@@ -1069,35 +1154,41 @@ None.
 
 ## Next three actions
 
-Phase 4 is in progress and `main` is green. Nothing is blocked. The ruleset, the scoring client and
-the policy all exist and are tested; **nothing joins them yet**, which is the next piece and the one
-that makes the pipeline end-to-end.
+Phase 4's work is done and pushed on `feat/assessment-workflow`. Nothing is blocked.
 
-1. **`RiskAssessmentService`, and the handler that drives it.** One method: assemble the request with
-   `AccountContextAssembler`, evaluate `RuleEngine`, call `ScoringClient`, combine through
-   `RiskPolicyProperties`, band it, and persist `RiskAssessment.scored` or `.degraded`. The three
-   client outcomes map straight onto the three rows in ADR-0008 §2's table, and `ScoringRejectedException`
-   must become a `NonRetryableEventException` so the record dead-letters rather than degrading.
-   `ScoringTransactionCreatedHandler` implements the port the consumer already injects a list of, so
-   the consumer itself needs no change. Everything runs inside `IdempotentEventProcessor`'s
-   transaction, which is what makes "processed" and "the assessment exists" one fact.
-   **Reasons are the rules' plus the model's**, both as `ReasonCode` objects with a `source`, capped
-   at the column's 20, and `ReasonCode.noIndicators()` when the list would otherwise be empty.
-2. **`make replay`.** It still fails loudly and deliberately. The scenarios worth replaying are
-   §8.3's operational ones — a scoring-service outage and a poison event reaching the dead-letter
-   path — and both become replayable the moment the workflow above exists. Revisit the `compose.yaml`
-   health dependency under "Known issues" in the same change, and harden `make export-dataset`'s
-   second recreate while there.
-3. **Close Phase 4 against its gate.** Training reproducible from a documented command · evaluation
+1. **Merge the pull request**, once its checks are green. Self-review the whole diff first: it is
+   eight commits and touches contracts, a migration, the API, `compose.yaml`, the Makefile and the
+   PowerShell runner. Prefer a merge commit.
+2. **Close Phase 4 against its gate.** Training reproducible from a documented command · evaluation
    report generated · model checksum and version stored · service contracts and failure behaviour
-   tested. The first three are done; the fourth needs the workflow's failure paths covered by an IT
-   against real PostgreSQL, not only the client's own unit tests.
+   tested. All four are now met: `RiskAssessmentWorkflowIT` covers the scored, degraded and rejected
+   paths against real PostgreSQL and real Kafka, and `make replay` demonstrates two of them against
+   the running stack. Tick the phase in this file and in
+   [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md).
+3. **Open Phase 5 with alert creation.** It attaches to a band that already exists and is already
+   persisted, and reopens none of the scoring. Settle `alerts.top_reason_code` there, in one change
+   across the contract, the entity and the event — it is the same mismatch `reason_codes` had, and
+   it is deliberately still untouched.
 
-**One shape decision deferred, deliberately.** `alerts.top_reason_code` is a string on the entity
-while `contracts/schemas/alert-created.v1.json` describes an object, which is the same mismatch
-`risk_assessments.reason_codes` had. It is untouched here because alerts are Phase 5 and nothing
-writes that column either; settle it there, in one change across the contract, the entity and the
-event.
+### What this session found by running the stack rather than the suites
+
+Three defects, all invisible to a green build, recorded here because the lesson generalises: the
+Testcontainers suites and the compose stack are not the same system, and only one of them is what a
+demo runs on.
+
+- **Nothing created the Kafka topics.** ADR-0006 §3 decided they are created explicitly and disabled
+  auto-creation; the step in between was never built. Every service reported healthy and no message
+  could be published. Fixed by a one-shot `kafka-topics` service the API waits for.
+- **The scoring client negotiated HTTP/2 against an HTTP/1.1-only service.** The JDK's `HttpClient`
+  defaults to `HTTP_2`, so every request carried `Upgrade: h2c`; uvicorn refused it, could not read
+  the body, and answered 422. Every scoring call was rejected. Pinned to HTTP/1.1, with the test
+  asserting the absence of the header rather than the presence of the setting.
+- **Two PowerShell targets had never worked.** `Invoke-NativeCapture` took no working directory
+  while two callers passed one, and a `(?m)^api$` match never matched because of the carriage return.
+
+**If assessments are ever all degraded again**, check the scoring service's log for "Unsupported
+upgrade request" beside each rejection before looking anywhere else. `docs/operations/RUNBOOKS.md`
+Runbook 4 has the full sequence.
 
 ### Before resuming, note the local database is on the LOCAL profile
 
@@ -1107,6 +1198,12 @@ a smaller profile, stop the API, truncate `users, user_roles, customers, account
 transactions, outbox_events, processed_events CASCADE`, and reseed. **Truncating without `users`
 fails startup** on `users_username_unique` — the party seed is idempotent against a database it
 seeded, not against one where half its tables were cleared.
+
+**The local demo database carries the scars of the h2c defect.** 7,260 transactions are `FAILED` and
+13,455 assessments are `degraded`, because they were processed while every scoring call was being
+refused. The code is correct now — assessments written since the fix are scored — but the
+distribution in that database is not one anyone should read anything into. `make reset-demo` then
+`make seed` gives a clean one; see the profile note above first.
 
 ## Session startup commands
 

@@ -3,11 +3,15 @@
 The path a single synthetic transaction takes from arrival to an analyst's queue, and where each
 row in the schema is written along the way.
 
-> **Phase 2 status.** The schema, the mappings, and the invariants below exist and are tested. The
-> ingestion endpoint, the outbox relay, the Kafka topics and the scoring call are **Phases 3 and 4**.
-> This page is the design those phases are built against, drawn from the migrations and the
-> contracts rather than from a running system — nothing here is a claim that the flow runs today.
-> Steps not yet implemented are marked.
+> **Phase 4 status.** Everything up to and including the persisted risk assessment runs and is
+> tested end to end against a real broker and a real database. **Alert creation is Phase 5**: the
+> band is computed and persisted on every assessment, and nothing reads it yet, so the last two
+> steps below are marked as the design they are built against rather than as behaviour.
+>
+> This page was written in Phase 2 and described scoring as a second Kafka consumer publishing
+> `risk.assessed` back to the API. [ADR-0008](../adr/0008-scoring-service-boundary.md) §1 rejected
+> that shape for three specific reasons and chose a synchronous call from inside the consumer's own
+> handler. The diagram below is the shape that shipped.
 
 ---
 
@@ -19,12 +23,12 @@ sequenceDiagram
     participant Client as Client
     participant API as API<br/>(Spring Boot)
     participant DB as PostgreSQL
-    participant Relay as Outbox relay<br/>(Phase 3)
+    participant Relay as Outbox relay
     participant Kafka as Kafka
-    participant Scoring as Scoring<br/>(FastAPI, Phase 4)
-    participant Queue as Alert queue
+    participant Scoring as Scoring<br/>(FastAPI)
+    participant Queue as Alert queue<br/>(Phase 5)
 
-    Client->>API: POST /api/v1/transactions<br/>Idempotency-Key
+    Client->>API: POST /api/v1/transactions<br/>idempotencyKey
     activate API
 
     rect rgb(238, 242, 248)
@@ -49,36 +53,43 @@ sequenceDiagram
         end
     end
 
-    Kafka->>Scoring: transaction.created
-    activate Scoring
-    Scoring->>Scoring: features (versioned, deterministic)
-    alt model reachable
-        Scoring-->>Kafka: risk.assessed<br/>model_score, model_version, feature_version
-    else model unreachable
-        Scoring-->>Kafka: risk.assessed (degraded)<br/>rules only, no model fields at all
-    end
-    deactivate Scoring
-
-    Kafka->>API: risk.assessed
+    Kafka->>API: transaction.created
     activate API
-    API->>DB: INSERT processed_events (consumer, eventId)
-    alt already processed
-        DB-->>API: processed_events_pk violated → discard, no effect
-    end
 
     rect rgb(238, 242, 248)
-        note over API,DB: One database transaction again.
-        API->>DB: INSERT risk_assessments
-        API->>DB: UPDATE transactions SET processing_status = ASSESSED
-        opt final_score crosses the alert threshold
-            API->>DB: INSERT alerts (status = NEW, version = 0)
-            API->>DB: INSERT alert_actions (CREATED, actor = system)
-            API->>DB: INSERT outbox_events (alert.created)
+        note over API,Scoring: One database transaction, and the scoring call is inside it.<br/>"Processed" and "the assessment exists" are one fact.
+        API->>DB: INSERT processed_events (consumer, eventId)
+        alt already processed
+            DB-->>API: claim finds the row → no effect, offset committed
         end
+
+        API->>DB: SELECT account history (windowed strictly before occurredAt)
+        API->>API: RuleEngine: transparent indicators, in-process
+
+        API->>Scoring: POST /v1/score<br/>transaction + bounded account context
+        alt scoring answers
+            Scoring-->>API: modelScore, modelVersion, featureVersion, reasons
+            API->>DB: INSERT risk_assessments (scored)
+        else unreachable past the budget, or breaker open
+            Scoring--xAPI: no answer
+            API->>DB: INSERT risk_assessments (degraded)<br/>rules only, no model fields at all
+        else scoring rejects the request (4xx)
+            Scoring-->>API: 422
+            API->>Kafka: dead-letter the record, write no assessment
+        end
+
+        API->>DB: UPDATE transactions SET processing_status = ASSESSED
+        API->>DB: INSERT outbox_events (risk.assessed)
     end
     deactivate API
 
-    API->>Queue: alert appears, most urgent and oldest first
+    rect rgb(245, 245, 245)
+        note over API,Queue: Phase 5. The band is already computed and persisted;<br/>alert creation attaches to it and reopens none of the scoring.
+        API->>DB: INSERT alerts (status = NEW, version = 0)
+        API->>DB: INSERT alert_actions (CREATED, actor = system)
+        API->>DB: INSERT outbox_events (alert.created)
+        API->>Queue: alert appears, most urgent and oldest first
+    end
 ```
 
 ---
@@ -128,6 +139,33 @@ happened. A zero model score would be a claim about the transaction that nobody 
 half-populated row a partially-failed scoring path would otherwise write cannot be committed and
 later read as a real model output. `RiskAssessment` has `scored()` and `degraded()` factories and no
 public constructor, so the third shape is not constructible in Java either.
+
+**It still names the ruleset and the policy that produced it.** Those are the only two versions a
+degraded assessment has, and they are the two it most needs: the rules are the half that always
+runs, and banding happens whether or not the model answered. `ruleset_version` was added in V8
+because V4 had columns for the model, the features and the policy and none for the weights that set
+the rule score's floor — which nothing had noticed, because nothing had ever written the table.
+
+`make replay` demonstrates this against the running stack rather than describing it: it stops the
+scoring container, posts transactions, prints the degraded assessments, restarts it and prints the
+scored ones.
+
+### Three outcomes, and only two of them write a row
+
+[ADR-0008](../adr/0008-scoring-service-boundary.md) §2 separates "the dependency is briefly down"
+from "the two services disagree about a contract", and the separation is behavioural:
+
+| Scoring                     | What happens                                                       |
+| --------------------------- | ------------------------------------------------------------------ |
+| Answers                     | `scored` assessment, with both scores and every version            |
+| Unreachable past its budget | `degraded` assessment, scored by the rules alone                   |
+| Rejects the request (4xx)   | **No assessment.** The record is dead-lettered so somebody sees it |
+
+Collapsing the last two into "scoring failed" is what the split exists to prevent. A contract
+mismatch absorbed as a degraded assessment is a defect hidden behind a dashboard that still looks
+healthy — which is not hypothetical: the first run of this pipeline against the real stack rejected
+every request, and the dead-letter path is what made it visible within minutes rather than showing
+up later as a model that mysteriously never contributed.
 
 ### Rescoring adds a row
 
@@ -205,4 +243,10 @@ loses.
 - [`DATA_MODEL.md`](DATA_MODEL.md) — the tables these steps write
 - [`../adr/0006-event-schema-and-versioning.md`](../adr/0006-event-schema-and-versioning.md) — the
   envelope, the topics, and at-least-once with an outbox
+- [`../adr/0008-scoring-service-boundary.md`](../adr/0008-scoring-service-boundary.md) — why the
+  call is synchronous, what happens when it fails, and who owns the threshold
+- [`../adr/0011-risk-banding-and-the-final-score.md`](../adr/0011-risk-banding-and-the-final-score.md)
+  — how the two scores become one number, and what bands it
+- [`../operations/RUNBOOKS.md`](../operations/RUNBOOKS.md) — what to do when assessments start
+  degrading
 - [`../../contracts/README.md`](../../contracts/README.md) — the authoritative API and event schemas
