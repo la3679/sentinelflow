@@ -1221,3 +1221,123 @@ None.
 
 Recorded in `PROJECT_STATE.md`: the rules baseline in `apps/api`, then the Spring scoring client with
 its timeouts, bounded retry and circuit breaker, then persisted assessments and `make replay`.
+
+---
+
+## Session 12 — 2026-08-27 — the rules baseline, and a floor that was in the wrong place
+
+Phase 4's twelfth piece: the transparent ruleset in `apps/api`, and the discovery that the thing
+every model had been measured against was not it. Four commits on `feat/rules-baseline`.
+
+### What was built
+
+**Seven indicators, in the service that has to run them.** Velocity over five minutes, the amount
+against this account's own recent mean, a device the account has not used, a country change, the
+small hours, a large share of the balance, and distinct merchants within the hour. Each contributes a
+configured weight; the sum is clipped to the contract's 0-to-100 scale and returned with the reasons
+that produced it, sourced as `RULE`.
+
+They live in `apps/api` because ADR-0002 §3 says so and ADR-0008 §3 explains why: a ruleset reached
+over the network could not answer "the network is down". Thresholds and weights are configuration
+validated at startup (§8.4); which indicators exist is code, because an indicator has a definition
+and a definition is not a number.
+
+**Invalid configuration fails the context rather than falling back**, unlike `ScoringContextProperties`
+which clamps. The difference is deliberate and worth stating: a clamped lookback window still produces
+a defensible context, where a negative weight produces a score silently wrong in a direction nobody
+chose. A service that will not start is a problem an operator can see.
+
+### The finding: the floor was in the wrong place, and it was too low
+
+`training.evaluation.rules_baseline_scores` was a Python stand-in. It said so in its own docstring and
+the previous session recorded it as an owed item. The obvious move was to reimplement `apps/api`'s
+ruleset in Python — which is exactly the mistake ADR-0010 §1 already rejects for the account
+assembler, with the same failure mode: two implementations drift, and the drift presents as a model
+beating a baseline nobody runs.
+
+So the stand-in was **deleted rather than replaced**. `TrainingDatasetExporter` evaluates every
+example with `RuleEngine` — the same engine, on the same assembled request, that the API runs when
+scoring is unreachable — and `ruleScore` became a fourth field on each exported line beside `label`.
+The trainer reads the column. There is one ruleset, and the comparison is against it by construction
+rather than by care.
+
+**Then the numbers moved.** On the same holdout the stand-in scored PR-AUC 0.1535; the shipped
+ruleset scores 0.2611, with precision 0.722 against 0.542 and a false-positive rate of 0.0021 against
+0.0045. Every margin over "the rules" published before today was measured against something weaker
+than the rules, by roughly 0.11 PR-AUC.
+
+The conclusion did not change. Logistic regression still scores 0.8327 — same features, same split,
+same seed, byte-identical artifact — and still clears the 0.05 margin, now by 0.57 rather than 0.68.
+`EVALUATION.md` records the correction rather than quietly carrying the new number, because the point
+of a limitations section is the things it admits.
+
+**The rule score is a comparison column and never a feature.** It is not part of `ScoreRequest`, so
+the extractor cannot see it; a model trained on it would be partly modelling the rules. An integration
+test asserts its absence from both request halves rather than leaving that to a reader.
+
+One smaller correction fell out: the baseline's operating point now comes from the training rows,
+exactly as every candidate's does. It previously came from a fresh computation over the same rows it
+reported on, which gave the floor the one advantage the models are denied.
+
+### Two defects the ruleset found by being run
+
+- **`NEW_DEVICE` fired on an account with no history at all.** "Not one of the account's known
+  devices" is trivially true when there are none, so the rule put fifteen points on the first
+  transaction of every account that had been quiet for a day — most low-activity accounts on most
+  days. Caught by a test asserting an account with no history is not suspicious. It now needs
+  something to compare against, which is the same principle that leaves the amount ratio and the
+  country change without a default.
+
+  This is a **deliberate** difference from the model feature of the same name, which does report 1.0
+  on an empty history. The model sees `history_size` beside it and learns what the pair means
+  together; a rule asserts a fixed weight with nothing beside it, so it has to carry the
+  qualification itself. Both files say so.
+
+- **Reasons needed a tie-break.** `COUNTRY_CHANGE` and `NEW_DEVICE` both weigh 15, so ordering by
+  contribution alone left their order to whichever ran first. A persisted assessment whose reason
+  order moved between identical runs would be unreproducible for no reason at all.
+
+### The stack was found in a crash loop
+
+`docker compose ps` reported the API `Restarting (1)`. `SENTINELFLOW_SCORING_EXPORT_ENABLED` was still
+set on the service from the previous session's `make export-dataset`, and the export runner correctly
+refuses to overwrite an existing dataset — so the container failed startup, restarted, and failed
+again. It had been doing that since the last session. Nothing else was affected and no data was lost.
+
+The Makefile target does recreate the service without the flag afterwards, so that second recreate did
+not take effect or was interrupted. **Check `docker compose ps` before assuming the stack is healthy.**
+Recorded in `PROJECT_STATE.md` as something to harden when `make replay` is written, since it will
+need the same dance.
+
+### Tests and results — every figure from a run on 2026-08-27
+
+| Command                                          | Result                                                                                        |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `./mvnw verify -DskipITs` (JDK 25.0.4.1+1)       | **PASS** — 91 unit tests, 28 of them the ruleset's                                            |
+| `./mvnw verify -DskipUnitTests=true`             | **PASS** — 154 integration tests, JaCoCo gate met                                             |
+| `uv run pytest --cov` (apps/scoring)             | **PASS** — 171 tests, 97.36% coverage, floor 90                                               |
+| `uv run mypy` (strict)                           | **PASS** — 0 issues, 42 source files                                                          |
+| `make export-dataset` (profile LOCAL)            | 20,707 examples, 707 planted, sha256 `8eb1bac8…`                                              |
+| `uv run python -m sentinelflow_scoring.training` | rules 0.2611 · logistic 0.8327 · boosting 0.8081 · iforest 0.7154                             |
+| Rule-score distribution over the export          | 23% of NORMAL fires; 100% of OFF_HOURS_NEW_DEVICE, 53% of VELOCITY_BURST, 52% of CARD_TESTING |
+| `bun run format:check`                           | **PASS** — repository-wide                                                                    |
+| `bun scripts/dev/check-docs.mjs`                 | **PASS** — 141 links across 40 files                                                          |
+| `bun scripts/dev/check-contracts.mjs`            | **PASS** — all three API documents                                                            |
+
+The ruleset is a real floor rather than a formality: it separates planted shapes from background
+traffic without being anywhere near good enough to make a model pointless.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: the Spring scoring client with its timeouts, bounded retry and
+circuit breaker, then persisted assessments, then `make replay`.
+
+**One mismatch to resolve before assessments are persisted.** `risk_assessments.reason_codes` is a
+`List<String>` on the entity, while `contracts/schemas/common.v1.json` and the API's `ReasonCode` are
+objects carrying `description`, `contribution` and `source`. `RuleReason` already produces all four.
+Which the column holds should be decided once, with the contract, the entity and the event changed
+together.
