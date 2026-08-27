@@ -14,15 +14,15 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-26T22:20Z                                                                                                                                |
+| Last updated UTC     | 2026-08-26T23:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 4 in progress: the boundary, the data and the contract have landed                                                                |
-| Current phase        | Phase 4 — synthetic data and scoring (four of twelve pieces done)                                                                                |
-| Current task         | ADR-0010 and reproducible training, then the scoring endpoints and the Spring client                                                             |
+| Overall status       | active — Phase 4 in progress: the boundary, the data, the contract and the model decision                                                        |
+| Current phase        | Phase 4 — synthetic data and scoring (five of fourteen pieces done)                                                                              |
+| Current task         | the account-context assembler and the labelled export, then reproducible training                                                                |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | none — `main` is current                                                                                                                         |
+| Working branch       | `docs/adr-model-and-evaluation`                                                                                                                  |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
@@ -128,7 +128,7 @@ prompt-dump into something verified, with two generated screenshots.
 
 ## In progress — Phase 4
 
-Three pieces have landed. The rest of the phase is the model itself and the client that calls it.
+Five pieces have landed. The rest of the phase is the model itself and the client that calls it.
 
 **[ADR-0008](docs/adr/0008-scoring-service-boundary.md), merged as PR
 [#29](https://github.com/la3679/sentinelflow/pull/29).** Written before either side of the boundary
@@ -203,22 +203,52 @@ document from being one nothing checks.
   second would have been silently rejected as a duplicate — leaving a dataset smaller than the
   manifest claimed. A sequence number fixes it, and a test asserts uniqueness over the `DEMO` profile.
 
+**[ADR-0010](docs/adr/0010-model-selection-and-evaluation.md), the model and evaluation choice.**
+Written before the training code, and it changed the order of the rest of the phase.
+
+**Labels have exactly one home, and it is not the database.** `ScenarioType` already said planted
+shapes never enter the schema, which leaves the training source undecided rather than obvious. An
+offline export in `apps/api` writes the exact `ScoreRequest` body the service would receive plus the
+planted label — so the generator is not reimplemented in Python, where two definitions of six shapes
+would drift and the drift would look like a modelling problem.
+
+**The export must call the runtime's own account-context assembler.** This is the part that reorders
+the phase. All sixteen features are computed from that context, so an assembler that windowed,
+ordered, capped or truncated differently at training time produces train/serve skew that **no metric
+in the evaluation report can detect** — both sides of the comparison would come from the training
+assembler. The assembler therefore moves ahead of training, and the Spring client consumes it
+instead of writing a second one.
+
+**The score is a calibrated probability, which follows from ADR-0008 §4 rather than from taste.** One
+threshold, owned by the API, has to mean the same thing under a model and under a rules-only degraded
+assessment. That rules `IsolationForest` out of production before anything is trained — its anomaly
+score is unbounded and dataset-relative, and calibrating it against labels defeats the reason it was
+included. It stays as an unsupervised comparison.
+
+**The selection rule is fixed in advance so it cannot be rationalised afterwards.** PR-AUC is the
+headline and accuracy is never one; a model ships only if it beats the rules baseline by a stated
+margin, and **the rules ship alone if none does**; a gap inside the cross-validation fold spread is
+fold noise and goes to logistic regression; and the operating point is chosen against an
+alert-volume budget rather than by maximising F1, because an analyst team is a fixed-capacity queue.
+
 ### What remains in Phase 4
 
-| Piece                                       | State                                          |
-| ------------------------------------------- | ---------------------------------------------- |
-| ADR-0008, the scoring boundary              | **done** (#29)                                 |
-| Scenario generator, `make seed`             | **done** (#30)                                 |
-| Scoring contract                            | **done** (#31)                                 |
-| Versioned feature pipeline                  | **done** (#34)                                 |
-| Transparent rules baseline                  | not started — `apps/api`, per ADR-0002         |
-| Reproducible training, evaluation, registry | not started                                    |
-| ADR-0010, model and evaluation choice       | not started                                    |
-| Model card and `EVALUATION.md`              | not started                                    |
-| `/v1/score` and `/v1/model` implementations | not started                                    |
-| Spring scoring client with resilience       | not started                                    |
-| Persisted risk assessments                  | not started                                    |
-| `make replay`                               | not started — lands with the client, see below |
+| Piece                                       | State                                                    |
+| ------------------------------------------- | -------------------------------------------------------- |
+| ADR-0008, the scoring boundary              | **done** (#29)                                           |
+| Scenario generator, `make seed`             | **done** (#30)                                           |
+| Scoring contract                            | **done** (#31)                                           |
+| Versioned feature pipeline                  | **done** (#34)                                           |
+| ADR-0010, model and evaluation choice       | **done**                                                 |
+| Account-context assembler                   | not started — **moved ahead of training**, ADR-0010 §1   |
+| Labelled dataset export                     | not started — `apps/api`, offline, never persisted       |
+| Transparent rules baseline                  | not started — `apps/api`, per ADR-0002                   |
+| Reproducible training, evaluation, registry | not started                                              |
+| Model card and `EVALUATION.md`              | not started                                              |
+| `/v1/score` and `/v1/model` implementations | not started                                              |
+| Spring scoring client with resilience       | not started — consumes the assembler, does not write one |
+| Persisted risk assessments                  | not started                                              |
+| `make replay`                               | not started — lands with the client, see below           |
 
 **`make replay` is deliberately still unimplemented and still fails loudly.** The transaction shapes
 it would replay are generated today by `make seed`. Its own value is in the operational scenarios
@@ -630,28 +660,35 @@ None.
 
 ## Next three actions
 
-Phase 4 is in progress and `main` is green. Nothing is blocked.
+Phase 4 is in progress and `main` is green. Nothing is blocked. ADR-0010 is decided, and it moved
+the account-context assembler ahead of training — that reorder is what item 1 is.
 
-1. **ADR-0010 — the model and evaluation choice.** It comes before the training code for the same
-   reason ADR-0008 came before the client: the comparison is rules-only, logistic regression, a
-   tree-based model if it materially helps, and Isolation Forest as an unsupervised comparison, and
-   the production-demo candidate is chosen on documented evidence — simplicity, inference cost,
-   reproducibility, explainability — rather than on the highest number. Decide the splitting strategy
-   there too: time-aware or group-aware, so the same account cannot appear in both train and test.
+1. **The account-context assembler in `apps/api`, and the labelled export built on it.** One
+   implementation, used by the runtime scoring call and by training, per ADR-0010 §1: it computes
+   the bounded history ADR-0008 fixes as what crosses the boundary — the lookback window, the
+   newest-first ordering, the 200-row cap and the `truncated` flag the contract already declares.
+   The export then runs `ScenarioGenerator` and writes one JSONL record per transaction — the exact
+   `ScoreRequest` body plus the planted `ScenarioType`. **The label goes in that file and nowhere
+   else**; `ScenarioLoaderIT` already asserts against `information_schema` that no label column
+   exists, and that assertion stays true.
 2. **Reproducible training, evaluation, and the model registry.** An explicit offline command, never
    an API side effect. Save the dataset fingerprint, the feature version, the split strategy, the
-   hyperparameters, the environment lock, the metrics JSON, the plots, the artifact checksum and the
-   model card. **Accuracy is never the headline** under this imbalance — PR-AUC is, with precision,
-   recall, false-positive rate and alert volume beside it. `docs/ml/MODEL_CARD.md` and
-   `docs/ml/EVALUATION.md` ship with the model, not after it.
+   seeds, the hyperparameters, the environment lock, the metrics JSON, the plots, the artifact
+   checksum and the model card. Split group-disjoint on account **and** time-ordered (ADR-0010 §3);
+   calibrate, and report Brier and a reliability curve (§4). **Accuracy is never the headline** under
+   this imbalance — PR-AUC is, with precision, recall, false-positive rate and alert volume at the
+   budgeted operating point beside it. `docs/ml/MODEL_CARD.md` and `docs/ml/EVALUATION.md` ship with
+   the model, not after it. If nothing beats the rules baseline by the stated margin, the rules ship
+   alone and that outcome is recorded rather than worked around.
 3. **`/v1/score` and `/v1/model`, then the rules baseline, the Spring client and persisted
    assessments.** The rules baseline lives in `apps/api` (ADR-0002), which is what makes a degraded
    assessment a real answer rather than a null with a flag on it. The client carries the timeouts,
    bounded retry and circuit breaker ADR-0008 §3 fixes; the breaker is load-bearing, because without
-   it every record in a backlog pays the full timeout before degrading. The first real
-   `TransactionCreatedHandler` registers into the list the consumer already injects, so the consumer
-   needs no change. `make replay` lands here, since a scoring outage and a poison event are the
-   scenarios worth replaying.
+   it every record in a backlog pays the full timeout before degrading. It **consumes the assembler
+   from item 1** rather than writing a second one. The first real `TransactionCreatedHandler`
+   registers into the list the consumer already injects, so the consumer needs no change.
+   `make replay` lands here, since a scoring outage and a poison event are the scenarios worth
+   replaying.
 
 ## Session startup commands
 
