@@ -9,9 +9,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 /**
  * Entry point for the SentinelFlow API.
  *
- * <p>This service owns transaction ingestion, the transactional outbox, alert lifecycle and audit.
- * Risk scoring is deliberately not here: it lives in the Python scoring service, which this
- * application calls. See {@code docs/adr/0002-monorepo-and-service-boundaries.md}.
+ * <p>This service owns transaction ingestion, the transactional outbox, alert lifecycle, audit —
+ * and the deterministic rule score, which runs in-process because it is what answers when the
+ * scoring service cannot be reached. <em>Model</em> scoring is deliberately not here: features,
+ * inference and the model registry live in the Python scoring service, which this application calls.
+ * See {@code docs/adr/0002-monorepo-and-service-boundaries.md} §3.
  *
  * <p>SentinelFlow is an independent educational project operating on synthetic data. It makes no
  * real financial decisions.
