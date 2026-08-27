@@ -450,6 +450,47 @@ Recorded in `docs/development/CLAUDE_CODE_SETUP.md`.
 
 ---
 
+## R-2026-08-26-01 — matplotlib for the evaluation plots, and where it belongs
+
+**Date (UTC):** 2026-08-26
+**Source:** the resolved environment itself — `uv add`, then `importlib.metadata` on the installed
+distributions. Measured rather than read off a website, because what matters is what the lockfile
+actually pinned.
+
+**Question:** §12.5 requires plots to ship with the evaluation. Nothing in the pinned stack draws
+one, so a plotting library is a new dependency and the workflow rules forbid adding a technology
+without a demonstrated need and a recorded decision. Is the need demonstrated, and if so where does
+the dependency belong?
+
+| Package      | Resolved | `requires_python` | Group             |
+| ------------ | -------- | ----------------- | ----------------- |
+| matplotlib   | 3.11.1   | >=3.11            | `training`        |
+| scikit-learn | 1.9.0    | >=3.11            | main              |
+| numpy        | 2.5.2    | >=3.12            | main              |
+| scipy        | 1.18.1   | >=3.12            | main, via sklearn |
+| joblib       | 1.5.3    | >=3.9             | main              |
+
+**Findings:** every one of these is satisfied by Python 3.13, so ADR-0004's ceiling is unchanged —
+joblib's 3.13 limit remains the binding constraint and nothing added here moves it. matplotlib
+3.11.1 resolves cleanly and pulls contourpy, cycler, fonttools, kiwisolver, pillow, pyparsing,
+python-dateutil and six.
+
+**Decision:** the need is the specification's rather than a preference, so matplotlib is added — but
+to a **`training` dependency group, not to the runtime dependencies**. The serving image has no use
+for a plotting library, and every megabyte and every future advisory in one would otherwise be
+carried on the request path for the sake of a command nobody runs in production. `uv sync --no-dev`
+does not install non-default groups, so `apps/scoring/Dockerfile` never sees it; that is enforced by
+how the image is built rather than by anyone remembering.
+
+**scikit-learn, numpy and joblib go into the runtime dependencies** at exactly the versions ADR-0004
+selected, because serving genuinely needs all three: the artifact is loaded with joblib and inference
+runs through scikit-learn over a NumPy array.
+
+**pandas is deliberately not installed**, though ADR-0004's table anticipated it. The feature
+extractor produces a dict of floats and the model wants an array; a DataFrame in between would be a
+dependency carried for convenience. That table pins the version to use if a need appears — it does
+not oblige one to appear.
+
 ## Open items to revalidate
 
 - [ ] Security advisories affecting the pinned versions — run the dependency and CodeQL scans in
@@ -460,3 +501,10 @@ Recorded in `docs/development/CLAUDE_CODE_SETUP.md`.
       Still **22.19.0**; Bun runs the frontend so nothing is blocked.
 - [ ] Charting library licence re-check once the Recharts version is pinned by the lockfile.
 - [ ] Temurin `25.0.4.1` container image — not yet published by Adoptium (R-2026-08-25-12).
+- [ ] **joblib 1.5.3 warns on every model load under NumPy 2.5.2.** Its unpickler assigns to
+      `array.shape`, which NumPy 2.5 deprecated. Measured on 2026-08-26, with and without
+      compression. It is on the **serving** path: when NumPy removes the behaviour, the scoring
+      service stops being able to load a model. Narrowly silenced by message in
+      `apps/scoring/pyproject.toml` so `filterwarnings = ["error"]` survives elsewhere. The fix
+      is a joblib release; ADR-0004 already pins the Python version to joblib's support window,
+      so this is the second reason to watch that dependency.

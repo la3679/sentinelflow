@@ -145,6 +145,7 @@ function Invoke-Help {
         'reset-demo'       = 'DESTRUCTIVE - stop the stack and delete all local data volumes'
         'seed'             = 'Generate and load deterministic demo data'
         'export-dataset'   = 'Export the labelled training dataset (ADR-0010)'
+        'train'            = 'Train, evaluate and register a risk model (ADR-0010)'
         'replay'           = '(Phase 4, in progress) Replay the default synthetic scenario'
         'build'            = 'Build every application'
         'test'             = 'Run every standard test suite'
@@ -542,6 +543,21 @@ function Invoke-ExportDataset {
     Write-Host 'Written to data/generated/training/ - git-ignored, regenerate rather than commit.'
 }
 
+function Invoke-Train {
+    <#
+        The Makefile's `train` target, expressed natively. The two are changed
+        together, every time, for the reason Invoke-Seed records.
+
+        Training is an explicit offline command and never an API side effect
+        (section 12.6), so this runs the module directly rather than going
+        through the stack. It exits non-zero when nothing is promoted, which is a
+        pre-registered outcome of ADR-0010 section 5 rather than a failure - the
+        command says which it was.
+    #>
+    Write-Host 'Training from data/generated/training. Offline, never an API side effect.'
+    Invoke-Native $Scoring 'uv' @('run', 'python', '-m', 'sentinelflow_scoring.training')
+}
+
 function Invoke-ResetDemo {
     Write-Host 'This deletes the PostgreSQL, Kafka, Prometheus and Grafana volumes.'
     Write-Host 'All local demo data will be lost. This cannot be undone.'
@@ -576,6 +592,7 @@ switch ($Target) {
     'reset-demo' { Invoke-ResetDemo }
     'seed' { Invoke-Seed }
     'export-dataset' { Invoke-ExportDataset }
+    'train' { Invoke-Train }
     'replay' { Invoke-NotImplemented 'replay' 'the same change as the scoring client' 'Scenario replay' }
 
     'build' {

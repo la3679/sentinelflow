@@ -1,0 +1,171 @@
+{
+  "alertBudget": 0.01,
+  "candidates": {
+    "hist-gradient-boosting": {
+      "description": "HistGradientBoostingClassifier with isotonic calibration.",
+      "eligible": true,
+      "foldMean": 0.8841455073194744,
+      "foldPrAuc": [
+        0.9265402643347053,
+        0.8451797302894478,
+        0.893536123556226,
+        0.8892082678494118,
+        0.8662631505675817
+      ],
+      "foldSpread": 0.08136053404525745,
+      "holdout": {
+        "alert_count": 36,
+        "alert_rate": 0.014405762304921969,
+        "brier": 0.008364321124222189,
+        "confusion": {
+          "false_negatives": 39,
+          "false_positives": 0,
+          "true_negatives": 2424,
+          "true_positives": 36
+        },
+        "f1": 0.6486486486486487,
+        "false_positive_rate": 0.0,
+        "fbeta": 0.5357142857142857,
+        "negatives": 2424,
+        "positives": 75,
+        "pr_auc": 0.808139283228748,
+        "precision": 1.0,
+        "recall": 0.48,
+        "recall_by_label": {
+          "ACCOUNT_DRAIN": 0.4166666666666667,
+          "AMOUNT_SPIKE": 0.16666666666666666,
+          "CARD_TESTING": 0.7142857142857143,
+          "GEO_IMPROBABLE": 0.0,
+          "OFF_HOURS_NEW_DEVICE": 0.0,
+          "VELOCITY_BURST": 0.7142857142857143
+        },
+        "roc_auc": 0.897937293729373,
+        "threshold": 100.0
+      },
+      "operatingPoint": 100.0
+    },
+    "isolation-forest": {
+      "description": "Unsupervised anomaly comparison. Not eligible to ship (ADR-0010 \u00a74).",
+      "eligible": false,
+      "foldMean": 0.7839898163653034,
+      "foldPrAuc": [
+        0.8428987364223298,
+        0.7394099069268604,
+        0.7677855501897499,
+        0.8053752411042554,
+        0.7644796471833216
+      ],
+      "foldSpread": 0.10348882949546945,
+      "holdout": {
+        "alert_count": 12,
+        "alert_rate": 0.004801920768307323,
+        "brier": 0.04421387003693765,
+        "confusion": {
+          "false_negatives": 63,
+          "false_positives": 0,
+          "true_negatives": 2424,
+          "true_positives": 12
+        },
+        "f1": 0.2758620689655173,
+        "false_positive_rate": 0.0,
+        "fbeta": 0.19230769230769232,
+        "negatives": 2424,
+        "positives": 75,
+        "pr_auc": 0.7154331217423269,
+        "precision": 1.0,
+        "recall": 0.16,
+        "recall_by_label": {
+          "ACCOUNT_DRAIN": 0.25,
+          "AMOUNT_SPIKE": 0.0,
+          "CARD_TESTING": 0.17857142857142858,
+          "GEO_IMPROBABLE": 0.0,
+          "OFF_HOURS_NEW_DEVICE": 0.0,
+          "VELOCITY_BURST": 0.2857142857142857
+        },
+        "roc_auc": 0.9067189218921893,
+        "threshold": 89.65673675155071
+      },
+      "operatingPoint": 89.65673675155071
+    },
+    "logistic-regression": {
+      "description": "Scaled, balanced logistic regression with sigmoid calibration.",
+      "eligible": true,
+      "foldMean": 0.886669485279611,
+      "foldPrAuc": [
+        0.9204239379428675,
+        0.8481084429440401,
+        0.892662782436545,
+        0.8962828522914416,
+        0.8758694107831605
+      ],
+      "foldSpread": 0.07231549499882739,
+      "holdout": {
+        "alert_count": 15,
+        "alert_rate": 0.006002400960384154,
+        "brier": 0.008055483757552984,
+        "confusion": {
+          "false_negatives": 60,
+          "false_positives": 0,
+          "true_negatives": 2424,
+          "true_positives": 15
+        },
+        "f1": 0.33333333333333337,
+        "false_positive_rate": 0.0,
+        "fbeta": 0.23809523809523808,
+        "negatives": 2424,
+        "positives": 75,
+        "pr_auc": 0.8326879278326909,
+        "precision": 1.0,
+        "recall": 0.2,
+        "recall_by_label": {
+          "ACCOUNT_DRAIN": 0.16666666666666666,
+          "AMOUNT_SPIKE": 0.16666666666666666,
+          "CARD_TESTING": 0.21428571428571427,
+          "GEO_IMPROBABLE": 0.0,
+          "OFF_HOURS_NEW_DEVICE": 0.0,
+          "VELOCITY_BURST": 0.42857142857142855
+        },
+        "roc_auc": 0.9386138613861387,
+        "threshold": 99.99986221214922
+      },
+      "operatingPoint": 99.99986221214922
+    }
+  },
+  "featureVersion": "1.0.0",
+  "holdoutCutoff": "2026-08-19T22:54:15",
+  "holdoutRows": 2499,
+  "minimumMarginOverRules": 0.05,
+  "operatingPoint": 99.99986221214922,
+  "rules-baseline": {
+    "alert_count": 24,
+    "alert_rate": 0.009603841536614645,
+    "brier": 0.0472328931572629,
+    "confusion": {
+      "false_negatives": 62,
+      "false_positives": 11,
+      "true_negatives": 2413,
+      "true_positives": 13
+    },
+    "f1": 0.2626262626262626,
+    "false_positive_rate": 0.004537953795379538,
+    "fbeta": 0.2006172839506173,
+    "negatives": 2424,
+    "positives": 75,
+    "pr_auc": 0.1535300317486569,
+    "precision": 0.5416666666666666,
+    "recall": 0.17333333333333334,
+    "recall_by_label": {
+      "ACCOUNT_DRAIN": 0.16666666666666666,
+      "AMOUNT_SPIKE": 0.5,
+      "CARD_TESTING": 0.07142857142857142,
+      "GEO_IMPROBABLE": 0.0,
+      "OFF_HOURS_NEW_DEVICE": 0.0,
+      "VELOCITY_BURST": 0.42857142857142855
+    },
+    "roc_auc": 0.5308195819581958,
+    "threshold": 35.0
+  },
+  "selected": "logistic-regression",
+  "selectionReason": "logistic-regression has the best holdout PR-AUC (0.8327) among qualifying models and is also the simplest.",
+  "trainRows": 7876
+}

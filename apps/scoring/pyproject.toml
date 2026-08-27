@@ -21,6 +21,21 @@ dependencies = [
     # Prometheus project itself maintains.
     "prometheus-client>=0.26.0,<0.27",
     "structlog>=26.1.0,<27",
+    # The model stack, at the versions ADR-0004 selected and R-2026-08-25-06
+    # verified. Runtime rather than training-only: serving has to load the
+    # artifact and run inference, so all three are on the request path.
+    #
+    # joblib is the reason this project is pinned to Python 3.13 exactly - it
+    # declares support only through 3.13 and it sits on the model-serialisation
+    # path, which is not a place to run on an unsupported interpreter.
+    "scikit-learn>=1.9.0,<2",
+    "numpy>=2.5.2,<3",
+    "joblib>=1.5.3,<2",
+    # pandas is deliberately NOT here, though ADR-0004 anticipated it. The
+    # feature extractor produces a dict of floats and the model wants a NumPy
+    # array; a DataFrame in between would be a dependency carried for
+    # convenience nobody needs. ADR-0004's table pins the version to use if a
+    # need appears - it does not oblige one to appear.
 ]
 
 [project.urls]
@@ -47,6 +62,28 @@ dev = [
     # mypy is strict, so an untyped import is an error rather than a shrug.
     "types-PyYAML>=6.0.12,<7",
     "mypy>=2.3.1,<3",
+    # The training group, pulled in for development and CI only. The test suite
+    # exercises the plot writers, so matplotlib has to be present wherever tests
+    # run — and `uv sync --frozen --all-extras --dev` installs groups, not
+    # extras, so without this the plot tests fail in CI for a missing import.
+    #
+    # Including it here rather than adding `training` to `default-groups` is what
+    # keeps it out of the image: `apps/scoring/Dockerfile` runs
+    # `uv sync --frozen --no-dev`, which drops this group and everything it
+    # includes.
+    { include-group = "training" },
+]
+# Offline training only. A separate group rather than a runtime dependency,
+# because the serving image has no use for a plotting library and every megabyte
+# and every CVE in one would be carried on the request path for the sake of a
+# command nobody runs in production. `uv sync --no-dev` does not install it, so
+# the container never sees it - which is checked by the image build rather than
+# remembered.
+training = [
+    # §12.5 requires plots with the evaluation, so the need is the
+    # specification's rather than a preference. Resolved to 3.11.1 on
+    # 2026-08-26; see R-2026-08-26-01 in docs/research/RESEARCH_LOG.md.
+    "matplotlib>=3.10,<4",
 ]
 
 [build-system]
@@ -97,13 +134,46 @@ disallow_untyped_defs = true
 no_implicit_reexport = true
 files = ["src", "tests"]
 
+# scikit-learn, scipy, joblib and matplotlib ship no type information — no
+# py.typed marker and no stub package on PyPI. Without this, every import from
+# them is an error under strict mode and the only alternatives are a blanket
+# `ignore_errors` over the training package or a `# type: ignore` on each import
+# line, both of which suppress far more than the missing stubs.
+#
+# Narrowed to these four distributions rather than set globally: the point of
+# strict mode is that an unannotated import is an error, and that stays true for
+# every dependency that does publish types. What is lost is checking of calls
+# *into* these libraries; what is kept is full checking of this project's own
+# code, including the types flowing in and out of those calls.
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "scipy.*", "joblib.*", "matplotlib.*"]
+ignore_missing_imports = true
+
 # ---------------------------------------------------------------------------
 # pytest
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --strict-config"
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # joblib 1.5.3's NumPy unpickler assigns to `array.shape`, which NumPy 2.5
+    # deprecated. It fires on **every** joblib.load, with and without
+    # compression, and it is upstream code this project cannot fix. Measured on
+    # 2026-08-26 with joblib 1.5.3 and numpy 2.5.2.
+    #
+    # Silenced narrowly by message rather than by relaxing `error`, because the
+    # rule that a warning is a failure is what caught Starlette's move to httpx2
+    # and is worth keeping.
+    #
+    # **This is a real risk, not just noise.** The deprecation is on the
+    # model-load path, which is the serving path: when NumPy removes the
+    # behaviour, the scoring service stops being able to load a model. Recorded
+    # as an open item in docs/research/RESEARCH_LOG.md; the fix is a joblib
+    # release, and ADR-0004 already pins the Python version to joblib's support
+    # window, so this is the second reason to watch that dependency.
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src/sentinelflow_scoring"]
