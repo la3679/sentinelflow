@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from sentinelflow_scoring.features import FEATURE_VERSION
+from sentinelflow_scoring.features import FEATURE_NAMES, FEATURE_VERSION
 from sentinelflow_scoring.training import registry
 from sentinelflow_scoring.training.__main__ import main
 
@@ -38,7 +38,9 @@ def test_a_run_produces_a_loadable_entry(export: Path, tmp_path: Path) -> None:
     entry = models / "logistic-regression" / FEATURE_VERSION
     assert entry.is_dir()
 
-    estimator, manifest = registry.load(entry, FEATURE_VERSION)
+    estimator, manifest = registry.load(
+        entry, FEATURE_VERSION, expected_feature_names=FEATURE_NAMES
+    )
     assert estimator is not None
     assert manifest.feature_version == FEATURE_VERSION
     assert manifest.dataset_sha256 == "1" * 64

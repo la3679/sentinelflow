@@ -39,6 +39,40 @@ from sentinelflow_scoring.features.schema import RecentTransaction, ScoreRequest
 #: one, because a redefinition silently changes what every stored score meant.
 FEATURE_VERSION = "1.0.0"
 
+#: The canonical column order, and the reason it is declared rather than derived.
+#:
+#: A model is fitted on a matrix whose columns are in *some* order, and serving
+#: rebuilds that matrix from a dict. If the two orders disagree the estimator
+#: still returns a number, the number is still between 0 and 100, and it is an
+#: answer about different quantities — the one failure mode in this service that
+#: produces no error at all. Declaring the order here gives the loader something
+#: to assert a manifest's ``feature_names`` against before a model is used.
+#:
+#: Sorted, matching :func:`sentinelflow_scoring.training.dataset.load`, which
+#: takes ``tuple(sorted(...))`` over the exported rows. The two are the same list
+#: by construction and ``test_extraction.py`` asserts it rather than trusting it.
+FEATURE_NAMES: tuple[str, ...] = (
+    "account_age_days",
+    "amount",
+    "amount_to_account_mean_ratio",
+    "balance_drain_ratio",
+    "count_1m",
+    "count_5m",
+    "count_60m",
+    "distinct_merchants_1h",
+    "history_size",
+    "is_channel_change",
+    "is_country_change",
+    "is_new_device",
+    "is_new_merchant",
+    "is_off_hours",
+    "is_rounded_amount",
+    "log_amount",
+    "seconds_since_previous",
+    "sum_1h",
+    "sum_24h",
+)
+
 #: Windows the velocity features are counted over, shortest first.
 _COUNT_WINDOWS: tuple[tuple[str, int], ...] = (
     ("count_1m", 60),
