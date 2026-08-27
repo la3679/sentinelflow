@@ -763,3 +763,112 @@ None.
 
 Recorded in `PROJECT_STATE.md`: the feature pipeline, then ADR-0010 and reproducible training, then
 the scoring endpoints and the Spring client.
+
+---
+
+## Session 8 — 2026-08-26 — ADR-0010, and the reorder it forced
+
+One decision, written before the training code for the same reason ADR-0008 was written before
+either side of the boundary: four questions were about to be answered by whichever line of Python
+got written first, and none of them is the kind of question a line of code should answer.
+
+### The label source was genuinely undecided, not merely unwritten
+
+`ScenarioType`'s own Javadoc already says planted shapes never enter the database, and that is the
+right call — a label column on `transactions` is information that only exists after the fact sitting
+next to the row a model is asked to score. But saying where labels do _not_ live leaves open where
+they do, and the two obvious answers are both wrong.
+
+Reimplementing the generator in Python was rejected because two definitions of six transaction
+shapes drift, and the drift presents as a model that scores generated traffic well and live traffic
+badly — a defect whose symptom points at the model and whose cause is in neither half.
+
+Treating `analyst_feedback` as labels was rejected on a sharper ground: feedback only exists for
+transactions the system already alerted on, so training on it learns the current threshold rather
+than the fraud. It stays stored for later experimentation, which is what §12.6 asks for anyway.
+
+What ships instead is an offline export in `apps/api` that runs the existing generator and writes
+the exact `ScoreRequest` body the service would receive, plus the planted `ScenarioType`. One
+generator, one definition, and the label lives in that file and nowhere else.
+
+### The part that reordered the phase
+
+**The export has to call the runtime's own account-context assembler**, and that is not a tidiness
+preference. All sixteen features are computed from that context. An assembler that windowed,
+ordered, capped or truncated even slightly differently at training time would produce train/serve
+skew that **no metric in the evaluation report can detect** — because both the training and the test
+halves of the comparison would be drawn from the training assembler, and they would agree with each
+other perfectly while disagreeing with production.
+
+So the assembler moved ahead of training, and the Spring scoring client will consume it rather than
+writing a second one. `PROJECT_STATE.md` and `IMPLEMENTATION_PLAN.md` were both updated to say so,
+because a plan that still listed the assembler with the client would send the next session down the
+path this ADR exists to close.
+
+### Calibration is a consequence of ADR-0008, not a preference
+
+ADR-0008 §4 gives the API one alerting threshold that must mean the same thing under a model score
+and under a rules-only degraded score. That is only coherent if the scale is stable across model
+versions — so the estimator is fitted to be well calibrated, and Brier and a reliability curve are
+reported rather than assumed. Without it, a threshold means one thing under logistic regression and
+another under a boosted model, and promoting a model would silently re-tune the business's alert
+volume with nobody changing the policy.
+
+**That rules `IsolationForest` out of production before anything is trained.** Its anomaly score is
+unbounded and dataset-relative, and giving it a stable meaning on a fixed scale means calibrating
+against the labels it was included for being able to ignore. It stays as an unsupervised comparison,
+which is the honest role for it, rather than being reported as a peer of the supervised candidates —
+two different quantities printed to the same number of decimal places.
+
+### The first draft of that section contradicted the contract, and reading the contract caught it
+
+Worth recording as its own item, because nothing failed and no check would have.
+
+The draft said the service "returns a calibrated probability in [0, 1]". The merged scoring
+contract, from #31, already fixes `modelScore` as a number from 0 to 100 and states in the schema
+that it is **not** a probability — because calling it one invites "87% likely to be fraud", which
+synthetic planted-shape labels cannot support. CLAUDE.md makes contracts authoritative and forbids
+an ADR quietly re-deciding one, and that draft would have done exactly that: not as an obvious
+conflict a reviewer trips over, but as a decision document granting permission the contract does not.
+
+The substance survived; only the units were wrong. What ADR-0008 actually needs is a **stable scale
+across model versions**, and calibration is a property of the mapping, not of the units — a
+calibrated quantity stays calibrated after a fixed monotone rescale onto 0–100. So the score is
+calibrated underneath and served on the contract's scale, the positive class is named as "belongs to
+a planted shape" rather than "is fraud", and the rejected alternative is written into the ADR so the
+next reader sees that the scale was considered rather than overlooked.
+
+### The selection rule was fixed before any number existed
+
+Deliberately, so it cannot be rationalised afterwards. PR-AUC is the headline and accuracy is never
+one. A model ships only if it beats the rules baseline by a stated margin — **and if none does, the
+rules ship alone**, because having built a model is not a reason to serve one. A gap smaller than
+the spread across the cross-validation folds is fold noise and goes to logistic regression. And the
+operating point is chosen against an alert-volume budget rather than by maximising F1, because an
+analyst team is a fixed-capacity queue and F1 optimises an arithmetic property of the confusion
+matrix that nobody in operations experiences.
+
+The split is group-disjoint on account **and** time-ordered, both, because neither subsumes the
+other: grouping stops one planted burst's correlated rows landing on both sides of the cut, and the
+time constraint stops training on traffic from after the test period.
+
+### Tests and results — from runs on 2026-08-26
+
+| Command                          | Result                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| `bun run format:check`           | **PASS** — repository-wide                                     |
+| `bun scripts/dev/check-docs.mjs` | **PASS** — 127 links across 37 files, 0 broken, 0 placeholders |
+
+No code changed this session, so no test suite was run. Saying so is the point: this was a
+documentation change, and reporting a suite it did not touch would be the kind of borrowed evidence
+the evidence rule exists to stop.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: the account-context assembler and the labelled export, then
+reproducible training and the registry, then the scoring endpoints, the rules baseline and the
+Spring client.

@@ -117,8 +117,14 @@ exists.
   distribution, checksum)
 - Versioned, tested feature pipeline with leakage prevention
 - Transparent rules-only baseline
+- Account-context assembler in `apps/api`, shared by the runtime scoring call and the labelled
+  training export — one implementation, so train/serve skew is impossible rather than watched for
+  (ADR-0010 §1)
+- Labelled dataset export: the exact `ScoreRequest` body plus the planted `ScenarioType`, written
+  offline and never persisted to the schema
 - Reproducible model training: logistic-regression baseline, tree-based model if it materially
-  helps, Isolation Forest as an unsupervised comparison
+  helps, Isolation Forest as an unsupervised comparison; the contract's 0–100 `modelScore` is
+  calibrated underneath and its calibration measured, not assumed (ADR-0010 §4)
 - Time-aware / group-aware splitting; precision, recall, F1, PR-AUC, false-positive rate,
   confusion matrix, alert volume, and inference latency reported — **never accuracy as the
   headline**
