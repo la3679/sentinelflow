@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sentinelflow_scoring.features import FEATURE_VERSION, extract
+from sentinelflow_scoring.features import FEATURE_NAMES, FEATURE_VERSION, extract
 from sentinelflow_scoring.features.schema import (
     AccountContext,
     Amount,
@@ -396,3 +396,17 @@ def test_a_history_of_zero_amounts_does_not_divide_by_zero() -> None:
     )
 
     assert extract(payload).features["amount_to_account_mean_ratio"] == 1.0
+
+
+def test_the_declared_column_order_is_the_one_extraction_produces() -> None:
+    """:data:`FEATURE_NAMES` is declared, so something has to hold it to account.
+
+    The loader asserts a manifest's recorded column order against this tuple
+    before a model is used. If the tuple drifted from what :func:`extract`
+    actually returns, that assertion would be checking a model against a list
+    nothing produces — a check that passes and proves nothing.
+    """
+    extraction = extract(request())
+
+    assert tuple(sorted(extraction.features)) == FEATURE_NAMES
+    assert len(extraction.features) == len(FEATURE_NAMES)

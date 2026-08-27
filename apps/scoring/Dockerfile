@@ -79,6 +79,17 @@ WORKDIR /app
 # stage, so the source tree is not copied a second time.
 COPY --from=build --chown=10002:10002 /build/.venv /app/.venv
 
+# The registry entry, straight from the build context rather than through the
+# build stage: it is data, it is not installed by uv, and routing it through the
+# first stage would invalidate the dependency layer every time a model is
+# retrained.
+#
+# ADR-0010 section 6 commits the artifact so a demo can score without someone
+# running a training job first, and an image that left it out would make that
+# promise false everywhere the service actually runs. `.dockerignore` keeps the
+# plots and the model card out - they are for a reader, not for the request path.
+COPY --chown=10002:10002 models/ /app/models/
+
 # Put the virtual environment first on PATH instead of activating it: there is
 # no shell in the process chain to activate anything.
 ENV PATH="/app/.venv/bin:${PATH}" \

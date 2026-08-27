@@ -48,6 +48,18 @@ TransactionChannel = Literal[
 MAX_RECENT_TRANSACTIONS = 200
 
 
+def to_camel(name: str) -> str:
+    """``account_context`` -> ``accountContext``.
+
+    A named function rather than an inline lambda because the response models in
+    :mod:`sentinelflow_scoring.serving.schema` need the same rule, and two copies
+    of a naming convention is how one side of a contract starts spelling a field
+    differently from the other.
+    """
+    parts = name.split("_")
+    return parts[0] + "".join(part.capitalize() for part in parts[1:])
+
+
 class _Strict(BaseModel):
     """Shared configuration. Camel-case on the wire, snake_case in Python."""
 
@@ -55,9 +67,7 @@ class _Strict(BaseModel):
         extra="forbid",
         frozen=True,
         populate_by_name=True,
-        alias_generator=lambda name: "".join(
-            part if index == 0 else part.capitalize() for index, part in enumerate(name.split("_"))
-        ),
+        alias_generator=to_camel,
     )
 
 

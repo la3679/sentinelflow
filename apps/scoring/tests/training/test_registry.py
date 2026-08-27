@@ -56,7 +56,9 @@ def test_a_written_entry_loads_back(tmp_path: Path) -> None:
     directory = tmp_path / "entry"
     written = registry.write(directory, _fitted(), _manifest(), {"pr_auc": 0.9}, "# card\n")
 
-    estimator, manifest = registry.load(directory, FEATURE_VERSION)
+    estimator, manifest = registry.load(
+        directory, FEATURE_VERSION, expected_feature_names=["amount"]
+    )
 
     assert manifest.artifact_sha256 == written.artifact_sha256
     assert manifest.feature_names == ["amount"]
@@ -80,7 +82,7 @@ def test_a_tampered_artifact_is_refused(tmp_path: Path) -> None:
     # The artifact on disk is not the one the metrics beside it describe. Loading
     # it anyway would serve a model nobody measured.
     with pytest.raises(RegistryError, match="not the one that was evaluated"):
-        registry.load(directory, FEATURE_VERSION)
+        registry.load(directory, FEATURE_VERSION, expected_feature_names=["amount"])
 
 
 def test_a_feature_version_mismatch_is_refused(tmp_path: Path) -> None:
@@ -90,12 +92,26 @@ def test_a_feature_version_mismatch_is_refused(tmp_path: Path) -> None:
     # The columns would still line up by position and the scores would still look
     # reasonable, which is exactly why this is a refusal rather than a warning.
     with pytest.raises(RegistryError, match="feature version"):
-        registry.load(directory, FEATURE_VERSION)
+        registry.load(directory, FEATURE_VERSION, expected_feature_names=["amount"])
+
+
+def test_a_different_column_order_is_refused(tmp_path: Path) -> None:
+    """The check whose absence has no symptom.
+
+    A model handed its columns in a different order still returns a number, and
+    the number is an answer about different quantities. Nothing downstream would
+    notice, so the refusal has to happen before the model is used.
+    """
+    directory = tmp_path / "entry"
+    registry.write(directory, _fitted(), _manifest(), {}, "# card\n")
+
+    with pytest.raises(RegistryError, match="different order"):
+        registry.load(directory, FEATURE_VERSION, expected_feature_names=["balance"])
 
 
 def test_an_absent_entry_is_refused(tmp_path: Path) -> None:
     with pytest.raises(RegistryError, match="does not exist"):
-        registry.load(tmp_path / "nothing", FEATURE_VERSION)
+        registry.load(tmp_path / "nothing", FEATURE_VERSION, expected_feature_names=["amount"])
 
 
 def test_an_oversized_artifact_is_refused_and_not_left_behind(

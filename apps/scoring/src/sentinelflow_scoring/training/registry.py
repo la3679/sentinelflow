@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -86,6 +87,58 @@ def entry_directory(root: Path, model_name: str, model_version: str) -> Path:
     return root / model_name / model_version
 
 
+def discover(root: Path, feature_version: str) -> Path | None:
+    """The one entry this build can serve, or ``None`` if there is none.
+
+    A registry root can hold several entries — a previous algorithm, a previous
+    feature version — because ADR-0010 §6 commits them and nothing prunes them.
+    Serving needs exactly one, and the rule is stated here rather than left to
+    whichever order the filesystem happens to return:
+
+    - An entry fitted on a **different feature version is not a candidate**. It is
+      history: this build cannot compute the columns it was fitted on, so it
+      could never be served, and skipping it is not a choice between models.
+    - Exactly one match is the answer.
+    - **More than one match is a refusal, not a tie-break.** Two entries at the
+      running feature version are two defensible answers, and picking by name or
+      by mtime would make which model produced a score depend on something no
+      operator declared. Pin one with ``SENTINELFLOW_SCORING_MODEL_NAME`` and
+      ``SENTINELFLOW_SCORING_MODEL_VERSION``, or remove the superseded entry.
+    - No match at all is ``None`` rather than an error: a service with no model is
+      a state the contract has a response for, and the API degrades to rules.
+
+    :raises RegistryError: if a manifest cannot be read, or if more than one entry
+        matches.
+    """
+    if not root.is_dir():
+        return None
+
+    matches: list[Path] = []
+    for manifest_file in sorted(root.glob("*/*/manifest.json")):
+        try:
+            payload = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise RegistryError(
+                f"{manifest_file} could not be read as a manifest: {error}. Every directory "
+                "under the registry root is this project's own output; a malformed one is a "
+                "corrupted entry rather than something to skip past."
+            ) from error
+        if payload.get("feature_version") == feature_version:
+            matches.append(manifest_file.parent)
+
+    if not matches:
+        return None
+    if len(matches) > 1:
+        listed = ", ".join(str(match) for match in matches)
+        raise RegistryError(
+            f"{len(matches)} registry entries are fitted on feature version {feature_version}: "
+            f"{listed}. Which one serves a request would otherwise depend on directory order. "
+            "Pin one with SENTINELFLOW_SCORING_MODEL_NAME and SENTINELFLOW_SCORING_MODEL_VERSION, "
+            "or remove the superseded entry."
+        )
+    return matches[0]
+
+
 def write(
     directory: Path,
     estimator: object,
@@ -122,13 +175,25 @@ def write(
     return manifest
 
 
-def load(directory: Path, expected_feature_version: str) -> tuple[object, ModelManifest]:
+def load(
+    directory: Path,
+    expected_feature_version: str,
+    *,
+    expected_feature_names: Sequence[str],
+) -> tuple[object, ModelManifest]:
     """Loads an entry after validating it.
 
+    :param expected_feature_names: the column order the caller is about to supply,
+        which is :data:`sentinelflow_scoring.features.FEATURE_NAMES` on the
+        request path. Required rather than optional: a check that has to be asked
+        for is one that will eventually not be, and this is the check whose
+        absence has no symptom.
+
     :raises RegistryError: if the entry is absent, the checksum does not match,
-        or the feature version differs from the running build. All three are
-        refusals rather than warnings: a model served against features it was not
-        fitted on produces confident, wrong, unattributable scores.
+        the feature version differs from the running build, or the recorded
+        column order is not the one the caller supplies. All four are refusals
+        rather than warnings: a model served against features it was not fitted on
+        produces confident, wrong, unattributable scores.
     """
     manifest_file = directory / "manifest.json"
     artifact = directory / "model.joblib"
@@ -153,11 +218,36 @@ def load(directory: Path, expected_feature_version: str) -> tuple[object, ModelM
             "and the scores would still look reasonable, which is exactly why this is a refusal."
         )
 
+    if list(manifest.feature_names) != list(expected_feature_names):
+        raise RegistryError(
+            f"{directory} was fitted on columns {manifest.feature_names}; this caller supplies "
+            f"{list(expected_feature_names)}. A model handed its columns in a different order is "
+            "not a broken model — it is one quietly answering about different quantities, and "
+            "nothing downstream would ever notice."
+        )
+
     # Only the project's own artifacts are ever loaded, which is what makes this
     # acceptable: joblib.load executes pickled constructors, so an untrusted file
     # here would be arbitrary code execution. The checksum above is the control,
     # and docs/security/THREAT_MODEL.md records it.
     return joblib.load(artifact), manifest
+
+
+def read_metrics(directory: Path) -> dict[str, Any]:
+    """The metrics document beside an artifact.
+
+    :raises RegistryError: if it is absent or unreadable. An entry without its
+        metrics is not a lighter entry — it is one whose ``/v1/model`` answer
+        would have to be invented.
+    """
+    path = directory / "metrics.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RegistryError(f"{path} could not be read as a metrics document: {error}") from error
+    if not isinstance(payload, dict):
+        raise RegistryError(f"{path} is not a JSON object")
+    return payload
 
 
 def sha256_of(path: Path) -> str:
