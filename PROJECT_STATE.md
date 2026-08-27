@@ -14,15 +14,15 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-27T21:05Z                                                                                                                                |
+| Last updated UTC     | 2026-08-27T21:40Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 4 complete and merged; Phase 5 not started                                                                                        |
-| Current phase        | Phase 5 — alerts, investigations and audit (not started)                                                                                         |
-| Current task         | open Phase 5 with alert creation, attaching to a band that already exists                                                                        |
+| Overall status       | active — Phase 5 started; alert creation written, not yet covered end to end                                                                     |
+| Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
+| Current task         | an integration test for the alert path, then the PR                                                                                              |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | none — `main` is current                                                                                                                         |
+| Working branch       | `feat/alert-creation` — pushed, no pull request yet                                                                                              |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
@@ -77,7 +77,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 2 — contracts, domain, and database**
 - [x] **Phase 3 — ingestion, outbox, and Kafka**
 - [x] **Phase 4 — synthetic data and scoring**
-- [ ] **Phase 5 — alerts and investigations** ← next
+- [ ] **Phase 5 — alerts and investigations** ← in progress
 - [ ] Phase 6 — operations frontend
 - [ ] Phase 7 — observability and resilience
 - [ ] Phase 8 — security and quality hardening
@@ -739,6 +739,80 @@ one is still handled.
   synchronously rather than returning a failed future; and a unit test reading `../../contracts`,
   which cannot work inside the module-only Docker context where CI runs the unit suite.
 
+## In progress — Phase 5
+
+**Stopped at a checkpoint, not at a finish line.** Everything below compiles, is unit-tested and is
+pushed on `feat/alert-creation`. The alert path has **no end-to-end coverage yet**, which is the next
+action and the reason there is no pull request.
+
+**The alerting rule joined the policy object** rather than starting a second one. ADR-0008 §4 gives
+this service "the alerting policy applied to a final score at runtime", and deciding which bands are
+worth reviewing is that policy. `RiskPolicyProperties` gained `alertFromBand` — monotone in severity
+by construction, so an alerting rule that skipped a band is not expressible — and `priorityByBand`,
+which is separate because the band describes the score and the priority describes the queue. Both
+halves of its validation are refusals at startup. `policy.version` moved to **1.1.0**, because what
+that version describes changed.
+
+**V9 adds `alert_reference_seq`**, the same shape as V7's. Four digits caps it at 9,999 and, unlike
+the transaction reference, that is a ceiling this project can plausibly reach. Left as a loud
+failure rather than widened: `NO CYCLE` means exhaustion arrives as a refused INSERT naming the
+sequence, which is a legible signal that the alerting policy is producing more alerts than any
+review capacity could absorb.
+
+**`AlertRaiser` writes three rows in the assessment's own transaction** — the alert, its first
+`alert_actions` row attributed to the system principal, and the `alert.created` outbox row keyed by
+the alert's identifier (ADR-0006 §3). The summary is built from the band, the score, the transaction
+reference and the leading reason **code**, never a reason's generated description: a description
+legitimately names a device handle or an amount ratio, which is right on a detail page an analyst has
+opened and wrong on a queue row and in an event that leaves this service.
+
+**The flag and the alert come from one decision.** `alert_raised` is written where the band is
+computed, inside `RiskAssessmentService`'s two pure methods, and the raiser acts on it. Asking the
+policy a second time would be two answers to one question, and the day they disagreed a row would
+claim an alert nobody could find.
+
+### The model alone cannot raise an alert, and that is arithmetic nobody wrote down
+
+ADR-0011's combination is `max(rule, 0.6 x model + 0.4 x rule)`. With a rule score of zero the best a
+perfect model can produce is **60**, and the alerting band starts at 70 — so **a transaction that
+trips no transparent indicator can never open an alert, however confident the model is.** The
+smallest rule score that lets a maximal model reach the band is 25, which is exactly one rule firing.
+
+This is a consequence of two decisions that were each defensible alone: ADR-0011 §1's floor, and
+`alertFromBand: HIGH`. It was not visible until they met, and it is not obviously wrong — "we only
+alert when at least one indicator an analyst can read has fired" is a defensible policy for an
+explainability-first console, and it is arguably the point of the floor. But it has to be a stated
+decision rather than an accident, and right now it is an accident.
+
+**Not resolved in this session, deliberately.** Changing the formula or the threshold would be
+re-deciding an ADR without evidence, and the evidence — measured alert volume against a stated
+review capacity — is what ADR-0011 already says these numbers should be revisited against. Recorded
+here and in the next actions so the decision is taken deliberately rather than inherited.
+
+### What is done, and what is not
+
+| Piece                                          | State                                              |
+| ---------------------------------------------- | -------------------------------------------------- |
+| Alerting policy on `RiskPolicyProperties`      | **done** — 19 unit tests                           |
+| `alert_reference_seq` (V9)                     | **done** — `MigrationIT` asserts it applied        |
+| `AlertCreatedPayload` and its contract test    | **done** — 4 assertions, including the `NEW` const |
+| `AlertRaiser`, and the wiring into the service | **written, not covered end to end**                |
+| An integration test for the alert path         | **not started** — the next action                  |
+| Alert state machine, assignment, notes, audit  | not started                                        |
+| Role authorization, reporting endpoints        | not started                                        |
+
+### A correction to this file
+
+An earlier entry said `alerts.top_reason_code` "is a string on the entity while
+`contracts/schemas/alert-created.v1.json` describes an object", and listed settling it as Phase 5
+work. **That was wrong.** There is no such column and no such field: `topReasonCode` exists only on
+the event, and the schema has always described it as a `reasonCode` object. Nothing needed settling —
+the payload derives it from the assessment's reason codes at publication time, which is what it now
+does. Trusting the repository over this file, as `CLAUDE.md` says to.
+
+The schema's description of that field was corrected instead, for a different reason: it called it
+"the single largest contributor", which is not well defined across two incomparable scales.
+
 ## Acceptance criteria status — Phase 4 gate
 
 | Criterion                                       | Status   | Evidence                                                                                 |
@@ -885,6 +959,25 @@ available.
 ## Test and verification evidence
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-27 — Phase 5, the alerting policy and alert creation (checkpoint, not a finish)
+
+| Command                          | Result                                            |
+| -------------------------------- | ------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1) | **PASS** — 154 unit tests, 176 integration tests  |
+| JaCoCo, both suites              | 83.4% lines (1830/2193), 77.0% branches (384/499) |
+| `bun run format:check`           | **PASS** — repository-wide                        |
+| `bun scripts/dev/check-docs.mjs` | **PASS** — 152 links across 41 files              |
+| `make contracts-check`           | **PASS** — every schema, example and API document |
+
+**Line coverage fell from 85.7% to 83.4%, and that is the honest number rather than a regression to
+fix by writing a test that does not assert anything.** `AlertRaiser` and three new repositories have
+unit and contract coverage and no integration coverage, because the integration test is the next
+action. Both floors are still met — LINE 0.80, BRANCH 0.70 — and the ratchet is deliberately not
+lowered. Branch coverage rose, because the policy's two new validators are fully exercised.
+
+Nothing was run against the compose stack this session; the alert path has not been demonstrated on
+a running system.
 
 ### 2026-08-27 — Phase 4, the assessment workflow and `make replay`
 
@@ -1179,28 +1272,26 @@ None.
 
 ## Next three actions
 
-Phase 4 is complete and merged; `main` is green. Phase 5 has not started. Nothing is blocked.
+Phase 5's first piece is written and pushed on `feat/alert-creation`, and is **not** covered end to
+end. `main` is green and carries none of it. Nothing is blocked.
 
-1. **Alert creation from the persisted band.** ADR-0011 put banding in the assessment precisely so
-   this attaches to a band that already exists and reopens none of the scoring: read the band, apply
-   the policy that decides an alert is worth raising, and write `alerts` plus its first
-   `alert_actions` row and an `alert.created` outbox row in the same transaction as the assessment.
-   `Alert`, `AlertAction` and `AuditLogEntry` all have mappings and no callers today.
-2. **Settle `alerts.top_reason_code` in the same change.** It is a string on the entity while
-   `contracts/schemas/alert-created.v1.json` describes an object — the identical mismatch
-   `risk_assessments.reason_codes` had, and it will be found the same way: by the first code that has
-   to write it. One change across the contract, the entity and the event.
-3. **The alert state machine and its audit trail.** Every transition audited, invalid and concurrent
-   changes handled, and the auditor role's mutations failing as expected. `alerts.version` exists for
-   the optimistic concurrency this needs.
+1. **An integration test for the alert path**, extending `RiskAssessmentWorkflowIT` against the same
+   real broker and database. The account needs a history the ruleset reacts to, because of the
+   arithmetic above: four transactions inside five minutes fires `VELOCITY_5M_HIGH` for 25, a fifth
+   originating elsewhere adds `COUNTRY_CHANGE` for 15, and 40 with the stub's model score of 92.5
+   combines to 71.5 — HIGH, and an alert at HIGH priority. `SchemaFixtures.insertTransactionFrom`
+   was added for exactly that and has no caller yet. Assert the alert, its `CREATED` history row
+   attributed to the system principal, the outbox row keyed by the alert's identifier, and that a
+   redelivered event does not open a second alert.
+2. **Decide the "model alone cannot alert" question deliberately**, and record it. Either state it
+   as intended policy in ADR-0011's consequences with the arithmetic written out, or supersede one of
+   the two decisions that produce it. Do not leave it as an accident, and do not change a number
+   without the alert-volume evidence ADR-0011 already asks for.
+3. **Then the rest of Phase 5**: the alert state machine with every transition audited, assignment,
+   notes and feedback, role authorization with the auditor's mutations failing as expected, and
+   optimistic concurrency on `alerts.version`.
 
-**Before starting, re-read** [ADR-0008 §4](docs/adr/0008-scoring-service-boundary.md) on who owns the
-threshold and [ADR-0011 §3](docs/adr/0011-risk-banding-and-the-final-score.md) on the bands. The
-default band bounds are a starting point rather than a measurement — the model's operating point sits
-at 99.9998 on this scale, so almost nothing scores between 40 and 90 — and Phase 5 is where they are
-supposed to be revisited against measured alert volume.
-
-### What the last session found by running the stack rather than the suites
+### What an earlier session found by running the stack rather than the suites
 
 Three defects, all invisible to a green build, recorded here because the lesson generalises: the
 Testcontainers suites and the compose stack are not the same system, and only one of them is what a

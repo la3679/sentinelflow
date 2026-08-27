@@ -46,7 +46,7 @@ class RiskAssessmentServiceTests {
     private static final Instant ASSESSED_AT = Instant.parse("2026-08-27T02:30:00Z");
 
     private final RiskAssessmentService service =
-            new RiskAssessmentService(null, null, null, policy(), null, null, null, new SimpleMeterRegistry());
+            new RiskAssessmentService(null, null, null, policy(), null, null, null, null, new SimpleMeterRegistry());
 
     // ----------------------------------------------------------------------- //
     // The scored shape
@@ -290,19 +290,34 @@ class RiskAssessmentServiceTests {
     }
 
     @Test
-    @DisplayName("nothing written here claims an alert was raised")
-    void neverClaimsAnAlert() {
-        // Alert creation is Phase 5. Writing true would be a claim with nothing
-        // behind it, and a console counting alerts from this column would be
-        // counting alerts that do not exist.
+    @DisplayName("the alert flag follows the policy's band, not the path that produced the score")
+    void recordsWhetherTheBandRaisesAnAlert() {
+        // The flag is written where the band is computed, so it and the alert
+        // itself come from one decision rather than two that agree. A degraded
+        // assessment alerts on exactly the same rule as a scored one: the band
+        // is what alerting reads, and it means the same thing whether or not the
+        // model answered.
         assertThat(service.scoredAssessment(
                                 TRANSACTION,
                                 rules(new BigDecimal("95.00"), RuleCode.VELOCITY_5M_HIGH),
                                 scored("99.00"),
                                 ASSESSED_AT)
                         .isAlertRaised())
-                .isFalse();
+                .as("CRITICAL is at or above the alerting band")
+                .isTrue();
         assertThat(service.degradedAssessment(TRANSACTION, rules(new BigDecimal("95.00")), ASSESSED_AT)
+                        .isAlertRaised())
+                .as("scoring being down must not change whether a transaction is looked at")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("a quiet transaction raises nothing")
+    void aLowBandRaisesNoAlert() {
+        assertThat(service.degradedAssessment(TRANSACTION, rules(BigDecimal.ZERO), ASSESSED_AT)
+                        .isAlertRaised())
+                .isFalse();
+        assertThat(service.scoredAssessment(TRANSACTION, rules(BigDecimal.ZERO), scored("10.00"), ASSESSED_AT)
                         .isAlertRaised())
                 .isFalse();
     }

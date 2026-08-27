@@ -214,7 +214,10 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
         assertThat(assessment.get("model_version")).isEqualTo("1.0.0");
         assertThat(assessment.get("feature_version")).isEqualTo("1.0.0");
         assertThat(assessment.get("ruleset_version")).isEqualTo("1.0.0");
-        assertThat(assessment.get("policy_version")).isEqualTo("1.0.0");
+        // 1.1.0 since the alerting rule joined the policy object. The version
+        // moves when what it describes changes, which is the whole reason an
+        // assessment records it.
+        assertThat(assessment.get("policy_version")).isEqualTo("1.1.0");
         assertThat(assessment.get("alert_raised"))
                 .as("alert creation is Phase 5; true here would be a claim with nothing behind it")
                 .isEqualTo(false);

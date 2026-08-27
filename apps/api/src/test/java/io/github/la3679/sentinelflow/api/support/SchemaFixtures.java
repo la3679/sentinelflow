@@ -83,6 +83,26 @@ public final class SchemaFixtures {
                 """, UUID.class, "TXN-" + next6(), idempotencyKey, accountId, merchantId);
     }
 
+    /**
+     * A pending transaction that originates somewhere specific.
+     *
+     * <p>Exists so a suite can build an account history the rule engine actually reacts to. Every
+     * other fixture here originates in GB, which is correct for a schema test and useless for one
+     * that needs {@code COUNTRY_CHANGE} to fire.
+     */
+    public UUID insertTransactionFrom(UUID accountId, UUID merchantId, String idempotencyKey, String originCountry) {
+        return jdbc.queryForObject(
+                """
+                INSERT INTO transactions (
+                    transaction_reference, idempotency_key, account_id, merchant_id,
+                    type, channel, amount, currency, origin_country,
+                    occurred_at, ingestion_source, processing_status, correlation_id)
+                VALUES (?, ?, ?, ?, 'PURCHASE', 'CARD_NOT_PRESENT', 42.5000, 'GBP', ?,
+                        now(), 'API', 'PENDING', gen_random_uuid())
+                RETURNING id
+                """, UUID.class, "TXN-" + next6(), idempotencyKey, accountId, merchantId, originCountry);
+    }
+
     /** A non-degraded assessment: every model-derived field present, as the CHECK requires. */
     public UUID insertAssessment(UUID transactionId) {
         return jdbc.queryForObject("""
