@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.persistence.repository;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -61,4 +64,53 @@ public interface TransactionRepository extends JpaRepository<TransactionRecord, 
                AND t.processingStatus = io.github.la3679.sentinelflow.api.domain.ProcessingStatus.PENDING
             """)
     int markProcessingFailed(@Param("id") UUID id);
+
+    /**
+     * The account history behind one scoring request. One indexed read over
+     * {@code transactions_account_occurred_idx}, which is {@code (account_id, occurred_at DESC)} and
+     * therefore serves both the filter and the ordering without a sort.
+     *
+     * <p><strong>{@code occurredAt < :before}, strictly.</strong> That is what excludes the
+     * transaction being scored, since {@code before} is its own {@code occurredAt} — and it does it
+     * without needing the transaction's identifier, so the same query serves a transaction that has
+     * been persisted and one that has not. It also drops anything at the same instant, which is
+     * correct rather than incidental: the scoring service discards context at or after the scored
+     * instant anyway, so sending it would spend the cap on rows guaranteed to be thrown away.
+     *
+     * <p><strong>{@code id} breaks ties, and that is load-bearing.</strong> Ordering by
+     * {@code occurredAt} alone leaves rows sharing an instant in whatever order the plan produces,
+     * and once the result is truncated to a cap, <em>which</em> rows survive would vary between
+     * runs. The same transaction would then produce different contexts, different features and
+     * different scores on a retry — a non-determinism that would surface as an unreproducible score
+     * long before anyone suspected an {@code ORDER BY}.
+     *
+     * <p>The caller asks for one row more than the cap so truncation is detected from the result
+     * rather than from a second {@code count} query over the same window.
+     *
+     * <p>An explicit join on {@code merchantId}: {@code TransactionRecord} holds it as a plain
+     * {@code UUID} rather than a {@code @ManyToOne}, so there is no traversal that could turn into
+     * two hundred hidden selects.
+     */
+    @Query("""
+            SELECT new io.github.la3679.sentinelflow.api.persistence.repository.AccountHistoryRow(
+                       t.occurredAt,
+                       t.money.amount,
+                       t.money.currency,
+                       m.merchantReference,
+                       t.deviceReference,
+                       t.originCountry,
+                       t.channel,
+                       t.type)
+              FROM TransactionRecord t, Merchant m
+             WHERE t.merchantId = m.id
+               AND t.accountId = :accountId
+               AND t.occurredAt < :before
+               AND t.occurredAt >= :notBefore
+             ORDER BY t.occurredAt DESC, t.id DESC
+            """)
+    List<AccountHistoryRow> findAccountHistoryForScoring(
+            @Param("accountId") UUID accountId,
+            @Param("before") Instant before,
+            @Param("notBefore") Instant notBefore,
+            Limit limit);
 }
