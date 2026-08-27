@@ -16,13 +16,20 @@ A service that returns risk scores should not be guessing at its own types.
 
 ```text
 src/sentinelflow_scoring/
-  app.py        FastAPI application factory and operational endpoints
+  app.py        FastAPI application factory, routes, error handling, middleware
   config.py     pydantic-settings, validated at startup
-  features/     feature engineering - deterministic, versioned
-  models/       model loading, inference, registry
-  api/          request and response schemas, routers
+  features/     feature engineering and request schemas - deterministic, versioned
+  serving/      model loading, inference, reason codes, response schemas, collectors
+  training/     the offline command: comparison, evaluation, the model registry
 tests/          mirrors src/
+models/         committed registry entries: <model-name>/<model-version>/
 ```
+
+**`serving/` and `training/` rather than one `models/` package.** The split is
+ADR-0010 section 6's — training is a command, never an API side effect — and it is
+visible as a one-way dependency: serving imports the registry and the score
+rescale, and nothing in training imports serving. `models/` is taken by the
+registry directory on disk, which is data rather than code.
 
 - **The application is built by a factory that takes settings**, not by reading
   a module-level singleton. That is what makes it constructible under test

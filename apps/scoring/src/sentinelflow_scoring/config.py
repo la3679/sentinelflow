@@ -7,7 +7,10 @@ confusing failure on the first request that depends on it.
 
 from __future__ import annotations
 
-from pydantic import Field
+from pathlib import Path
+from typing import Self
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +41,41 @@ class Settings(BaseSettings):
     # Set by CI and by the container image build so a running instance can be
     # traced back to what produced it.
     git_sha: str = Field(default="unknown", description="Commit the build came from.")
+
+    models_root: Path = Field(
+        default=Path("models"),
+        description=(
+            "Registry root holding <model-name>/<model-version>/ entries. Relative to the "
+            "working directory, which is apps/scoring for a local run and /app in the image."
+        ),
+    )
+
+    # Pinning is the escape hatch for the one case discovery refuses to guess at:
+    # two entries fitted on the running feature version, where picking either
+    # would make which model is served a property of directory iteration order.
+    # Both or neither — a name without a version names a directory of versions.
+    model_name: str | None = Field(
+        default=None,
+        description=(
+            "Pin the registry entry by name instead of discovering it. Needs model_version."
+        ),
+    )
+    model_version: str | None = Field(
+        default=None,
+        description=(
+            "Pin the registry entry by version instead of discovering it. Needs model_name."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _pin_is_complete(self) -> Self:
+        if (self.model_name is None) != (self.model_version is None):
+            raise ValueError(
+                "SENTINELFLOW_SCORING_MODEL_NAME and SENTINELFLOW_SCORING_MODEL_VERSION are set "
+                "together or not at all. Half a pin names a directory of versions, and choosing "
+                "one of them is the guess this setting exists to avoid."
+            )
+        return self
 
 
 def load_settings() -> Settings:

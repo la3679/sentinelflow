@@ -9,7 +9,11 @@ __pycache__/
 htmlcov/
 *.egg-info/
 tests/
-models/*.joblib
+# The registry entry IS part of the image - the service loads it at startup and
+# refuses to serve without it. What is excluded is everything in an entry that
+# exists for a reader rather than for the request path.
+models/**/plots/
+models/**/model_card.md
 .env
 .env.*
 !.env.example

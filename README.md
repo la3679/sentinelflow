@@ -56,9 +56,16 @@ outbox row in one database transaction, published to Kafka by the relay, consume
 either handled or dead-lettered with a classified reason. `make seed` fills the stack with
 deterministic synthetic traffic that travels that same path.
 
-**What does not run yet:** there is no model, so nothing scores a transaction — the consumer's
-handler seam is deliberately empty until Phase 4 fills it. The console still renders from a mock
-fixture layer, because the API has no read endpoints yet; that is Phase 5 and 6.
+**Scoring answers.** A model is trained, evaluated and committed to the registry, and the scoring
+service serves it: `POST /v1/score` returns a score, bounded reason codes, the model and feature
+versions, and a measured inference duration; `GET /v1/model` publishes what that model was measured
+at. Every figure comes from the run recorded in [`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md), on
+synthetic data.
+
+**What does not run yet:** nothing calls the scoring service — the risk consumer's handler seam is
+still empty, and the Spring client that fills it, with its timeouts and circuit breaker, is the next
+piece of Phase 4. No assessment is persisted yet. The console still renders from a mock fixture
+layer, because the API has no read endpoints; that is Phase 5 and 6.
 
 Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 
@@ -115,15 +122,15 @@ flowchart LR
     O --> G["Grafana"]
 
     classDef built fill:#0f2b3d,stroke:#4ba3c7,color:#e6f1f7
-    classDef planned fill:#2b2b2b,stroke:#666,color:#aaa,stroke-dasharray:4 3
-    class U,W,A,P,K,C,O,G built
-    class M planned
+    class U,W,A,P,K,C,O,G,M built
+    %% The sixth link, C -> M. Every box is built; the call between them is not.
+    linkStyle 5 stroke-dasharray:4 3,stroke:#666
 ```
 
 Solid boxes exist and run today, the risk consumer included since Phase 3. The dashed link is the
-**model**: the scoring service is running and healthy, but it has no model to serve and nothing
-calls it yet. That is Phase 4, and the arrow is marked rather than removed because the consumer's
-handler seam exists and is waiting for it.
+**call**: the scoring service is running, healthy and serving a model, and nothing calls it yet. The
+Spring client is the next piece of Phase 4, and the arrow is marked rather than removed because the
+consumer's handler seam exists and is waiting for it.
 
 The API is the only backend the console talks to; scoring is reached through the API and never
 directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See

@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sentinelflow_scoring import __version__
 from sentinelflow_scoring.app import create_app
 from sentinelflow_scoring.config import Settings
+from tests.serving.conftest import REGISTRY_ROOT
 
 
 @pytest.fixture
@@ -22,8 +23,15 @@ def client() -> TestClient:
     Settings are passed in rather than read from the environment so the test
     asserts against a known configuration and does not depend on what happens
     to be exported in the shell that runs it.
+
+    ``models_root`` is the committed registry, so this app is the one a demo
+    runs. The readiness and scoring paths without a model have their own
+    fixtures in ``tests/serving/``.
     """
-    settings = Settings(git_sha="0000000000000000000000000000000000000000")
+    settings = Settings(
+        git_sha="0000000000000000000000000000000000000000",
+        models_root=REGISTRY_ROOT,
+    )
     return TestClient(create_app(settings))
 
 
@@ -40,9 +48,11 @@ def test_readiness_is_separate_from_liveness(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "UP"
-    # No model exists before Phase 4. Readiness reports that rather than
-    # claiming a capability the service does not have.
-    assert body["model_loaded"] is False
+    # `modelLoaded`, not `model_loaded`. The contract names it in camel case like
+    # every other field on the wire, and this endpoint spelled it in snake case
+    # from Phase 1 until the scoring endpoints landed and the drift was found.
+    assert body["modelLoaded"] is True
+    assert "model_loaded" not in body
 
 
 def test_info_reports_build_identity(client: TestClient) -> None:
@@ -74,6 +84,11 @@ def test_openapi_document_is_served(client: TestClient) -> None:
     document = response.json()
     assert document["info"]["title"] == "SentinelFlow scoring service"
     assert "/health/live" in document["paths"]
+    # The scoring endpoints are part of the served document, not only of the
+    # contract file. A caller reading /openapi.json from a running instance sees
+    # what that instance actually serves.
+    assert "/v1/score" in document["paths"]
+    assert "/v1/model" in document["paths"]
     # /metrics is excluded from the schema: it is an operational endpoint, not
     # part of the service contract.
     assert "/metrics" not in document["paths"]
