@@ -21,7 +21,7 @@ WEB     := apps/web
 API     := apps/api
 SCORING := apps/scoring
 
-.PHONY: help bootstrap up down logs ps reset-demo seed replay \
+.PHONY: help bootstrap up down logs ps reset-demo seed export-dataset replay \
         build test test-web test-api test-scoring test-integration test-e2e \
         lint format format-check security smoke docs-check contracts-check clean
 
@@ -85,6 +85,15 @@ seed: ## Generate and load deterministic demo data
 	@echo "Returning the API to its unseeded configuration."
 	@$(COMPOSE) up -d --force-recreate --wait --wait-timeout 300 api
 	@echo "Done. Re-running this is a no-op: both loaders are idempotent."
+
+export-dataset: ## Export the labelled training dataset (ADR-0010)
+	@echo "Exporting the labelled training dataset for seed $${SENTINELFLOW_SEED:-20260826}, profile $${SENTINELFLOW_SEED_PROFILE:-DEMO}."
+	@mkdir -p data/generated/training
+	@SENTINELFLOW_SCORING_EXPORT_ENABLED=true $(COMPOSE) up -d --force-recreate --wait --wait-timeout 300 api
+	@$(COMPOSE) logs api | grep -E "Training export complete|had no stored row" || true
+	@echo "Returning the API to its normal configuration."
+	@$(COMPOSE) up -d --force-recreate --wait --wait-timeout 300 api
+	@echo "Written to data/generated/training/ - git-ignored, regenerate rather than commit."
 
 # Deliberately loud rather than silently succeeding. Replay's most useful
 # scenarios are the operational ones - a scoring-service outage, a poison event

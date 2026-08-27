@@ -6,6 +6,7 @@ import java.time.Instant;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import io.github.la3679.sentinelflow.api.seed.scenario.ScenarioLoader;
@@ -24,7 +25,16 @@ import io.github.la3679.sentinelflow.api.seed.scenario.ScenarioLoader;
  */
 @Component
 @ConditionalOnProperty(prefix = "sentinelflow.seed", name = "enabled", havingValue = "true")
+@Order(SeedRunner.ORDER)
 public class SeedRunner implements ApplicationRunner {
+
+    /**
+     * Explicit rather than the default precedence, because the training export runs immediately
+     * after this one and has nothing to label until it has finished. Two runners left on the default
+     * would run in whatever order the context produced, which is not a guarantee and would fail
+     * intermittently rather than consistently.
+     */
+    public static final int ORDER = 0;
 
     private final DeterministicSeedLoader loader;
     private final ScenarioLoader scenarios;

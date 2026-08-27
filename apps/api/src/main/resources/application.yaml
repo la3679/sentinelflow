@@ -185,6 +185,21 @@ sentinelflow:
       # account's history would be a denial-of-service primitive.
       max-recent-transactions: ${SENTINELFLOW_SCORING_MAX_RECENT_TRANSACTIONS:200}
 
+    export:
+      # The labelled training dataset (ADR-0010 section 1). Off unless asked,
+      # like the seed and for the same reason: it writes files and reads the
+      # whole transaction table, and an application that does either wherever it
+      # is pointed is one nobody can safely point anywhere.
+      enabled: ${SENTINELFLOW_SCORING_EXPORT_ENABLED:false}
+      # Under data/generated/, which .gitignore already excludes. ADR-0010
+      # section 1 says the dataset is regenerated from a recorded seed rather
+      # than committed, and the surest way to honour that is to write it
+      # somewhere Git will not offer to add.
+      directory: ${SENTINELFLOW_SCORING_EXPORT_DIRECTORY:data/generated/training}
+      # An export is reproducible, so rewriting one is either pointless work or
+      # the loss of a dataset whose metrics someone has already published.
+      overwrite: ${SENTINELFLOW_SCORING_EXPORT_OVERWRITE:false}
+
   seed:
     enabled: ${SENTINELFLOW_SEED_ENABLED:false}
     # The same value produces the same dataset on any machine, which is what
