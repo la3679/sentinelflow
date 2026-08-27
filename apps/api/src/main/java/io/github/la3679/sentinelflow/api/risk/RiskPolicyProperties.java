@@ -10,6 +10,7 @@ import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.RiskBand;
 
 /**
@@ -25,14 +26,33 @@ import io.github.la3679.sentinelflow.api.domain.RiskBand;
  * defended months later, and the whole reason this object is versioned separately is that it will
  * move more often than the model does.
  *
- * @param version identifies this whole object — the weight and the thresholds together
+ * <p><strong>Alerting lives here too, on the same version.</strong> ADR-0008 §4 gives this service
+ * the threshold and calls it "the alerting policy applied to a final score at runtime"; deciding
+ * which bands are worth a human's time is that policy, not a second one. Putting it in its own
+ * versioned object would let a band table and an alerting rule move independently while both claimed
+ * to be "the policy", and an alert months old could then name a version that does not describe the
+ * decision that raised it.
+ *
+ * @param version identifies this whole object — the weight, the thresholds and the alerting rule
+ *     together
  * @param modelWeight how much of the combined score is the model's. 0.6 by default; the rest is the
  *     rules'. The result is floored by the rule score, so this weights corroboration rather than
  *     letting a confident model overrule a transparent indicator (ADR-0011 §1).
  * @param bandLowerBounds inclusive lower bound per band, ascending, starting at zero
+ * @param alertFromBand the least severe band that opens an alert. Every band at or above it alerts
+ *     and every band below it does not, because an alerting rule that was not monotone in severity
+ *     would be one nobody could hold in their head.
+ * @param priorityByBand what an alert's queue priority is, per alerting band. Separate from the band
+ *     because the band describes the score and the priority describes the queue — an operations team
+ *     must be able to reorder its own work without anyone re-deciding what the score meant.
  */
 @ConfigurationProperties("sentinelflow.risk.policy")
-public record RiskPolicyProperties(String version, BigDecimal modelWeight, Map<RiskBand, BigDecimal> bandLowerBounds) {
+public record RiskPolicyProperties(
+        String version,
+        BigDecimal modelWeight,
+        Map<RiskBand, BigDecimal> bandLowerBounds,
+        RiskBand alertFromBand,
+        Map<RiskBand, AlertPriority> priorityByBand) {
 
     /** The contract's scale, shared by the rule score, the model score and the final score. */
     public static final BigDecimal SCORE_MIN = BigDecimal.ZERO;
@@ -53,6 +73,42 @@ public record RiskPolicyProperties(String version, BigDecimal modelWeight, Map<R
                     + "weighted mean and the final score leaves the contract's scale.");
         }
         bandLowerBounds = validatedBands(bandLowerBounds);
+
+        if (alertFromBand == null) {
+            throw new IllegalArgumentException("sentinelflow.risk.policy.alert-from-band is required: a policy "
+                    + "that does not say which bands are worth a human's time cannot raise an alert anybody "
+                    + "can defend, and defaulting it here would be this class deciding a business question.");
+        }
+        priorityByBand = validatedPriorities(alertFromBand, priorityByBand);
+    }
+
+    /**
+     * Whether a band opens an alert.
+     *
+     * <p>By ordinal, which is safe because {@link RiskBand} is declared least to most severe and its
+     * own Javadoc says so. Comparing bands rather than scores is deliberate: the band is what an
+     * assessment persists and what an analyst is shown, so an alert raised on a score the band table
+     * would have placed differently is an alert nobody can reconcile with the row beside it.
+     */
+    public boolean raisesAlert(RiskBand band) {
+        return band.ordinal() >= alertFromBand.ordinal();
+    }
+
+    /**
+     * The queue priority for an alerting band.
+     *
+     * @throws IllegalArgumentException if the band does not alert. Not a default: asking for the
+     *     priority of an alert that should not exist is a caller defect, and answering it with
+     *     {@code LOW} would open one.
+     */
+    public AlertPriority priorityFor(RiskBand band) {
+        AlertPriority priority = priorityByBand.get(band);
+        if (priority == null) {
+            throw new IllegalArgumentException(
+                    "No alert priority is configured for " + band + ", which does not raise an alert under policy "
+                            + version + ". Alerts start at " + alertFromBand + ".");
+        }
+        return priority;
     }
 
     /**
@@ -112,6 +168,41 @@ public record RiskPolicyProperties(String version, BigDecimal modelWeight, Map<R
 
     private static BigDecimal clip(BigDecimal score) {
         return score.max(SCORE_MIN).min(SCORE_MAX).setScale(SCORE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Every alerting band has a priority, and no non-alerting band has one.
+     *
+     * <p>Both halves are refusals rather than corrections. A missing priority would surface as an
+     * exception on the first alert of that band, which is the worst moment to discover it. A
+     * priority configured for a band that does not alert is dead configuration that reads as though
+     * it does something — and the most likely reason for it to exist is that somebody changed
+     * {@code alertFromBand} and did not finish.
+     */
+    private static Map<RiskBand, AlertPriority> validatedPriorities(
+            RiskBand alertFromBand, Map<RiskBand, AlertPriority> configured) {
+        Map<RiskBand, AlertPriority> priorities = new EnumMap<>(RiskBand.class);
+        priorities.putAll(configured == null ? Map.of() : configured);
+
+        List<String> problems = new ArrayList<>();
+        for (RiskBand band : RiskBand.values()) {
+            boolean alerts = band.ordinal() >= alertFromBand.ordinal();
+            boolean configuredForBand = priorities.containsKey(band);
+            if (alerts && !configuredForBand) {
+                problems.add(band + " raises an alert and has no priority");
+            }
+            if (!alerts && configuredForBand) {
+                problems.add(band + " has a priority and does not raise an alert");
+            }
+        }
+
+        if (!problems.isEmpty()) {
+            throw new IllegalArgumentException("sentinelflow.risk.policy.priority-by-band does not match "
+                    + "alert-from-band = " + alertFromBand + ": " + String.join("; ", problems)
+                    + ". Refused rather than defaulted, because a priority this class chose would put alerts "
+                    + "in an order nobody decided.");
+        }
+        return Map.copyOf(priorities);
     }
 
     private static Map<RiskBand, BigDecimal> validatedBands(Map<RiskBand, BigDecimal> configured) {

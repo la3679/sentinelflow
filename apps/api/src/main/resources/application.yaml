@@ -243,7 +243,12 @@ sentinelflow:
       # feature versions. "Which policy produced this alert" has to have an
       # answer independent of "which model", so change anything below and this
       # moves.
-      version: ${SENTINELFLOW_RISK_POLICY_VERSION:1.0.0}
+      #
+      # 1.1.0 since the alerting rule below joined it. ADR-0008 section 4 calls
+      # that rule "the alerting policy applied to a final score at runtime", so
+      # it is this object rather than a second one - and adding it changed what
+      # this version describes, which is exactly when a version moves.
+      version: ${SENTINELFLOW_RISK_POLICY_VERSION:1.1.0}
       # final = max(rule, 0.6 x model + 0.4 x rule) when the model answered,
       # and the rule score unchanged when it did not.
       #
@@ -269,6 +274,33 @@ sentinelflow:
         MEDIUM: 40
         HIGH: 70
         CRITICAL: 90
+
+      # The least severe band worth a human's time. Every band at or above it
+      # raises an alert and every band below it does not: an alerting rule that
+      # was not monotone in severity would be one nobody could hold in their
+      # head.
+      #
+      # HIGH, which given the bounds above means a final score of 70. That is a
+      # starting point and not a measurement - docs/ml/EVALUATION.md records
+      # that the score distribution is saturated, so almost nothing lands
+      # between 40 and 90 - and it is the number to revisit first against
+      # measured alert volume and a stated review capacity. Change it and the
+      # policy version above moves with it.
+      alert-from-band: ${SENTINELFLOW_RISK_POLICY_ALERT_FROM_BAND:HIGH}
+
+      # What the queue does with an alert, per alerting band. Separate from the
+      # band because the band describes the score and the priority describes the
+      # queue: an operations team must be able to reorder its own work without
+      # anyone re-deciding what a score meant.
+      #
+      # Every alerting band needs one and no other band may have one. Both are
+      # refused at startup rather than defaulted - a missing priority would
+      # surface as an exception on the first alert of that band, and a priority
+      # on a band that does not alert is dead configuration that reads as though
+      # it does something.
+      priority-by-band:
+        HIGH: HIGH
+        CRITICAL: URGENT
 
     rules:
       # The transparent rule indicators (ADR-0002 section 3, ADR-0008 section 3).

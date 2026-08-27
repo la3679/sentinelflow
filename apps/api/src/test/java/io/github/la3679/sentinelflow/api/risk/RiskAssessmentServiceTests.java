@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.ReasonCode;
 import io.github.la3679.sentinelflow.api.domain.ReasonSource;
 import io.github.la3679.sentinelflow.api.domain.RiskBand;
@@ -87,7 +88,7 @@ class RiskAssessmentServiceTests {
             assertThat(assessment.getPolicyVersion())
                     .as("an assessment that cannot name the policy that produced it cannot be "
                             + "defended months later")
-                    .isEqualTo("1.0.0");
+                    .isEqualTo("1.1.0");
         }
 
         @Test
@@ -245,7 +246,7 @@ class RiskAssessmentServiceTests {
                     .as("the rules are the only half a degraded assessment is made of, so this is "
                             + "the version it most needs")
                     .isEqualTo("1.0.0");
-            assertThat(assessment.getPolicyVersion()).isEqualTo("1.0.0");
+            assertThat(assessment.getPolicyVersion()).isEqualTo("1.1.0");
         }
 
         @Test
@@ -344,6 +345,9 @@ class RiskAssessmentServiceTests {
         bounds.put(RiskBand.MEDIUM, new BigDecimal("40"));
         bounds.put(RiskBand.HIGH, new BigDecimal("70"));
         bounds.put(RiskBand.CRITICAL, new BigDecimal("90"));
-        return new RiskPolicyProperties("1.0.0", new BigDecimal("0.6"), bounds);
+        Map<RiskBand, AlertPriority> priorities = new EnumMap<>(RiskBand.class);
+        priorities.put(RiskBand.HIGH, AlertPriority.HIGH);
+        priorities.put(RiskBand.CRITICAL, AlertPriority.URGENT);
+        return new RiskPolicyProperties("1.1.0", new BigDecimal("0.6"), bounds, RiskBand.HIGH, priorities);
     }
 }
