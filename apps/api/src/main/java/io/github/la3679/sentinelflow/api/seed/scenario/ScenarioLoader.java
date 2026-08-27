@@ -1,14 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.seed.scenario;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.EnumMap;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,15 +45,14 @@ public class ScenarioLoader {
 
     private static final Logger log = LoggerFactory.getLogger(ScenarioLoader.class);
 
-    /** How far back the generated window starts, matching the generator's own window. */
-    private static final Duration WINDOW = Duration.ofDays(14);
-
     private final TransactionWriter writer;
     private final JdbcTemplate jdbc;
+    private final ScenarioDataset dataset;
 
-    public ScenarioLoader(TransactionWriter writer, JdbcTemplate jdbc) {
+    public ScenarioLoader(TransactionWriter writer, JdbcTemplate jdbc, ScenarioDataset dataset) {
         this.writer = writer;
         this.jdbc = jdbc;
+        this.dataset = dataset;
     }
 
     /**
@@ -80,18 +73,10 @@ public class ScenarioLoader {
             return ScenarioManifest.skipped(seed, profile);
         }
 
-        List<GeneratorAccount> accounts = readAccounts();
-        List<String> merchants = readMerchants();
-        if (accounts.isEmpty() || merchants.isEmpty()) {
-            // A clearer failure than the generator's own: the caller's mistake
-            // is almost always that the party seed did not run, and saying so
-            // is worth more than "cannot generate without accounts".
-            throw new IllegalStateException("No accounts or merchants to generate against. Run the party seed first: "
-                    + "SENTINELFLOW_SEED_ENABLED=true");
-        }
-
-        List<GeneratedTransaction> generated =
-                new ScenarioGenerator(seed, profile).generate(now.minus(WINDOW), accounts, merchants);
+        // Regenerated through ScenarioDataset rather than here, so the labelled
+        // training export recovers exactly this list later - the labels never
+        // enter the schema, so the export has nothing else to join them by.
+        List<GeneratedTransaction> generated = dataset.generate(seed, profile, now);
 
         int written = 0;
         Map<ScenarioType, Integer> distribution = new EnumMap<>(ScenarioType.class);
@@ -109,7 +94,7 @@ public class ScenarioLoader {
                 generated.size(),
                 written,
                 distribution,
-                checksumOf(generated),
+                ScenarioDataset.checksumOf(generated),
                 false);
 
         log.info(
@@ -154,58 +139,5 @@ public class ScenarioLoader {
         Boolean present = jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM transactions WHERE ingestion_source = 'GENERATOR')", Boolean.class);
         return Boolean.TRUE.equals(present);
-    }
-
-    private List<GeneratorAccount> readAccounts() {
-        List<GeneratorAccount> accounts = new ArrayList<>();
-        jdbc.query(
-                "SELECT account_reference, balance FROM accounts WHERE status = 'ACTIVE' ORDER BY account_reference",
-                rs -> {
-                    accounts.add(new GeneratorAccount(rs.getString("account_reference"), rs.getBigDecimal("balance")));
-                });
-        return accounts;
-    }
-
-    private List<String> readMerchants() {
-        return jdbc.queryForList("SELECT merchant_reference FROM merchants ORDER BY merchant_reference", String.class);
-    }
-
-    /**
-     * SHA-256 over what the generator described, in order.
-     *
-     * <p>Everything hashed is deterministic: the offset rather than the instant, the references
-     * rather than the identifiers, the amount as the string that was sent. Nothing the database
-     * assigned goes in, for the reason recorded on {@link ScenarioManifest}.
-     */
-    private static String checksumOf(List<GeneratedTransaction> generated) {
-        MessageDigest digest;
-        try {
-            digest = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException impossible) {
-            // Every JRE is required to provide SHA-256. Wrapping rather than
-            // declaring, so callers are not made to handle something that
-            // cannot happen.
-            throw new IllegalStateException("SHA-256 is not available", impossible);
-        }
-
-        for (GeneratedTransaction transaction : generated) {
-            var request = transaction.request();
-            // \n, never %n: %n is the platform line separator, so the same
-            // dataset would hash differently on Windows and Linux and the
-            // checksum would report a difference that does not exist.
-            String line = "%s|%d|%s|%s|%s|%s|%s|%s|%s\n"
-                    .formatted(
-                            request.idempotencyKey(),
-                            transaction.offset().toSeconds(),
-                            request.accountReference(),
-                            request.merchantReference(),
-                            request.type(),
-                            request.channel(),
-                            request.amount().value(),
-                            request.originCountry(),
-                            String.valueOf(request.deviceReference()));
-            digest.update(line.getBytes(StandardCharsets.UTF_8));
-        }
-        return HexFormat.of().formatHex(digest.digest());
     }
 }

@@ -145,6 +145,21 @@ services:
       SENTINELFLOW_SEED: ${SENTINELFLOW_SEED:-20260826}
       SENTINELFLOW_SEED_PROFILE: ${SENTINELFLOW_SEED_PROFILE:-DEMO}
       SENTINELFLOW_SEED_SCENARIOS: ${SENTINELFLOW_SEED_SCENARIOS:-true}
+      # The labelled training export (ADR-0010 section 1). Off unless set, for
+      # the same reason as the seed. `make export-dataset` sets it for one
+      # recreate of this service and then puts it back.
+      SENTINELFLOW_SCORING_EXPORT_ENABLED: ${SENTINELFLOW_SCORING_EXPORT_ENABLED:-false}
+      SENTINELFLOW_SCORING_EXPORT_OVERWRITE: ${SENTINELFLOW_SCORING_EXPORT_OVERWRITE:-false}
+      # Inside the container. The bind mount below puts it at data/generated/
+      # in the repository, where .gitignore already excludes it and where the
+      # training command in apps/scoring will look for it.
+      SENTINELFLOW_SCORING_EXPORT_DIRECTORY: /var/lib/sentinelflow/training
+    volumes:
+      # A bind mount rather than a named volume: the whole point of the export
+      # is that a file lands somewhere a person and the training command can
+      # both reach. A named volume would put it where neither can without
+      # `docker cp`.
+      - ./data/generated/training:/var/lib/sentinelflow/training
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:

@@ -144,6 +144,7 @@ function Invoke-Help {
         'ps'               = 'Show the status of every service'
         'reset-demo'       = 'DESTRUCTIVE - stop the stack and delete all local data volumes'
         'seed'             = 'Generate and load deterministic demo data'
+        'export-dataset'   = 'Export the labelled training dataset (ADR-0010)'
         'replay'           = '(Phase 4, in progress) Replay the default synthetic scenario'
         'build'            = 'Build every application'
         'test'             = 'Run every standard test suite'
@@ -491,6 +492,56 @@ function Invoke-Seed {
     Write-Host 'Done. Re-running this is a no-op: both loaders are idempotent.'
 }
 
+function Invoke-ExportDataset {
+    <#
+        The Makefile's `export-dataset` target, expressed natively. The two are
+        changed together, every time, for the reason Invoke-Seed records: this
+        machine has no make, so this is the only way the target is ever
+        exercised on it.
+
+        The export runs at API startup behind SENTINELFLOW_SCORING_EXPORT_ENABLED,
+        so this recreates that one service with the flag set and then recreates
+        it again without - two recreates, so a later restart does not re-export.
+
+        The output directory is created here rather than left to the bind mount.
+        Docker creates a missing bind-mount source itself, but as root and
+        outside the repository's own conventions; making it first keeps it a
+        plain directory the current user owns.
+    #>
+    $profileName = if ($env:SENTINELFLOW_SEED_PROFILE) { $env:SENTINELFLOW_SEED_PROFILE } else { 'DEMO' }
+    $seedValue = if ($env:SENTINELFLOW_SEED) { $env:SENTINELFLOW_SEED } else { '20260826' }
+    Write-Host "Exporting the labelled training dataset for seed $seedValue, profile $profileName."
+
+    $outputDirectory = Join-Path $RepoRoot 'data/generated/training'
+    if (-not (Test-Path $outputDirectory)) {
+        New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
+    }
+
+    $previous = $env:SENTINELFLOW_SCORING_EXPORT_ENABLED
+    try {
+        $env:SENTINELFLOW_SCORING_EXPORT_ENABLED = 'true'
+        Invoke-Native $RepoRoot 'docker' @(
+            'compose', 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300', 'api')
+    }
+    finally {
+        # Restored even if the recreate failed, so a failed export cannot leave
+        # the flag set for the next person's `up`.
+        $env:SENTINELFLOW_SCORING_EXPORT_ENABLED = $previous
+    }
+
+    # Best effort: the manifest line is the useful output, and a stack with no
+    # matching line is not a failure worth stopping on.
+    $logs = Invoke-NativeCapture $RepoRoot 'docker' @('compose', 'logs', 'api')
+    $logs -split "`n" |
+        Select-String -Pattern 'Training export complete|had no stored row' |
+        ForEach-Object { Write-Host $_.Line.Trim() }
+
+    Write-Host 'Returning the API to its normal configuration.'
+    Invoke-Native $RepoRoot 'docker' @(
+        'compose', 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300', 'api')
+    Write-Host 'Written to data/generated/training/ - git-ignored, regenerate rather than commit.'
+}
+
 function Invoke-ResetDemo {
     Write-Host 'This deletes the PostgreSQL, Kafka, Prometheus and Grafana volumes.'
     Write-Host 'All local demo data will be lost. This cannot be undone.'
@@ -524,6 +575,7 @@ switch ($Target) {
     'ps' { Invoke-Native $RepoRoot 'docker' @('compose', 'ps') }
     'reset-demo' { Invoke-ResetDemo }
     'seed' { Invoke-Seed }
+    'export-dataset' { Invoke-ExportDataset }
     'replay' { Invoke-NotImplemented 'replay' 'the same change as the scoring client' 'Scenario replay' }
 
     'build' {
