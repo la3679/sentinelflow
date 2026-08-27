@@ -21,7 +21,7 @@ WEB     := apps/web
 API     := apps/api
 SCORING := apps/scoring
 
-.PHONY: help bootstrap up down logs ps reset-demo seed export-dataset replay \
+.PHONY: help bootstrap up down logs ps reset-demo seed export-dataset train replay \
         build test test-web test-api test-scoring test-integration test-e2e \
         lint format format-check security smoke docs-check contracts-check clean
 
@@ -94,6 +94,10 @@ export-dataset: ## Export the labelled training dataset (ADR-0010)
 	@echo "Returning the API to its normal configuration."
 	@$(COMPOSE) up -d --force-recreate --wait --wait-timeout 300 api
 	@echo "Written to data/generated/training/ - git-ignored, regenerate rather than commit."
+
+train: ## Train, evaluate and register a risk model (ADR-0010)
+	@echo "Training from data/generated/training. Offline, never an API side effect."
+	@cd $(SCORING) && $(UV) run python -m sentinelflow_scoring.training
 
 # Deliberately loud rather than silently succeeding. Replay's most useful
 # scenarios are the operational ones - a scoring-service outage, a poison event

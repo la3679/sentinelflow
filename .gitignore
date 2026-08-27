@@ -45,7 +45,21 @@ __pycache__/
 # Generated data and models - regenerate with `make seed`, never commit.
 # ---------------------------------------------------------------------------
 data/generated/
-apps/scoring/models/*.joblib
+
+# Model artifacts are the exception, and it is a decision rather than an
+# oversight. An earlier rule here ignored `apps/scoring/models/*.joblib`;
+# ADR-0010 section 6 supersedes it and commits registry entries to the
+# repository, so that a demo can score without someone running a training job
+# first — a demo that cannot be seen working is not a demo.
+#
+# The ceiling that makes it defensible is enforced by the training command
+# (MAX_ARTIFACT_BYTES), not by this file: the measured artifact is 4 KB.
+#
+# The old rule would not have covered the entries anyway. `models/*.joblib` does
+# not match `models/<name>/<version>/model.joblib`, because a single asterisk
+# does not cross a directory separator — so the artifact was already being
+# committed, by accident rather than by choice. Stated here so the next reader
+# does not re-add it.
 
 # ---------------------------------------------------------------------------
 # Test, coverage, and build reports
