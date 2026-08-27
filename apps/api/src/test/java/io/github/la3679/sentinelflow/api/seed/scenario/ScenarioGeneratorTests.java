@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -301,8 +302,14 @@ class ScenarioGeneratorTests {
         assertThat(offHours).isNotEmpty();
 
         for (GeneratedTransaction transaction : offHours) {
-            long hour = (transaction.offset().toHours() % 24 + 24) % 24;
-            assertThat(hour).isBetween(2L, 3L);
+            // The hour it OCCURRED at, not the offset modulo 24. Those agree
+            // only when the window begins at midnight, which is exactly what
+            // this suite's fixture does — so the previous version of this
+            // assertion passed while the shape landed at an ordinary hour in
+            // every real run. See offHoursIsOffHoursFromAnyWindowStart.
+            assertThat(hourOf(transaction))
+                    .as("a purchase at 14:00 is not an off-hours purchase, whatever it is labelled")
+                    .isBetween(2, 3);
 
             Set<String> known = knownDevices.getOrDefault(transaction.request().accountReference(), Set.of());
             // "New device" has to be true of the dataset, not merely asserted
@@ -310,6 +317,47 @@ class ScenarioGeneratorTests {
             // uses would make the feature it exercises meaningless.
             assertThat(known).doesNotContain(transaction.request().deviceReference());
         }
+    }
+
+    @Test
+    @DisplayName("off-hours is off-hours whatever time of day the run started")
+    void offHoursIsOffHoursFromAnyWindowStart() {
+        // The production caller is SeedRunner, which passes Instant.now(), so a
+        // midnight window start is the one case that essentially never happens.
+        // Every instant here is a time of day a real run could begin at.
+        for (String start : List.of(
+                "2026-08-12T00:00:00Z", "2026-08-12T12:00:00Z", "2026-08-12T17:23:41Z", "2026-08-12T23:59:59Z")) {
+            List<GeneratedTransaction> offHours = of(
+                    new ScenarioGenerator(SEED, SeedProfile.CI).generate(Instant.parse(start), ACCOUNTS, MERCHANTS),
+                    ScenarioType.OFF_HOURS_NEW_DEVICE);
+
+            assertThat(offHours)
+                    .as("nothing to assert about if the shape was not planted")
+                    .isNotEmpty();
+            assertThat(offHours).as("from a window starting at %s", start).allSatisfy(transaction -> assertThat(
+                            hourOf(transaction))
+                    .as("the is_off_hours feature fires on UTC hours 2 to 4; a shape planted "
+                            + "outside them exercises nothing it was created to exercise")
+                    .isBetween(2, 3));
+        }
+    }
+
+    @Test
+    @DisplayName("the window is anchored to a day, so the same seed gives the same offsets at any hour")
+    void anchoringKeepsOffsetsStable() {
+        List<GeneratedTransaction> midnight = generate(SEED, SeedProfile.CI);
+        List<GeneratedTransaction> afternoon = new ScenarioGenerator(SEED, SeedProfile.CI)
+                .generate(WINDOW_START.plus(Duration.ofHours(14)), ACCOUNTS, MERCHANTS);
+
+        assertThat(afternoon)
+                .as("without anchoring, a run at 14:00 would produce different offsets from one at "
+                        + "midnight and ScenarioManifest's checksum — which covers offsets — would "
+                        + "differ between two runs that generated the same dataset")
+                .isEqualTo(midnight);
+    }
+
+    private static int hourOf(GeneratedTransaction transaction) {
+        return transaction.request().occurredAt().atZone(ZoneOffset.UTC).getHour();
     }
 
     // -------------------------------------------------------------- refusals
