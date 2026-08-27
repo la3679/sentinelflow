@@ -171,8 +171,26 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      # service_started, not service_healthy, and the difference is the whole of
+      # ADR-0008 section 3.
+      #
+      # The scoring service reports 503 on readiness when no model is loaded, so
+      # `service_healthy` meant a registry entry the image could not serve
+      # stopped the API from starting at all. That is the exact opposite of the
+      # design: an unreachable scoring service is what the degraded path exists
+      # for, and an API that refuses to start when the model is down cannot
+      # degrade to rules because it is not running.
+      #
+      # It never bit, because the image carries the artifact and reports ready.
+      # It is corrected here rather than later because the client that makes
+      # degradation real landed in this branch, and a resilience property whose
+      # only proof is that nothing has triggered it is not a property.
+      #
+      # Ordering is still declared: scoring starts first, so the ordinary case
+      # is a warm dependency rather than a first transaction scored on a
+      # container that is still importing scikit-learn.
       scoring:
-        condition: service_healthy
+        condition: service_started
 
   web:
     build:
