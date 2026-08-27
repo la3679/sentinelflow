@@ -47,6 +47,30 @@ public class ScoringClientConfiguration {
     static JdkClientHttpRequestFactory requestFactory(ScoringClientProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
+                // HTTP/1.1, explicitly, and this one is not a preference.
+                //
+                // The JDK's HttpClient defaults to HTTP_2, and against an
+                // `http://` URI that means every request carries `Upgrade: h2c`
+                // and `Connection: Upgrade, HTTP2-Settings` in the hope of
+                // negotiating cleartext HTTP/2. The scoring service is uvicorn,
+                // which serves HTTP/1.1 only: it logs "Unsupported upgrade
+                // request", fails to read the body that came with it, and answers
+                // 422 naming the whole body as invalid.
+                //
+                // Every scoring call failed that way the first time the pipeline
+                // ran against the real stack rather than against a stub: 13,455
+                // assessments degraded, 6,224 events dead-lettered, and a
+                // one-to-one match between the upgrade warning and the rejection
+                // in the scoring service's own log. Neither `ScoringClientTests`
+                // nor `RiskAssessmentWorkflowIT` saw it, because
+                // `com.sun.net.httpserver` answers the upgrade attempt by
+                // ignoring it and reading the request as HTTP/1.1 - which is the
+                // difference between a stub and the thing it stands for.
+                //
+                // The contract says nothing about HTTP/2 and neither service
+                // gains anything from it at this volume. Asking for a protocol
+                // the other side does not speak, on every request, is the cost.
+                .version(HttpClient.Version.HTTP_1_1)
                 // Never follow a redirect. This is an internal contract between
                 // two services in one repository; a 3xx from it is not a route to
                 // somewhere else, it is a misconfiguration, and following one

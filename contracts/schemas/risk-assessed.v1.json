@@ -46,6 +46,10 @@
       "oneOf": [{ "$ref": "common.v1.json#/$defs/version" }, { "type": "null" }],
       "description": "Version of the feature pipeline. Two scores are only comparable when this matches."
     },
+    "rulesetVersion": {
+      "$ref": "common.v1.json#/$defs/version",
+      "description": "Version of the ruleset that produced `ruleScore` and every `RULE` reason code. Always present, including on a degraded assessment - the rules are the half that always runs, and a degraded assessment is made of nothing else. Separate from `policyVersion` because thresholds and weights move on their own schedule from banding."
+    },
     "policyVersion": {
       "$ref": "common.v1.json#/$defs/version",
       "description": "Version of the thresholds and banding policy. Always present: banding happens even when the model does not."
@@ -53,7 +57,7 @@
 
     "reasonCodes": {
       "type": "array",
-      "description": "What drove the score, ordered by descending absolute contribution. Bounded at 20: an explanation an analyst cannot read is not an explanation.",
+      "description": "What drove the score: the rule reasons first, ordered by descending contribution, then the model's, ordered by descending absolute contribution.\n\nGrouped by source rather than sorted as one list, because the two contributions are on different scales - a rule weight of 10 and a log-odds contribution of 0.4 are not comparable magnitudes, and interleaving them by size would rank them against each other for no meaningful reason. Rules lead because they sum to `ruleScore` and are the part an analyst can check.\n\nBounded at 20: an explanation an analyst cannot read is not an explanation. The rules can contribute at most seven and the scoring contract caps its own list at ten, so the bound is a guard rather than a routine truncation - and if it ever binds, every rule reason is kept, because dropping one would make the rule arithmetic unverifiable.",
       "items": { "$ref": "common.v1.json#/$defs/reasonCode" },
       "minItems": 1,
       "maxItems": 20
@@ -86,6 +90,7 @@
     "degraded",
     "modelVersion",
     "featureVersion",
+    "rulesetVersion",
     "policyVersion",
     "reasonCodes",
     "scoringLatencyMs",

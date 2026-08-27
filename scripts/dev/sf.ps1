@@ -69,10 +69,27 @@ function Invoke-NativeQuiet {
 
 # Run a native command and return its stdout as trimmed text; empty on failure.
 function Invoke-NativeCapture {
+    <#
+        Takes a working directory, like Invoke-Native, and for the same reason:
+        `docker compose` resolves compose.yaml from the current directory, so a
+        capture that ran wherever the caller happened to be would fail on a
+        machine where the script was invoked by absolute path.
+
+        The parameter was added after finding that Invoke-Seed and
+        Invoke-ExportDataset had been calling this with $RepoRoot first since
+        they were written. PowerShell binds that to $Command and then has
+        nowhere to put the argument array, so both targets failed with "a
+        positional parameter cannot be found" - a hard error under
+        $ErrorActionPreference = 'Stop'. Fixed by making the shape match the
+        call rather than the other way round, so the two helpers now differ only
+        in whether they throw.
+    #>
     param(
+        [Parameter(Mandatory)][string]$WorkingDirectory,
         [Parameter(Mandatory)][string]$Command,
         [string[]]$Arguments = @()
     )
+    Push-Location $WorkingDirectory
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
@@ -82,6 +99,7 @@ function Invoke-NativeCapture {
     }
     finally {
         $ErrorActionPreference = $previous
+        Pop-Location
     }
 }
 
@@ -146,7 +164,7 @@ function Invoke-Help {
         'seed'             = 'Generate and load deterministic demo data'
         'export-dataset'   = 'Export the labelled training dataset (ADR-0010)'
         'train'            = 'Train, evaluate and register a risk model (ADR-0010)'
-        'replay'           = '(Phase 4, in progress) Replay the default synthetic scenario'
+        'replay'           = 'Replay an operational scenario against the running stack'
         'build'            = 'Build every application'
         'test'             = 'Run every standard test suite'
         'test-web'         = 'Unit tests for the console'
@@ -180,7 +198,7 @@ function Invoke-Bootstrap {
 
     if (Test-CommandExists 'docker') {
         if ((Invoke-NativeQuiet 'docker' @('info')) -eq 0) {
-            Write-Ok "docker $(Invoke-NativeCapture 'docker' @('version', '--format', '{{.Server.Version}}')) - daemon reachable"
+            Write-Ok "docker $(Invoke-NativeCapture $RepoRoot 'docker' @('version', '--format', '{{.Server.Version}}')) - daemon reachable"
         }
         else {
             Write-Fail 'docker is installed but the daemon is not reachable. Start Docker Desktop.'
@@ -193,7 +211,7 @@ function Invoke-Bootstrap {
     }
 
     if ((Invoke-NativeQuiet 'docker' @('compose', 'version')) -eq 0) {
-        Write-Ok "docker compose $(Invoke-NativeCapture 'docker' @('compose', 'version', '--short'))"
+        Write-Ok "docker compose $(Invoke-NativeCapture $RepoRoot 'docker' @('compose', 'version', '--short'))"
     }
     else {
         Write-Fail 'docker compose (v2 plugin) not found.'
@@ -209,7 +227,7 @@ function Invoke-Bootstrap {
             # Version output is inconsistent across these tools: bun prints
             # "1.4.0", git prints "git version 2.42.0", uv prints "uv 0.12.2
             # (hash date)". Extract the number so every line reads alike.
-            $raw = (Invoke-NativeCapture $tool.Name @('--version'))
+            $raw = (Invoke-NativeCapture $RepoRoot $tool.Name @('--version'))
             $version = if ($raw -match '(\d+\.\d+\.\d+\S*)') { $Matches[1] } else { $raw }
             Write-Ok "$($tool.Name) $version"
         }
@@ -380,12 +398,12 @@ function Invoke-Smoke {
         Write-Host ''
         Write-Host 'Container health:'
         foreach ($service in @('postgres', 'kafka', 'scoring', 'api', 'web', 'prometheus', 'grafana')) {
-            $cid = Invoke-NativeCapture 'docker' @('compose', 'ps', '-q', $service)
+            $cid = Invoke-NativeCapture $RepoRoot 'docker' @('compose', 'ps', '-q', $service)
             if ([string]::IsNullOrWhiteSpace($cid)) {
                 Fail $service 'not running - is the stack up?'
                 continue
             }
-            $state = Invoke-NativeCapture 'docker' @('inspect', '--format', '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}', $cid)
+            $state = Invoke-NativeCapture $RepoRoot 'docker' @('inspect', '--format', '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}', $cid)
             if ($state -eq 'healthy') { Pass "$service is healthy" } else { Fail $service "health status is '$state'" }
         }
 
@@ -558,6 +576,350 @@ function Invoke-Train {
     Invoke-Native $Scoring 'uv' @('run', 'python', '-m', 'sentinelflow_scoring.training')
 }
 
+function Invoke-Replay {
+    <#
+        The Makefile's `replay` target, expressed natively. The two are changed
+        together, every time, for the reason Invoke-Seed records - and this one
+        more than most, because the reference Windows machine has no make and
+        `scripts/dev/replay.sh` would need a bash it may not have.
+
+        Replays the operational scenarios from section 8.3, which nothing else
+        produces: a temporary scoring-service outage, and a malformed event
+        reaching the dead-letter path. The transaction *shapes* are generated by
+        `seed` and replaying them here would be a second implementation of
+        something that exists.
+
+        Everything involved is synthetic. Nothing this prints is a claim about
+        any real system.
+    #>
+    param([string]$Scenario = 'all')
+
+    $apiBase = if ($env:SENTINELFLOW_API_BASE) { $env:SENTINELFLOW_API_BASE } else { 'http://localhost:8080' }
+    # One run id per invocation, so idempotency keys never collide with an
+    # earlier run against the same database. Replaying twice must post twice,
+    # not silently return the first run's transactions.
+    $runId = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ') + '-' + $PID
+    # Bounded, deliberately. An unbounded replay is a denial-of-service
+    # primitive against a developer's own laptop.
+    $perPhase = 4
+
+    Write-Host ''
+    Write-Host '== Checking the stack'
+    $running = Invoke-NativeCapture $RepoRoot 'docker' @('compose', 'ps', '--status', 'running', '--services')
+    # Split and trim rather than a multiline regex. Invoke-NativeCapture joins
+    # with the platform's line ending, so `^api$` never matches: the anchor sits
+    # after the carriage return that Windows leaves on the line.
+    $runningServices = @($running -split "`n" | ForEach-Object { $_.Trim() })
+    if ($runningServices -notcontains 'api') {
+        Write-Fail "the api service is not running. Start the stack with 'up' first."
+        exit 1
+    }
+    $states = Invoke-NativeCapture $RepoRoot 'docker' @('compose', 'ps', '--format', '{{.Service}} {{.Status}}')
+    if (@($states -split "`n" | ForEach-Object { $_.Trim() }) -match '^api .*Restarting') {
+        # The crash loop worth naming: an export or seed flag left set makes the
+        # service fail startup, restart, and fail again, and every symptom after
+        # that is a symptom of the wrong thing.
+        Write-Fail 'the api container is restarting. See PROJECT_STATE.md on the export flag.'
+        exit 1
+    }
+    try {
+        Invoke-RestMethod -Uri "$apiBase/actuator/health/readiness" -TimeoutSec 10 | Out-Null
+    }
+    catch {
+        Write-Fail "the api is not ready at $apiBase"
+        exit 1
+    }
+    Write-Ok "api is up and ready at $apiBase"
+
+    switch ($Scenario) {
+        'scoring-outage' { Invoke-ReplayScoringOutage $apiBase $runId $perPhase }
+        'poison-event' { Invoke-ReplayPoisonEvent $runId $apiBase }
+        'all' {
+            Invoke-ReplayScoringOutage $apiBase $runId $perPhase
+            Invoke-ReplayPoisonEvent $runId $apiBase
+        }
+        default {
+            Write-Fail "unknown scenario '$Scenario'. Choose scoring-outage, poison-event, or all."
+            exit 1
+        }
+    }
+
+    Write-Host ''
+    Write-Host '== Done'
+    Write-Host '   Every transaction, account and merchant involved is synthetic.'
+}
+
+# A read-only query against the demo database. Reading, never editing: a replay
+# that edited rows behind the pipeline would be demonstrating the script rather
+# than the system.
+function Invoke-ReplayQuery {
+    param([Parameter(Mandatory)][string]$Sql)
+    $user = if ($env:POSTGRES_USER) { $env:POSTGRES_USER } else { 'sentinelflow' }
+    $database = if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { 'sentinelflow' }
+    return (Invoke-NativeCapture $RepoRoot 'docker' @(
+            'compose', 'exec', '-T', 'postgres', 'psql', '-U', $user, '-d', $database, '-At', '-c', $Sql))
+}
+
+function Invoke-ReplayPost {
+    param(
+        [Parameter(Mandatory)][string]$ApiBase,
+        [Parameter(Mandatory)][string]$Account,
+        [Parameter(Mandatory)][string]$Merchant,
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Amount
+    )
+    $body = @{
+        idempotencyKey    = $Key
+        accountReference  = $Account
+        merchantReference = $Merchant
+        type              = 'PURCHASE'
+        channel           = 'CARD_NOT_PRESENT'
+        amount            = @{ value = $Amount; currency = 'GBP' }
+        originCountry     = 'GB'
+        occurredAt        = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    } | ConvertTo-Json -Depth 4
+
+    $response = Invoke-RestMethod -Method Post -Uri "$ApiBase/api/v1/transactions" `
+        -ContentType 'application/json' -Body $body -TimeoutSec 30
+    return $response.transactionId
+}
+
+function Invoke-ReplayPhase {
+    param(
+        [Parameter(Mandatory)][string]$ApiBase,
+        [Parameter(Mandatory)][string]$Account,
+        [Parameter(Mandatory)][string]$Merchant,
+        [Parameter(Mandatory)][string]$Label,
+        [Parameter(Mandatory)][int]$Count,
+        [Parameter(Mandatory)][string]$RunId
+    )
+    $ids = @()
+    for ($index = 1; $index -le $Count; $index++) {
+        $ids += Invoke-ReplayPost $ApiBase $Account $Merchant "replay-$RunId-$Label-$index" "$((120 + $index * 37)).00"
+    }
+    return $ids
+}
+
+# The outbox publishes on a poll interval and the consumer then scores, so
+# nothing here is instant. Bounded, and it says what it was waiting for.
+function Wait-ReplayAssessments {
+    param([Parameter(Mandatory)][string[]]$Ids)
+    $list = ($Ids | ForEach-Object { "'$_'" }) -join ','
+    for ($waited = 0; $waited -lt 60; $waited += 2) {
+        $count = Invoke-ReplayQuery "SELECT count(*) FROM risk_assessments WHERE transaction_id IN ($list)"
+        if ([int]$count -eq $Ids.Count) { return }
+        Start-Sleep -Seconds 2
+    }
+    Write-Fail "not every transaction was assessed within 60s"
+    exit 1
+}
+
+function Show-ReplayAssessments {
+    param([Parameter(Mandatory)][string[]]$Ids)
+    $list = ($Ids | ForEach-Object { "'$_'" }) -join ','
+    $rows = Invoke-ReplayQuery @"
+SELECT '   ' || substr(t.transaction_reference, 1, 12)
+       || '  final=' || rpad(r.final_score::text, 6, ' ')
+       || '  band=' || rpad(r.risk_band, 8, ' ')
+       || '  ' || CASE WHEN r.degraded
+                       THEN 'DEGRADED (rules only, model unavailable)'
+                       ELSE 'scored, model ' || r.model_version END
+  FROM risk_assessments r
+  JOIN transactions t ON t.id = r.transaction_id
+ WHERE r.transaction_id IN ($list)
+ ORDER BY t.transaction_reference
+"@
+    # Re-indent rather than print what psql returned. Invoke-NativeCapture trims
+    # the whole captured string, which eats the leading spaces on the first row
+    # only - so the first line of every block came out flush left and the rest
+    # did not.
+    $rows -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { Write-Host ('   ' + $_.Trim()) }
+}
+
+function Invoke-ReplayScoringOutage {
+    <#
+        ADR-0008 section 3 says an unreachable scoring service degrades an
+        assessment rather than losing it or rejecting the transaction. That is a
+        claim about behaviour under failure, and the only honest way to show it
+        is to cause the failure.
+    #>
+    param([string]$ApiBase, [string]$RunId, [int]$PerPhase)
+
+    $account = Invoke-ReplayQuery 'SELECT account_reference FROM accounts ORDER BY account_reference LIMIT 1'
+    $merchant = Invoke-ReplayQuery 'SELECT merchant_reference FROM merchants ORDER BY merchant_reference LIMIT 1'
+    if (-not $account -or -not $merchant) {
+        Write-Fail "no seeded account or merchant found. Run 'seed' first."
+        exit 1
+    }
+
+    Write-Host ''
+    Write-Host '== Scenario: temporary scoring-service outage'
+    Write-Host '   Stopping the scoring service. Ingestion is unaffected by design:'
+    Write-Host '   the transaction is accepted, committed and published before scoring runs.'
+    Invoke-Native $RepoRoot 'docker' @('compose', 'stop', 'scoring') | Out-Null
+
+    $degraded = Invoke-ReplayPhase $ApiBase $account $merchant 'outage' $PerPhase $RunId
+    Write-Host "   Posted $PerPhase transactions with scoring down."
+    Wait-ReplayAssessments $degraded
+    Show-ReplayAssessments $degraded
+
+    Write-Host ''
+    Write-Host '== Restarting the scoring service'
+    Invoke-Native $RepoRoot 'docker' @(
+        'compose', 'up', '-d', '--wait', '--wait-timeout', '180', 'scoring') | Out-Null
+    # The breaker stays open for its configured duration after the service is
+    # healthy again. Posting inside that window would produce degraded
+    # assessments and look like the restart had not worked.
+    Write-Host "   Waiting for the circuit breaker's open window to elapse before the next call."
+    Start-Sleep -Seconds 32
+
+    $scored = Invoke-ReplayPhase $ApiBase $account $merchant 'recovered' $PerPhase $RunId
+    Write-Host "   Posted $PerPhase transactions with scoring back up."
+    Wait-ReplayAssessments $scored
+    Show-ReplayAssessments $scored
+
+    Write-Host ''
+    Write-Host '== What that showed'
+    Write-Host '   No transaction was rejected and no assessment was lost.'
+    Write-Host '   A degraded assessment is a real answer from the rule baseline, and it'
+    Write-Host '   says so: degraded = true, no model score, no model version.'
+}
+
+function Get-ReplayDlqDepth {
+    <#
+        The dead-letter topic's end offsets, summed.
+
+        kafka-get-offsets.sh rather than kafka-run-class.sh with
+        kafka.tools.GetOffsetShell: the class moved package in Kafka 4 and the
+        wrapper script is the supported entry point. Found by running this
+        against the 4.2.1 broker the stack actually uses, where the old form
+        fails with ClassNotFoundException.
+    #>
+    $output = Invoke-NativeCapture $RepoRoot 'docker' @(
+        'compose', 'exec', '-T', 'kafka', '/opt/kafka/bin/kafka-get-offsets.sh',
+        '--bootstrap-server', 'localhost:9092', '--topic', 'transaction.processing.dlq.v1')
+    if (-not $output) {
+        Write-Fail "could not read the dead-letter topic's offsets"
+        exit 1
+    }
+    $total = 0
+    foreach ($line in ($output -split "`n")) {
+        $parts = $line.Trim() -split ':'
+        if ($parts.Count -ge 3) { $total += [int]$parts[2] }
+    }
+    return $total
+}
+
+# The counter the consumer increments for a record it can neither handle nor
+# dead-letter. Read from the API's own Prometheus endpoint rather than inferred.
+function Get-ReplayUndeliverableCount {
+    param([Parameter(Mandatory)][string]$ApiBase)
+    $metrics = Invoke-RestMethod -Uri "$ApiBase/actuator/prometheus" -TimeoutSec 10
+    $total = 0.0
+    foreach ($line in ($metrics -split "`n")) {
+        if ($line -match '^sentinelflow_consumer_undeliverable_total\S*\s+(\S+)$') {
+            $total += [double]$Matches[1]
+        }
+    }
+    return $total
+}
+
+function New-ReplayUuid {
+    return [guid]::NewGuid().ToString()
+}
+
+function Publish-ReplayRecord {
+    param([Parameter(Mandatory)][string]$RunId, [Parameter(Mandatory)][string]$Record)
+    "replay-${RunId}:$Record" | docker compose exec -T kafka /opt/kafka/bin/kafka-console-producer.sh `
+        --bootstrap-server localhost:9092 --topic transaction.created.v1 `
+        --property 'parse.key=true' --property 'key.separator=:' | Out-Null
+}
+
+function Invoke-ReplayPoisonEvent {
+    <#
+        ADR-0006 section 4 classifies a message that will fail identically on
+        every delivery as non-retryable, so it goes straight to the dead-letter
+        topic rather than blocking its partition. Nothing that arrives through
+        the API can produce one, which is why these are published directly.
+
+        TWO RECORDS, BECAUSE THERE ARE TWO OUTCOMES AND ONLY ONE IS A DEAD
+        LETTER. The first is a well-formed envelope at a schema version this
+        build does not read, and it is dead-lettered. The second is not a
+        readable envelope at all, and it is deliberately NOT: the DLQ schema
+        requires a valid envelope and ADR-0006 section 4 forbids copying
+        unsanitised content onto an operational topic, so it is counted and
+        logged with its coordinates instead. Showing only the first would leave
+        an operator believing everything unparseable reaches the dead-letter
+        topic.
+    #>
+    param([string]$RunId, [string]$ApiBase)
+
+    Write-Host ''
+    Write-Host '== Scenario: a malformed event reaching the dead-letter path'
+
+    $before = Get-ReplayDlqDepth
+    $undeliverableBefore = Get-ReplayUndeliverableCount $ApiBase
+
+    Write-Host '   Publishing a well-formed envelope at a schema version this build does not read.'
+    $envelope = @{
+        eventId       = New-ReplayUuid
+        eventType     = 'transaction.created'
+        schemaVersion = 99
+        occurredAt    = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        producer      = 'sentinelflow-api'
+        correlationId = New-ReplayUuid
+        traceId       = $null
+        aggregateType = 'transaction'
+        aggregateId   = New-ReplayUuid
+        payload       = @{}
+    } | ConvertTo-Json -Depth 4 -Compress
+    Publish-ReplayRecord $RunId $envelope
+
+    Write-Host '   Waiting for the dead-letter topic to record it.'
+    $after = $before
+    for ($waited = 0; $waited -lt 40; $waited += 2) {
+        $after = Get-ReplayDlqDepth
+        if ($after -gt $before) { break }
+        Start-Sleep -Seconds 2
+    }
+    if ($after -le $before) {
+        Write-Fail 'no dead-letter record appeared within 40s'
+        exit 1
+    }
+    Write-Host "   Dead-letter topic went from $before to $after records."
+
+    Write-Host ''
+    Write-Host '   Publishing a record that is not a readable envelope at all.'
+    Publish-ReplayRecord $RunId 'this is not json'
+
+    Write-Host '   Waiting for the undeliverable counter to move.'
+    $undeliverableAfter = $undeliverableBefore
+    for ($waited = 0; $waited -lt 40; $waited += 2) {
+        $undeliverableAfter = Get-ReplayUndeliverableCount $ApiBase
+        if ($undeliverableAfter -ne $undeliverableBefore) { break }
+        Start-Sleep -Seconds 2
+    }
+    if ($undeliverableAfter -eq $undeliverableBefore) {
+        Write-Fail 'the undeliverable counter did not move within 40s'
+        exit 1
+    }
+    Write-Host "   sentinelflow_consumer_undeliverable_total went from $undeliverableBefore to $undeliverableAfter."
+
+    if ((Get-ReplayDlqDepth) -gt $after) {
+        Write-Fail 'an unreadable record reached the dead-letter topic, which ADR-0006 section 4 forbids'
+        exit 1
+    }
+
+    Write-Host ''
+    Write-Host '== What that showed'
+    Write-Host '   The first record was classified once, not retried five times, and the'
+    Write-Host '   partition behind it kept moving. Its dead-letter record carries the'
+    Write-Host '   failure class, the source topic and the offset.'
+    Write-Host '   The second was NOT copied onto the dead-letter topic, because the DLQ'
+    Write-Host '   schema requires a valid envelope and unsanitised content may not be'
+    Write-Host '   republished. It is counted and logged with its coordinates instead.'
+}
+
 function Invoke-ResetDemo {
     Write-Host 'This deletes the PostgreSQL, Kafka, Prometheus and Grafana volumes.'
     Write-Host 'All local demo data will be lost. This cannot be undone.'
@@ -593,7 +955,7 @@ switch ($Target) {
     'seed' { Invoke-Seed }
     'export-dataset' { Invoke-ExportDataset }
     'train' { Invoke-Train }
-    'replay' { Invoke-NotImplemented 'replay' 'the same change as the scoring client' 'Scenario replay' }
+    'replay' { Invoke-Replay $(if ($env:SCENARIO) { $env:SCENARIO } else { 'all' }) }
 
     'build' {
         Invoke-Native $RepoRoot 'bun' @('install', '--frozen-lockfile')

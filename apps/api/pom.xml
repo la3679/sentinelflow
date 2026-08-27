@@ -329,20 +329,24 @@
           <!--
             The coverage floor. Measured, then set below the measurement.
 
-            Phase 3's consumer raised it: on 2026-08-26 a full `./mvnw verify`
-            covered 77.6% of lines (944/1216) and 66.1% of branches (144/218),
-            so these are 70% and 60%. They were 50% and 40%, set the same way
-            from 52.4% and 46.9% earlier the same day.
+            Phase 4's assessment workflow raised it: on 2026-08-27 a full
+            `./mvnw verify` covered 85.7% of lines (1794/2093) and 76.9% of
+            branches (362/471), so these are 80% and 70%.
+
+            They were 70% and 60%, set the same way from Phase 3's 77.6%
+            (944/1216) and 66.1% (144/218) on 2026-08-26, and 50% and 40% before
+            that from 52.4% and 46.9% earlier the same day.
 
             A threshold chosen before a measurement is a guess, and a threshold
             set exactly at the measurement fails the next honest refactor. This
             is a ratchet - raise it when a phase genuinely raises coverage, and
             never lower it to go green.
 
-            The remaining gap is almost entirely accessors on entities Phases 4
-            and 5 have not reached yet: the model registry, the audit log and
-            the alert-action history all have mappings and no callers. The
-            deduplication ledger left that list in Phase 3.
+            The remaining gap is almost entirely accessors on entities Phase 5
+            has not reached yet: the model registry, the audit log and the
+            alert-action history all have mappings and no callers. The
+            deduplication ledger left that list in Phase 3 and the risk
+            assessment left it in Phase 4.
 
             Judged over both suites, because the report is. `make test-api`
             runs the unit half alone and passes -Djacoco.skip=true, since one
@@ -363,12 +367,12 @@
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.70</minimum>
+                      <minimum>0.80</minimum>
                     </limit>
                     <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.60</minimum>
+                      <minimum>0.70</minimum>
                     </limit>
                   </limits>
                 </rule>

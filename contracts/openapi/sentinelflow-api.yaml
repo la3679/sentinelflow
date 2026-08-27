@@ -492,8 +492,19 @@ components:
           maxLength: 500
         contribution:
           type: number
-          minimum: -100
-          maximum: 100
+          description: |
+            How much this factor pushed the score, on the scale its `source`
+            uses.
+
+            For a `RULE` it is the configured weight on the 0-to-100 scale, and
+            the rule reasons sum to `ruleScore`. For a `MODEL` it is the
+            estimator's own signed decomposition, which explains the ranking,
+            does not sum to anything, and is only comparable within one
+            `modelVersion`.
+
+            **No numeric bound, deliberately.** A log-odds contribution has no
+            natural ceiling, and clamping one into a range would change a number
+            an analyst reads without saying so.
         source:
           type: string
           enum: [RULE, MODEL]
@@ -663,6 +674,13 @@ components:
           description: Explicit rather than inferred from a null modelScore.
         modelVersion: { type: [string, "null"] }
         featureVersion: { type: [string, "null"] }
+        rulesetVersion:
+          type: string
+          description: |
+            The ruleset that produced `ruleScore` and every `RULE` reason.
+            Always present, including on a degraded assessment: the rules
+            are the half that always runs, and a degraded assessment is
+            made of nothing else.
         policyVersion: { type: string }
         reasonCodes:
           type: array
@@ -680,6 +698,7 @@ components:
           finalScore,
           riskBand,
           degraded,
+          rulesetVersion,
           policyVersion,
           reasonCodes,
           assessedAt,

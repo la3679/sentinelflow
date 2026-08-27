@@ -28,7 +28,7 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phases 0 to 3 complete, Phase 4 in progress
+## Current status — Phases 0 to 3 complete, Phase 4 nearly complete
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
@@ -69,10 +69,18 @@ scoring service cannot be reached. They are also the floor the model is measured
 engine scores every example as the labelled dataset is exported, so the margin in the model card is
 a margin over the ruleset that actually ships rather than over a reimplementation of it.
 
-**What does not run yet:** nothing calls the scoring service — the risk consumer's handler seam is
-still empty, and the Spring client that fills it, with its timeouts and circuit breaker, is the next
-piece of Phase 4. No assessment is persisted yet. The console still renders from a mock fixture
-layer, because the API has no read endpoints; that is Phase 5 and 6.
+**The two halves are joined, and the decision is persisted.** The consumer assembles a bounded
+account context, evaluates the ruleset in process, calls `POST /v1/score` inside a budget under ten
+seconds, combines the two scores under a versioned policy, bands the result, and writes a
+`risk_assessments` row with every version that contributed — model, feature, ruleset and policy — in
+the same database transaction as the ledger row that records the event as handled. `make replay`
+demonstrates the failure behaviour rather than describing it: it stops the scoring container, shows
+assessments degrade to the rules alone, restarts it, and shows them scored again.
+
+**What does not run yet:** no alert is raised. Every assessment is banded and every band is
+persisted, and nothing reads them — alert creation, the investigation workflow and the read
+endpoints are Phases 5 and 6, which is also why the console still renders from a mock fixture
+layer.
 
 Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 
@@ -130,14 +138,13 @@ flowchart LR
 
     classDef built fill:#0f2b3d,stroke:#4ba3c7,color:#e6f1f7
     class U,W,A,P,K,C,O,G,M built
-    %% The sixth link, C -> M. Every box is built; the call between them is not.
-    linkStyle 5 stroke-dasharray:4 3,stroke:#666
 ```
 
-Solid boxes exist and run today, the risk consumer included since Phase 3. The dashed link is the
-**call**: the scoring service is running, healthy and serving a model, and nothing calls it yet. The
-Spring client is the next piece of Phase 4, and the arrow is marked rather than removed because the
-consumer's handler seam exists and is waiting for it.
+Every box exists and runs today, and so does every link between them. The consumer's call to the
+scoring service was the last one to be drawn solid: it is synchronous HTTP from inside the handler,
+with a timeout, a bounded retry and a circuit breaker, and an unreachable scoring service degrades
+an assessment to the rules rather than losing it
+([ADR-0008](docs/adr/0008-scoring-service-boundary.md)).
 
 The API is the only backend the console talks to; scoring is reached through the API and never
 directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See
@@ -294,10 +301,30 @@ generator lays over them. Running it twice is a no-op —
 [`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md) records what it writes, what it
 deliberately does not, and why the labels never reach the database.
 
-`make replay` is still listed and still **fails with the change that delivers it** rather than
-silently succeeding. The transaction shapes it would replay are generated today by `make seed`; its
-own value is in replaying a scoring-service outage and a poison event, and neither exists to replay
-until the scoring client does.
+`make replay` replays the two **operational** scenarios, which is a deliberately narrower thing
+than it sounds. The transaction shapes — velocity, amount spikes, card testing, drains, off-hours —
+are what `make seed` generates, through the same validation and the same outbox row as a posted
+transaction, so replaying them again here would be a second implementation of something that exists.
+What nothing else produces is a scoring-service outage and a malformed event reaching the
+dead-letter path, and those are what it runs:
+
+```bash
+make replay                       # both scenarios
+SCENARIO=scoring-outage make replay
+SCENARIO=poison-event make replay
+```
+
+The outage scenario stops the scoring container, posts transactions, prints the degraded assessments
+the pipeline produced, restarts it, waits out the circuit breaker's open window, and prints the
+scored ones. The poison scenario publishes two records, because there are two outcomes and only one
+is a dead letter: a well-formed envelope at an unsupported schema version is dead-lettered with its
+failure class and coordinates, while a record that is not a readable envelope at all is deliberately
+**not** — the dead-letter schema requires a valid envelope and ADR-0006 §4 forbids copying
+unsanitised content onto an operational topic, so it is counted and logged instead.
+
+The HTTP replay endpoint the requirements list is a separate thing on a separate schedule: it is API
+surface that needs authorization and rate limiting, and shipping an unbounded replay endpoint with
+no role behind it to satisfy a Makefile target would be the wrong trade.
 
 ## Testing
 
@@ -305,19 +332,32 @@ Every figure below came from a run that actually happened, and each block says w
 is estimated, and a figure that has not been re-measured keeps the date it was measured on rather
 than being quietly refreshed.
 
-**2026-08-27**, on the commit that added the scoring endpoints and the rules baseline:
+**2026-08-27**, on the commit that joined the ruleset, the model and the policy into a persisted
+assessment:
 
-| Suite                             | Command                              | Result                                                         |
-| --------------------------------- | ------------------------------------ | -------------------------------------------------------------- |
-| API — unit                        | `./mvnw verify -DskipITs`            | **91 passed / 91**                                             |
-| API — integration                 | `./mvnw verify -DskipUnitTests=true` | **154 passed / 154**, coverage gate met                        |
-| Scoring — unit                    | `make test-scoring`                  | **171 passed / 171**                                           |
-| Scoring — coverage                | `uv run pytest --cov`                | 97.36% statements, floor 90                                    |
-| Scoring — types                   | `uv run mypy`                        | strict, **0 issues**, 42 files                                 |
-| Scoring image                     | `docker build apps/scoring`          | **PASS** — 610 MB; serves `/v1/score` with the committed model |
-| Documentation links, placeholders | `make docs-check`                    | **PASS** — 141 links across 40 files, 0 broken                 |
-| Contracts                         | `make contracts-check`               | **PASS** — every schema, example and API document              |
-| Formatting, repository-wide       | `make format-check`                  | **PASS**                                                       |
+| Suite                             | Command                | Result                                            |
+| --------------------------------- | ---------------------- | ------------------------------------------------- |
+| API — full verify                 | `./mvnw verify`        | **147 unit + 172 integration passed**, gate met   |
+| API — coverage                    | JaCoCo, both suites    | 85.7% lines (1794/2093), 76.9% branches (362/471) |
+| Documentation links, placeholders | `make docs-check`      | **PASS** — 153 links across 41 files, 0 broken    |
+| Contracts                         | `make contracts-check` | **PASS** — every schema, example and API document |
+| Formatting, repository-wide       | `make format-check`    | **PASS**                                          |
+
+The whole pipeline was also run against the local stack rather than only against Testcontainers,
+which is how three defects were found that every suite was green through: no process created the
+Kafka topics, so nothing could be published on a stack whose health checks all passed; the scoring
+client negotiated HTTP/2 against an HTTP/1.1-only service, so every request was refused; and the
+Makefile's PowerShell equivalent could not run two of its targets at all. Each is fixed in this
+branch, and the commit messages say what the symptom looked like.
+
+**2026-08-27**, earlier, on the commit that added the scoring endpoints and the rules baseline:
+
+| Suite              | Command                     | Result                                                         |
+| ------------------ | --------------------------- | -------------------------------------------------------------- |
+| Scoring — unit     | `make test-scoring`         | **171 passed / 171**                                           |
+| Scoring — coverage | `uv run pytest --cov`       | 97.36% statements, floor 90                                    |
+| Scoring — types    | `uv run mypy`               | strict, **0 issues**, 42 files                                 |
+| Scoring image      | `docker build apps/scoring` | **PASS** — 610 MB; serves `/v1/score` with the committed model |
 
 **2026-08-26**, on the commit that finished Phase 3:
 
@@ -350,9 +390,10 @@ Playwright suite instead, and writing unit tests purely to move that number woul
 [exactly the shortcut this project refuses](CONTRIBUTING.md).
 
 Both coverage gates are ratchets — measured, then set below the measurement, raised only when a
-change genuinely raises coverage, and never lowered to go green. `apps/api` is at LINE 0.70 and
-BRANCH 0.60; `apps/scoring` is at 90% of statements, set when the feature pipeline gave it a
-baseline that meant something. `apps/web` has no threshold yet; it gets one in Phase 6.
+change genuinely raises coverage, and never lowered to go green. `apps/api` is at LINE 0.80 and
+BRANCH 0.70, raised on 2026-08-27 from 0.70 and 0.60 after the assessment workflow measured 85.7%
+and 76.9%; `apps/scoring` is at 90% of statements, set when the feature pipeline gave it a baseline
+that meant something. `apps/web` has no threshold yet; it gets one in Phase 6.
 
 **No latency, throughput, or false-positive figure is claimed anywhere in this repository.** None
 has been measured. Phase 9 measures them and reports the method alongside the result.

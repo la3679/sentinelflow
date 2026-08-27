@@ -238,9 +238,9 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                             INSERT INTO risk_assessments (
                                 transaction_id, assessment_version, rule_score, model_score, final_score,
                                 risk_band, degraded, model_version, feature_version, policy_version,
-                                reason_codes, scoring_latency_ms, alert_raised, assessed_at)
+                                reason_codes, scoring_latency_ms, alert_raised, assessed_at, ruleset_version)
                             VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', true, NULL, NULL, '1.0.0',
-                                    '[{"code":"RULE_ONLY","description":"d","contribution":0,"source":"RULE"}]'::jsonb, 0, false, now())
+                                    '[{"code":"RULE_ONLY","description":"d","contribution":0,"source":"RULE"}]'::jsonb, 0, false, now(), '1.0.0')
                             """, transactionId));
         }
 
@@ -253,9 +253,9 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                             INSERT INTO risk_assessments (
                                 transaction_id, assessment_version, rule_score, model_score, final_score,
                                 risk_band, degraded, model_version, feature_version, policy_version,
-                                reason_codes, scoring_latency_ms, alert_raised, assessed_at)
+                                reason_codes, scoring_latency_ms, alert_raised, assessed_at, ruleset_version)
                             VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', false, NULL, NULL, '1.0.0',
-                                    '[{"code":"VELOCITY_5M_HIGH","description":"d","contribution":25,"source":"RULE"}]'::jsonb, 12, false, now())
+                                    '[{"code":"VELOCITY_5M_HIGH","description":"d","contribution":25,"source":"RULE"}]'::jsonb, 12, false, now(), '1.0.0')
                             """, transactionId));
         }
 
@@ -268,9 +268,27 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                             INSERT INTO risk_assessments (
                                 transaction_id, assessment_version, rule_score, model_score, final_score,
                                 risk_band, degraded, model_version, feature_version, policy_version,
-                                reason_codes, scoring_latency_ms, alert_raised, assessed_at)
+                                reason_codes, scoring_latency_ms, alert_raised, assessed_at, ruleset_version)
                             VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', false, '1.0.0', '1.0.0', '1.0.0',
-                                    '[]'::jsonb, 12, false, now())
+                                    '[]'::jsonb, 12, false, now(), '1.0.0')
+                            """, transactionId));
+        }
+
+        @Test
+        @DisplayName("a rule score cannot name a ruleset version nobody could look up")
+        void rulesetVersionIsAVersion() {
+            UUID transactionId = fixtures.insertTransaction();
+
+            // "latest" is the shape this rejects: a label that resolves to
+            // something different depending on when it is read, attached to a
+            // decision whose whole purpose is to be reproducible months later.
+            assertViolates("risk_assessments_ruleset_version_format", () -> jdbc.update("""
+                            INSERT INTO risk_assessments (
+                                transaction_id, assessment_version, rule_score, model_score, final_score,
+                                risk_band, degraded, model_version, feature_version, policy_version,
+                                reason_codes, scoring_latency_ms, alert_raised, assessed_at, ruleset_version)
+                            VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', false, '1.0.0', '1.0.0', '1.0.0',
+                                    '[{"code":"VELOCITY_5M_HIGH","description":"d","contribution":25,"source":"RULE"}]'::jsonb, 12, false, now(), 'latest')
                             """, transactionId));
         }
 

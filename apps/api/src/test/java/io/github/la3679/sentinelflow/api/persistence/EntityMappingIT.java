@@ -153,6 +153,7 @@ class EntityMappingIT extends AbstractPostgresTest {
                 "1.0.0",
                 "1.0.0",
                 "1.0.0",
+                "1.0.0",
                 List.of(
                         new ReasonCode(
                                 "VELOCITY_5M_HIGH",
@@ -217,6 +218,7 @@ class EntityMappingIT extends AbstractPostgresTest {
                 new BigDecimal("70.00"),
                 RiskBand.HIGH,
                 "1.0.0",
+                "1.0.0",
                 List.of(new ReasonCode(
                         "SCORING_UNAVAILABLE",
                         "The scoring service did not answer within its budget; scored by rules alone.",
@@ -265,6 +267,7 @@ class EntityMappingIT extends AbstractPostgresTest {
                     new BigDecimal("90.00"),
                     new BigDecimal("90.00"),
                     RiskBand.CRITICAL,
+                    "1.0.0",
                     "1.0.0",
                     List.of(new ReasonCode(
                             "SCORING_UNAVAILABLE",

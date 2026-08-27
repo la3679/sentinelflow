@@ -8,10 +8,11 @@ a safe mitigation, how to validate the fix, and what it deliberately does not co
 
 **This file grows with the system, and only ever documents behaviour that exists.** A runbook for a
 component that has not been built would be a guess, and a guess in a runbook is worse than a gap
-because somebody follows it. Three runbooks are written below, covering the event pipeline that
-Phase 3 delivered. The remainder — API unavailable, scoring service unavailable, database connection
+because somebody follows it. Four runbooks are written below: three cover the event pipeline that
+Phase 3 delivered, and the fourth covers scoring degradation, which became a thing that happens when
+Phase 4's assessment workflow landed. The remainder — API unavailable, database connection
 saturation, high error rate, slow report query, and model artifact load failure — arrive with the
-components they describe, in Phases 4, 5 and 7. Phase 7 also adds the Grafana dashboards these
+components they describe, in Phases 5 and 7. Phase 7 also adds the Grafana dashboards these
 runbooks currently substitute Prometheus queries for.
 
 ## Where the numbers come from
@@ -28,6 +29,7 @@ Every metric named here is registered in application code and exposed on
 | `sentinelflow_consumer_events_total`        | counter | `IdempotentEventProcessor` | Events handled, tagged `consumer` and `outcome`    |
 | `sentinelflow_consumer_deadletter_total`    | counter | `DeadLetterRecoverer`      | Records dead-lettered, tagged `class`              |
 | `sentinelflow_consumer_undeliverable_total` | counter | `DeadLetterRecoverer`      | Records that were not even readable as an envelope |
+| `sentinelflow_risk_assessments_total`       | counter | `RiskAssessmentService`    | Assessments written, tagged `outcome` and `band`   |
 
 **No threshold below is calibrated against a measured baseline**, because no load test has been run
 — Phase 9 does that. They are starting points chosen from the configured intervals, and each says
@@ -277,3 +279,106 @@ happened and that nothing downstream has been told about.
 - An event published to the broker whose transaction then failed to commit is republished, so a
   duplicate here is expected. Consumers deduplicate on `eventId`; that is the other half of the
   at-least-once bargain and not a defect to chase.
+
+---
+
+## Runbook 4 — Assessments are degrading
+
+### Symptoms
+
+- `sentinelflow_risk_assessments_total{outcome="degraded"}` climbing while
+  `{outcome="scored"}` is flat.
+- The API logs `Scoring did not answer in 3 attempts; the assessment will degrade to rules`, once
+  per record while the breaker is closed and then not at all once it opens.
+- Newly written rows in `risk_assessments` have `degraded = true`, a null `model_score` and a null
+  `model_version`.
+
+### Impact
+
+**Nothing is lost and nothing is rejected.** A degraded assessment is a real answer from the
+transparent rule baseline, which runs in the API's own process precisely so it can answer when the
+scoring service cannot (ADR-0008 §3). Ingestion is unaffected: a transaction is accepted, committed
+and published before any of this runs.
+
+What is lost is the model's contribution. The rule score is a floor, so a degraded assessment can
+only be **lower** than the one the model would have produced — the shapes the rules do not encode go
+unseen while this lasts. Treat it as reduced coverage, not as an outage.
+
+A degraded assessment is **not** upgraded automatically when scoring recovers. Rescoring is a
+deliberate, audited operation (ADR-0008 §2), because a background job silently changing decisions an
+analyst may already have acted on is worse than a decision that is honest about what produced it.
+
+### Diagnostics
+
+Is the scoring service up and serving a model?
+
+```bash
+docker compose ps scoring
+curl -fsS http://localhost:8000/health/ready
+curl -fsS http://localhost:8000/v1/model
+```
+
+Readiness answers 503 when no model is loaded, which is a different fault from a container that is
+down: the service is running and cannot score. `/v1/model` names the model version and its artifact
+checksum.
+
+Is the breaker open? The API stops attempting calls entirely once it is, which is the intended
+behaviour and is why the per-record warning goes quiet:
+
+```bash
+curl -fsS http://localhost:8080/actuator/prometheus | grep sentinelflow_risk_assessments
+```
+
+Is the service answering but **refusing**? That is a different fault with a different response:
+
+```bash
+docker compose logs scoring | grep 'request rejected'
+docker compose logs api | grep 'Scoring rejected the request'
+```
+
+A refusal is never degraded. It dead-letters the record, so it shows up in Runbook 1's symptoms
+instead — and it means the two services disagree about
+`contracts/openapi/sentinelflow-scoring.yaml`, which is a defect to fix rather than a condition to
+wait out. **Check the scoring service's log for `Unsupported upgrade request` beside each
+rejection**: that pairing means the caller is negotiating a protocol uvicorn does not serve, and it
+is what caused every request to be refused the first time this pipeline ran against the real stack.
+
+### Mitigation
+
+If the container is down or unhealthy:
+
+```bash
+docker compose up -d --wait scoring
+```
+
+If it is up but not ready, the model artifact is the thing to look at — the image carries a registry
+entry under `apps/scoring/models/<name>/<version>/`, and loading validates the artifact checksum, the
+feature version and the recorded column order before serving.
+
+**Then wait.** The circuit breaker stays open for its configured window
+(`sentinelflow.scoring.client.circuit-breaker-open-duration`, 30 s by default) after the service is
+healthy again, and the first call after that is a half-open probe. Transactions posted inside that
+window still degrade, which looks like the restart not having worked and is not.
+
+Do not raise the client's timeouts to "give scoring more time". The whole budget is validated at
+startup against ADR-0008 §3's ten-second ceiling, and it is small because a consumer's retry blocks
+its partition: everything queued behind a record waits for it.
+
+### Validation
+
+`sentinelflow_risk_assessments_total{outcome="scored"}` starts climbing again, and rows written
+after the recovery have a `model_score` and a `model_version`.
+
+`make replay` exercises exactly this, deliberately: it stops the scoring container, shows four
+degraded assessments, restarts it, waits out the breaker, and shows four scored ones.
+
+### Known limitations
+
+- **Assessments written while scoring was down stay degraded.** There is no rescoring endpoint yet;
+  ADR-0005 §5 makes it an administrator-only audited operation and Phase 5 owns it.
+- **The breaker's state is not exposed as a metric.** `ScoringClient.circuitState()` answers it in
+  process and nothing publishes it, so "is the breaker open" is currently inferred from the absence
+  of per-record warnings. Worth a gauge when Phase 7 adds the dashboards.
+- **A degraded assessment and a scored one are banded by the same policy**, deliberately (ADR-0008
+  §4). That is what makes them comparable; it also means a degraded assessment can band lower than
+  the same transaction would have banded with the model, and nothing flags that difference.

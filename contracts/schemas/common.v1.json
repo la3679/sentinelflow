@@ -138,9 +138,7 @@
         },
         "contribution": {
           "type": "number",
-          "description": "Points this factor contributed to the final score. May be negative where a factor reduces risk.",
-          "minimum": -100,
-          "maximum": 100
+          "description": "How much this factor pushed the score, on the scale its `source` uses.\n\nFor a `RULE` it is the configured weight on the 0-to-100 scale, and the rule reasons sum to `ruleScore` - which is the whole appeal of a ruleset: an analyst can add them up and get the number.\n\nFor a `MODEL` it is the estimator's own decomposition, signed, on its own scale. It explains the ranking, deliberately does not sum to anything, and is only comparable within one `modelVersion` - the same statement `ReasonContribution` makes in the scoring contract. That is why this field carries no numeric bound: a log-odds contribution has no natural ceiling, and clamping one to fit a range would change a number an analyst reads without saying so."
         },
         "source": {
           "type": "string",

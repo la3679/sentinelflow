@@ -19,6 +19,7 @@
     "degraded": false,
     "modelVersion": "1.0.0",
     "featureVersion": "1.0.0",
+    "rulesetVersion": "1.0.0",
     "policyVersion": "1.0.0",
     "reasonCodes": [
       {

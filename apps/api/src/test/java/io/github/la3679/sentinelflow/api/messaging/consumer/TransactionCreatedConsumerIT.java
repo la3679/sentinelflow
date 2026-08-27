@@ -30,10 +30,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import io.github.la3679.sentinelflow.api.domain.DlqFailureClass;
 import io.github.la3679.sentinelflow.api.messaging.EventEnvelope;
 import io.github.la3679.sentinelflow.api.messaging.payload.TransactionCreatedPayload;
+import io.github.la3679.sentinelflow.api.risk.ScoringTransactionCreatedHandler;
 import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.KafkaContainerSupport;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
@@ -82,6 +84,23 @@ class TransactionCreatedConsumerIT extends AbstractPostgresTest {
      * one is positioned once and read forward, so each test sees the records its own actions caused.
      */
     private static org.apache.kafka.clients.consumer.Consumer<String, String> dlqReader;
+
+    /**
+     * The real scoring handler, replaced by a no-op for this suite.
+     *
+     * <p>Not because it is inconvenient. This suite's subject is <em>delivery</em> — deduplication,
+     * retry classification, dead-lettering — and the consumer dispatches to every registered handler,
+     * so leaving the scoring one in would make every assertion here depend on what the risk workflow
+     * did as well. That is exactly the coupling {@code TransactionCreatedHandler} exists to prevent,
+     * and it showed up the moment the first implementation was registered: this class asserted that a
+     * successfully handled transaction stays {@code PENDING}, which stopped being true because
+     * scoring correctly moves it to {@code ASSESSED}.
+     *
+     * <p>The scoring handler's own behaviour is asserted by {@code RiskAssessmentWorkflowIT}, against
+     * the same broker and the same database.
+     */
+    @MockitoBean
+    private ScoringTransactionCreatedHandler scoringHandler;
 
     @Autowired
     private KafkaTemplate<String, String> kafka;

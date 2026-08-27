@@ -96,6 +96,20 @@ public record RiskPolicyProperties(String version, BigDecimal modelWeight, Map<R
         return clip(ruleScore);
     }
 
+    /**
+     * A score as this contract represents one: within the scale, at the scale the column stores.
+     *
+     * <p>Applied to the model score before it is persisted, rather than left to the database. The
+     * contract bounds {@code modelScore} to 0-to-100 and the scoring service's own response schema
+     * enforces it, so the clipping is belt and braces — but the <em>scale</em> is not. A model score
+     * of {@code 78.5678} is a value {@code NUMERIC(5,2)} would round on the way in, so the row and
+     * the {@code risk.assessed} event built from the in-memory entity would disagree about the same
+     * number. Rounding here means both readers see what the column holds.
+     */
+    public BigDecimal onContractScale(BigDecimal score) {
+        return clip(score);
+    }
+
     private static BigDecimal clip(BigDecimal score) {
         return score.max(SCORE_MIN).min(SCORE_MAX).setScale(SCORE_SCALE, RoundingMode.HALF_UP);
     }

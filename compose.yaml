@@ -100,6 +100,65 @@ services:
       retries: 20
       start_period: 30s
 
+  # The five topics, created explicitly.
+  #
+  # ADR-0006 section 3 decided this — "topics are created explicitly, never by
+  # broker auto-creation, which is disabled in compose.yaml" — and nothing was
+  # ever built to do it. The decision and the disabled setting were both in
+  # place, so the stack came up healthy and no message could be published on it.
+  # Found by running `make replay` against it for the first time: the producer
+  # reported UNKNOWN_TOPIC_OR_PARTITION for ever while every health check stayed
+  # green. The Testcontainers suites never saw it, because Testcontainers
+  # auto-creates.
+  #
+  # A one-shot rather than a Makefile target, so `make up` gives a stack that
+  # works rather than one that needs a second command nobody knew about.
+  # --if-not-exists throughout, so a restart against existing topics is a no-op.
+  kafka-topics:
+    image: apache/kafka:4.2.1
+    container_name: sentinelflow-kafka-topics
+    depends_on:
+      kafka:
+        condition: service_healthy
+    # A one-shot: it runs, creates what is missing, and exits. Restarting it
+    # would loop forever on a job that is already done.
+    restart: "no"
+    environment:
+      # Three, not one. Per-account ordering is a property of the partition key
+      # (ADR-0006 section 3), and on a single-partition topic every ordering
+      # assertion passes for the wrong reason — the broker orders everything.
+      # Three is enough for a laptop to actually exercise it.
+      TOPIC_PARTITIONS: "3"
+      # Single broker, so this can only be 1. acks=all is still meaningful: it
+      # means the one in-sync replica has the record.
+      TOPIC_REPLICATION: "1"
+      # Seven days for the operational topics. Thirty for the dead-letter topic,
+      # because a record there is waiting for a person to look at it, and the
+      # window in which somebody notices, investigates and reprocesses is longer
+      # than the window in which a transaction is scored.
+      TOPIC_RETENTION_MS: "604800000"
+      DLQ_RETENTION_MS: "2592000000"
+    command:
+      - /bin/bash
+      - -c
+      - |
+        set -euo pipefail
+        create() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+            --create --if-not-exists --topic "$$1" \
+            --partitions "$$2" --replication-factor "$${TOPIC_REPLICATION}" \
+            --config "retention.ms=$$3"
+        }
+        create transaction.created.v1        "$${TOPIC_PARTITIONS}" "$${TOPIC_RETENTION_MS}"
+        create risk.assessed.v1              "$${TOPIC_PARTITIONS}" "$${TOPIC_RETENTION_MS}"
+        create alert.created.v1              "$${TOPIC_PARTITIONS}" "$${TOPIC_RETENTION_MS}"
+        create alert.updated.v1              "$${TOPIC_PARTITIONS}" "$${TOPIC_RETENTION_MS}"
+        # One partition for the dead-letter topic. Nothing consumes it
+        # automatically and an operator reads it by hand, so ordering across the
+        # whole topic is worth more here than parallelism nobody uses.
+        create transaction.processing.dlq.v1 "1"                    "$${DLQ_RETENTION_MS}"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+
   # -------------------------------------------------------------------------
   # Applications
   # -------------------------------------------------------------------------
@@ -171,8 +230,33 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      # The relay starts publishing as soon as the API is up, so the topics have
+      # to exist before it does. Auto-creation is off by decision (ADR-0006
+      # section 3), which means a missing topic is not a slow start - it is a
+      # producer retrying UNKNOWN_TOPIC_OR_PARTITION for ever behind a green
+      # health check.
+      kafka-topics:
+        condition: service_completed_successfully
+      # service_started, not service_healthy, and the difference is the whole of
+      # ADR-0008 section 3.
+      #
+      # The scoring service reports 503 on readiness when no model is loaded, so
+      # `service_healthy` meant a registry entry the image could not serve
+      # stopped the API from starting at all. That is the exact opposite of the
+      # design: an unreachable scoring service is what the degraded path exists
+      # for, and an API that refuses to start when the model is down cannot
+      # degrade to rules because it is not running.
+      #
+      # It never bit, because the image carries the artifact and reports ready.
+      # It is corrected here rather than later because the client that makes
+      # degradation real landed in this branch, and a resilience property whose
+      # only proof is that nothing has triggered it is not a property.
+      #
+      # Ordering is still declared: scoring starts first, so the ordinary case
+      # is a warm dependency rather than a first transaction scored on a
+      # container that is still importing scikit-learn.
       scoring:
-        condition: service_healthy
+        condition: service_started
 
   web:
     build:
