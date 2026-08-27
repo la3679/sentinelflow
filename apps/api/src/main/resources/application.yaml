@@ -235,6 +235,41 @@ sentinelflow:
       overwrite: ${SENTINELFLOW_SCORING_EXPORT_OVERWRITE:false}
 
   risk:
+    policy:
+      # How a rule score and a model score become the one number a band and,
+      # from Phase 5, an alert are derived from (ADR-0011).
+      #
+      # Persisted on every assessment as policy_version, beside the model and
+      # feature versions. "Which policy produced this alert" has to have an
+      # answer independent of "which model", so change anything below and this
+      # moves.
+      version: ${SENTINELFLOW_RISK_POLICY_VERSION:1.0.0}
+      # final = max(rule, 0.6 x model + 0.4 x rule) when the model answered,
+      # and the rule score unchanged when it did not.
+      #
+      # The weighted part is why the model is here: it finds shapes the rules
+      # miss, which is the whole of ADR-0010 section 5's margin. The floor is
+      # why the rules are here: without it a model scoring 0 on a transaction
+      # that tripped three rules drags the final score to 40% of what the rules
+      # said, and a transparent indicator an analyst would act on is diluted by
+      # a number they cannot inspect.
+      model-weight: ${SENTINELFLOW_RISK_POLICY_MODEL_WEIGHT:0.6}
+      # Inclusive lower bounds, ascending, starting at zero. Validated at
+      # startup: a gap or an inversion is refused rather than clamped, because a
+      # band table that silently reorders itself produces assessments nobody can
+      # explain.
+      #
+      # A starting point, not a measurement. The model's operating point sits at
+      # 99.9998 on this scale, so almost nothing scores between 40 and 90 today.
+      # That is a property of a saturated score distribution, it is recorded in
+      # docs/ml/EVALUATION.md, and it is a reason to revisit these against
+      # measured alert volume in Phase 5.
+      band-lower-bounds:
+        LOW: 0
+        MEDIUM: 40
+        HIGH: 70
+        CRITICAL: 90
+
     rules:
       # The transparent rule indicators (ADR-0002 section 3, ADR-0008 section 3).
       # These run in-process, in the same transaction as the assessment, because

@@ -26,6 +26,8 @@ import io.github.la3679.sentinelflow.api.domain.CustomerStatus;
 import io.github.la3679.sentinelflow.api.domain.EventType;
 import io.github.la3679.sentinelflow.api.domain.IngestionSource;
 import io.github.la3679.sentinelflow.api.domain.Money;
+import io.github.la3679.sentinelflow.api.domain.ReasonCode;
+import io.github.la3679.sentinelflow.api.domain.ReasonSource;
 import io.github.la3679.sentinelflow.api.domain.RiskBand;
 import io.github.la3679.sentinelflow.api.domain.RiskTier;
 import io.github.la3679.sentinelflow.api.domain.TransactionChannel;
@@ -151,7 +153,17 @@ class EntityMappingIT extends AbstractPostgresTest {
                 "1.0.0",
                 "1.0.0",
                 "1.0.0",
-                List.of("VELOCITY_SPIKE", "NEW_COUNTRY"),
+                List.of(
+                        new ReasonCode(
+                                "VELOCITY_5M_HIGH",
+                                "4 transactions in the five minutes before it",
+                                new BigDecimal("25"),
+                                ReasonSource.RULE),
+                        new ReasonCode(
+                                "AMOUNT_RATIO_HIGH",
+                                "the amount is 9.4 times this account's own recent mean",
+                                new BigDecimal("1.8231"),
+                                ReasonSource.MODEL)),
                 12,
                 true,
                 Instant.now());
@@ -160,7 +172,19 @@ class EntityMappingIT extends AbstractPostgresTest {
         entityManager.clear();
 
         RiskAssessment loaded = entityManager.find(RiskAssessment.class, assessment.getId());
-        assertThat(loaded.getReasonCodes()).containsExactly("VELOCITY_SPIKE", "NEW_COUNTRY");
+        assertThat(loaded.getReasonCodes())
+                .as("objects, not bare codes: both contracts have always described a code, a "
+                        + "description, a contribution and a source")
+                .extracting(ReasonCode::code)
+                .containsExactly("VELOCITY_5M_HIGH", "AMOUNT_RATIO_HIGH");
+        assertThat(loaded.getReasonCodes())
+                .extracting(ReasonCode::source)
+                .as("an analyst needs to know which: a rule can be read, a model score can only " + "be attributed")
+                .containsExactly(ReasonSource.RULE, ReasonSource.MODEL);
+        assertThat(loaded.getReasonCodes().getFirst().contribution())
+                .as("a rule's reasons sum to the rule score, which is the property a ruleset has "
+                        + "and a model does not")
+                .isEqualByComparingTo("25");
         assertThat(loaded.getModelScore()).isEqualByComparingTo("62.50");
         assertThat(loaded.isDegraded()).isFalse();
     }
@@ -193,7 +217,11 @@ class EntityMappingIT extends AbstractPostgresTest {
                 new BigDecimal("70.00"),
                 RiskBand.HIGH,
                 "1.0.0",
-                List.of("SCORING_UNAVAILABLE"),
+                List.of(new ReasonCode(
+                        "SCORING_UNAVAILABLE",
+                        "The scoring service did not answer within its budget; scored by rules alone.",
+                        java.math.BigDecimal.ZERO,
+                        ReasonSource.RULE)),
                 true,
                 Instant.now());
         entityManager.persist(assessment);
@@ -238,7 +266,11 @@ class EntityMappingIT extends AbstractPostgresTest {
                     new BigDecimal("90.00"),
                     RiskBand.CRITICAL,
                     "1.0.0",
-                    List.of("SCORING_UNAVAILABLE"),
+                    List.of(new ReasonCode(
+                            "SCORING_UNAVAILABLE",
+                            "The scoring service did not answer within its budget; scored by rules alone.",
+                            java.math.BigDecimal.ZERO,
+                            ReasonSource.RULE)),
                     true,
                     Instant.now());
             entityManager.persist(assessment);
