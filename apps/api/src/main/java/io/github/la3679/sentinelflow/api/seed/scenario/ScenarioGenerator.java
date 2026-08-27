@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -46,7 +47,7 @@ import io.github.la3679.sentinelflow.api.web.dto.TransactionRequest;
 public final class ScenarioGenerator {
 
     /** Bump when a change here would produce different traffic from the same seed. */
-    public static final String GENERATOR_VERSION = "1.0.0";
+    public static final String GENERATOR_VERSION = "1.1.0";
 
     /** How far back the generated window reaches. Long enough for a daily rhythm to be visible. */
     private static final Duration WINDOW = Duration.ofDays(14);
@@ -100,6 +101,9 @@ public final class ScenarioGenerator {
      * @param windowStart when the generated window begins. Supplied rather than read from a clock:
      *     a demo wants traffic that ends near now, and a generator that read the clock itself could
      *     not be asserted against. Every offset is measured from here.
+     *     <p><strong>Truncated to a UTC day boundary</strong>, so traffic may begin up to 24 hours
+     *     earlier than asked. That is deliberate and load-bearing rather than a rounding
+     *     convenience — see {@link #anchor(Instant)}.
      * @throws IllegalArgumentException if there is nothing to generate against, which is a caller
      *     error worth failing loudly on: silently producing an empty dataset would look like the
      *     generator working
@@ -110,7 +114,7 @@ public final class ScenarioGenerator {
             throw new IllegalArgumentException("Cannot generate transactions without accounts and merchants");
         }
 
-        this.windowStart = windowStart;
+        this.windowStart = anchor(windowStart);
         this.sequence = 0;
         Random random = new Random(seed);
         List<GeneratedTransaction> generated = new ArrayList<>();
@@ -336,12 +340,19 @@ public final class ScenarioGenerator {
         return drain;
     }
 
-    /** A purchase between 02:00 and 04:00 from a device this account has never used. */
+    /** A purchase between 02:00 and 04:00 UTC from a device this account has never used. */
     private List<GeneratedTransaction> offHoursNewDevice(
             Random random, GeneratorAccount account, List<String> merchants, Duration start) {
         // Snapped to the small hours of whichever day the offset landed on,
         // rather than shifted by a fixed amount: "off hours" is a time of day
         // and has to survive the window being any length.
+        //
+        // This is an offset from windowStart, so it only lands at 02:00 UTC
+        // because generate() anchors windowStart to a day boundary. That is the
+        // precondition anchor() exists to guarantee; without it the arithmetic
+        // below produces "two hours after whatever time of day the run started",
+        // which is not off hours and was not off hours for as long as this
+        // generator has existed.
         long days = start.toDays();
         Duration at = Duration.ofDays(days)
                 .plusHours(2)
@@ -401,6 +412,33 @@ public final class ScenarioGenerator {
      */
     private String idempotencyKey(GeneratorAccount account, Duration offset) {
         return "gen-%d-%06d-%s-%d".formatted(seed, sequence++, account.reference(), offset.toSeconds());
+    }
+
+    /**
+     * Truncates the window start to a UTC day boundary.
+     *
+     * <p><strong>Two of this generator's guarantees are in conflict unless it does.</strong> Every
+     * transaction is placed at a {@link Duration} offset from the window start, which is what makes
+     * the dataset reproducible and what {@link ScenarioManifest}'s checksum covers. But
+     * {@link ScenarioType#OFF_HOURS_NEW_DEVICE} is defined by a <em>time of day</em>, and a time of
+     * day cannot be expressed as an offset from an arbitrary instant.
+     *
+     * <p>Left unanchored, the shape landed two hours after whatever time of day the run began. The
+     * caller in production is {@code SeedRunner}, which passes {@code Instant.now()}, so it was
+     * essentially never in the small hours — the planted "off-hours" transaction sat at an ordinary
+     * hour and the {@code is_off_hours} feature it exists to exercise never fired on it. The
+     * generator's own test did not catch it because it asserted the offset modulo 24 hours rather
+     * than the hour the transaction occurred at, and its fixture window began at midnight, so the
+     * two agreed exactly where the defect was invisible.
+     *
+     * <p><strong>Anchoring here rather than in the callers</strong>, because a precondition that
+     * every caller must remember is a precondition that a future caller will not. The cost is that
+     * generated traffic can begin up to 24 hours before the instant asked for — over a fourteen-day
+     * window, a rounding nobody notices, and the alternative was a shape that did not mean what its
+     * name said.
+     */
+    private static Instant anchor(Instant windowStart) {
+        return windowStart.truncatedTo(ChronoUnit.DAYS);
     }
 
     private Duration someTimeInTheWindow(Random random) {
