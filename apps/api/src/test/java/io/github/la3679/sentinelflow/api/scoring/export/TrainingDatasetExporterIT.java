@@ -32,6 +32,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 
 import io.github.la3679.sentinelflow.api.persistence.repository.TransactionRepository;
+import io.github.la3679.sentinelflow.api.risk.rules.RuleEngine;
 import io.github.la3679.sentinelflow.api.scoring.AccountContextAssembler;
 import io.github.la3679.sentinelflow.api.scoring.ScoringContextProperties;
 import io.github.la3679.sentinelflow.api.seed.SeedProfile;
@@ -94,6 +95,9 @@ class TrainingDatasetExporterIT extends AbstractPostgresTest {
 
     @Autowired
     private AccountContextAssembler assembler;
+
+    @Autowired
+    private RuleEngine ruleEngine;
 
     @Autowired
     private ScoringContextProperties contextProperties;
@@ -189,7 +193,7 @@ class TrainingDatasetExporterIT extends AbstractPostgresTest {
     }
 
     @Test
-    @DisplayName("a line is a ScoreRequest plus a label, and nothing else")
+    @DisplayName("a line is a ScoreRequest plus a label and a rule score, and nothing else")
     void linesAreScoreRequestsPlusALabel() {
         seedParties(6, 5);
         loader.load(SEED, SeedProfile.CI, NOW);
@@ -198,9 +202,10 @@ class TrainingDatasetExporterIT extends AbstractPostgresTest {
         JsonNode line = lines().getFirst();
 
         assertThat(fieldNames(line))
-                .as("the training record is the served object plus a label, so a model is trained "
-                        + "on what it will be given (ADR-0010 section 1)")
-                .containsExactlyInAnyOrder("transaction", "accountContext", "label");
+                .as("the training record is the served object plus a label and the shipped ruleset's "
+                        + "own verdict, so a model is trained on what it will be given and compared "
+                        + "against the baseline that actually runs (ADR-0010 sections 1 and 5)")
+                .containsExactlyInAnyOrder("transaction", "accountContext", "label", "ruleScore");
         assertThat(fieldNames(line.get("transaction")))
                 .containsExactlyInAnyOrder(
                         "transactionId",
@@ -276,6 +281,50 @@ class TrainingDatasetExporterIT extends AbstractPostgresTest {
     // ----------------------------------------------------------------------- //
     // The manifest, and reproducibility
     // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("every line carries a rule score from the ruleset that ships")
+    void everyLineCarriesTheShippedRuleScore() {
+        seedParties(6, 5);
+        loader.load(SEED, SeedProfile.CI, NOW);
+        TrainingExportManifest manifest = exporter.export(SEED, SeedProfile.CI);
+
+        List<JsonNode> lines = lines();
+
+        assertThat(lines).isNotEmpty();
+        for (JsonNode line : lines) {
+            BigDecimal score = line.get("ruleScore").decimalValue();
+            assertThat(score)
+                    .as("the score shares the contract's scale with the model's, because one "
+                            + "alerting threshold has to mean the same thing under either")
+                    .isBetween(BigDecimal.ZERO, new BigDecimal("100"));
+        }
+        assertThat(lines.stream()
+                        .anyMatch(line -> line.get("ruleScore").decimalValue().signum() > 0))
+                .as("a ruleset that fires on nothing in a dataset full of planted shapes is a "
+                        + "baseline no model could fail to beat")
+                .isTrue();
+        assertThat(manifest.rulesetVersion())
+                .as("a margin over an unnamed baseline is not a result anyone can reproduce")
+                .isNotBlank();
+    }
+
+    @Test
+    @DisplayName("the rule score never reaches the model, because it is not part of the request")
+    void theRuleScoreIsNotAFeature() {
+        seedParties(6, 5);
+        loader.load(SEED, SeedProfile.CI, NOW);
+        exporter.export(SEED, SeedProfile.CI);
+
+        JsonNode line = lines().getFirst();
+
+        assertThat(fieldNames(line.get("transaction")))
+                .as("the extractor builds its vector from the two request fields alone; a model "
+                        + "trained on the rule score would be partly modelling the rules, and "
+                        + "beating them would then mean very little")
+                .doesNotContain("ruleScore");
+        assertThat(fieldNames(line.get("accountContext"))).doesNotContain("ruleScore");
+    }
 
     @Test
     @DisplayName("the manifest describes the file that was written")
@@ -383,6 +432,7 @@ class TrainingDatasetExporterIT extends AbstractPostgresTest {
                 scenarios,
                 transactions,
                 assembler,
+                ruleEngine,
                 contextProperties,
                 new TrainingExportProperties(true, exportDirectory, false),
                 objectMapper,

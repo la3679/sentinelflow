@@ -200,6 +200,58 @@ sentinelflow:
       # the loss of a dataset whose metrics someone has already published.
       overwrite: ${SENTINELFLOW_SCORING_EXPORT_OVERWRITE:false}
 
+  risk:
+    rules:
+      # The transparent rule indicators (ADR-0002 section 3, ADR-0008 section 3).
+      # These run in-process, in the same transaction as the assessment, because
+      # they are what answers when the scoring service cannot be reached - a
+      # ruleset reached over the network could not answer "the network is down".
+      #
+      # Illustrative synthetic indicators, not any institution's fraud rules.
+      #
+      # Persisted on every assessment beside the model and feature versions. A
+      # rule score months old cannot be defended without knowing which weights
+      # produced it, so change a weight or a threshold and this moves.
+      version: ${SENTINELFLOW_RISK_RULES_VERSION:1.0.0}
+
+      # Thresholds. Each is the value at which the indicator starts firing, and
+      # each is stated here rather than compiled in because it is an operational
+      # decision on a different schedule from the code that evaluates it. What is
+      # NOT configuration is which indicators exist: an indicator has a
+      # definition, and a definition is not a number.
+      #
+      # Four transactions inside five minutes. Ordinary retail spending does not
+      # cluster that tightly; a card being tested does.
+      velocity-5m-count: ${SENTINELFLOW_RISK_RULES_VELOCITY_5M_COUNT:4}
+      # Five times this account's OWN recent mean, never a global figure. An
+      # absolute amount threshold fires on every wealthy customer and never on a
+      # drained student account.
+      amount-ratio: ${SENTINELFLOW_RISK_RULES_AMOUNT_RATIO:5.0}
+      # Half the balance in one transaction.
+      balance-drain-ratio: ${SENTINELFLOW_RISK_RULES_BALANCE_DRAIN_RATIO:0.5}
+      # Four distinct merchants within the hour, which is what card testing looks
+      # like from the account's side.
+      distinct-merchants-1h-count: ${SENTINELFLOW_RISK_RULES_DISTINCT_MERCHANTS_1H_COUNT:4}
+
+      # Weights, on the contract's 0-to-100 scale. They sum to 110 deliberately:
+      # the score is clipped at 100, so a transaction tripping several strong
+      # indicators reaches the top of the scale, which is a real answer.
+      # Normalising instead would make each weight a fraction of a total that
+      # changes whenever a rule is added, so today's numbers would quietly mean
+      # something different tomorrow.
+      #
+      # Every rule needs a weight. An absent one is rejected at startup rather
+      # than defaulted to zero, because retiring a rule is a decision and not
+      # something a typo should be able to do.
+      weights:
+        VELOCITY_5M_HIGH: 25
+        AMOUNT_RATIO_HIGH: 20
+        NEW_DEVICE: 15
+        COUNTRY_CHANGE: 15
+        BALANCE_DRAIN_HIGH: 15
+        OFF_HOURS: 10
+        DISTINCT_MERCHANTS_1H_HIGH: 10
+
   seed:
     enabled: ${SENTINELFLOW_SEED_ENABLED:false}
     # The same value produces the same dataset on any machine, which is what

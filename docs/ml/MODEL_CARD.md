@@ -57,15 +57,15 @@ it, and a number that exists gets quoted.
 
 | Metric | logistic-regression | rules-baseline | Note |
 | ------ | ------ | ---------------- | ---- |
-| PR-AUC (average precision) | 0.8327 | 0.1535 | higher is better |
-| Precision at the operating point | 1.0000 | 0.5417 |  |
+| PR-AUC (average precision) | 0.8327 | 0.2611 | higher is better |
+| Precision at the operating point | 1.0000 | 0.7222 |  |
 | Recall at the operating point | 0.2000 | 0.1733 |  |
-| F1 | 0.3333 | 0.2626 |  |
-| F-beta (beta=2) | 0.2381 | 0.2006 |  |
-| False-positive rate | 0.0000 | 0.0045 | lower |
-| Alert rate | 0.0060 | 0.0096 | vs the budget |
-| Brier score | 0.0081 | 0.0472 | lower is better |
-| ROC-AUC (secondary only) | 0.9386 | 0.5308 |  |
+| F1 | 0.3333 | 0.2796 |  |
+| F-beta (beta=2) | 0.2381 | 0.2044 |  |
+| False-positive rate | 0.0000 | 0.0021 | lower |
+| Alert rate | 0.0060 | 0.0072 | vs the budget |
+| Brier score | 0.0081 | 0.0277 | lower is better |
+| ROC-AUC (secondary only) | 0.9386 | 0.6659 |  |
 
 Confusion matrix at the operating point: 15 true positives, 0 false positives, 60 false negatives, 2424 true negatives (75 positives and 2424 negatives in the holdout).
 
@@ -91,6 +91,11 @@ if it beats the rules baseline by at least 0.05
 PR-AUC, and
 a gap inside the cross-validation fold spread is fold noise and goes to the simpler
 model.
+
+**The baseline is the ruleset `apps/api` actually runs**, version
+`1.0.0`, which scored every example as it was exported. It is not a
+Python reimplementation of those rules: two implementations would drift, and the
+drift would present as a model beating a baseline nobody runs.
 
 `IsolationForest` was compared and is **not eligible to ship**: its anomaly score is
 unbounded and dataset-relative, so giving it a stable 0-to-100 meaning would require

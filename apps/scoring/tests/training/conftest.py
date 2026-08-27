@@ -33,6 +33,7 @@ def _example(
     index: int,
     at: datetime,
     label: str,
+    rule_score: str,
     amount: str = "40.0000",
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -58,6 +59,11 @@ def _example(
             "truncated": False,
         },
         "label": label,
+        # Written by the fixture rather than computed, for the same reason the
+        # rest of this file is JSON on disk: what the loader reads has to be the
+        # shape `apps/api` writes, and the API's ruleset is not runnable from
+        # here. The distribution below is what matters — see build_export.
+        "ruleScore": rule_score,
     }
 
 
@@ -105,6 +111,13 @@ def build_export(
     which tests the selection rule and nothing else. These are separable by a
     model and invisible to the rules, which is the case worth exercising.
 
+    The ``ruleScore`` on each line says the same thing in the field the trainer
+    actually reads: the ruleset catches **one planted row in six** and fires
+    weakly on some background traffic, so the baseline is neither degenerate nor
+    unbeatable. A fixture where every rule score were zero would give the
+    baseline a PR-AUC of exactly the base rate and a threshold of zero, which is
+    a comparison against nothing rather than against a floor.
+
     Positives are spread over ``positive_accounts`` accounts and **across the
     whole window**, not concentrated at one end. Both halves need them: the
     holdout so recall is defined, and the training set so a supervised model has
@@ -120,6 +133,11 @@ def build_export(
             at = WINDOW_START + timedelta(hours=6 * index)
             planted = account < positive_accounts and index % 3 == 0
 
+            if planted:
+                rule_score = "40.00" if index % 6 == 0 else "10.00"
+            else:
+                rule_score = "15.00" if index % 5 == 0 else "0.00"
+
             lines.append(
                 json.dumps(
                     _example(
@@ -127,6 +145,7 @@ def build_export(
                         index=index,
                         at=at,
                         label=SHAPE if planted else NORMAL,
+                        rule_score=rule_score,
                         amount="150.0000" if planted else "40.0000",
                         history=_history(at, 3 if planted else 0),
                     )
@@ -147,6 +166,7 @@ def build_export(
                 "generated": len(lines),
                 "distribution": {NORMAL: 0, SHAPE: 0},
                 "negativeLabel": NORMAL,
+                "rulesetVersion": "1.0.0",
                 "scenarioChecksum": "0" * 64,
                 "datasetSha256": "1" * 64,
             },

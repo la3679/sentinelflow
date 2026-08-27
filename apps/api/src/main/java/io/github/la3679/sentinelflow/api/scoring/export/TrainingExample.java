@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.scoring.export;
 
+import java.math.BigDecimal;
+
+import io.github.la3679.sentinelflow.api.risk.rules.RuleOutcome;
 import io.github.la3679.sentinelflow.api.scoring.payload.AccountContext;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreRequest;
 import io.github.la3679.sentinelflow.api.scoring.payload.TransactionToScore;
@@ -23,10 +26,24 @@ import io.github.la3679.sentinelflow.api.seed.scenario.ScenarioType;
  * {@code label}, and two fields that must agree are two fields that can disagree. Which labels are
  * positive is stated once, in the manifest's {@code negativeLabel}, so the trainer reads it rather
  * than hard-coding {@code NORMAL} in a second language.
+ *
+ * <p><strong>{@code ruleScore} is computed by the ruleset that ships, and it is a comparison rather
+ * than a feature.</strong> ADR-0010 §5 lets a model ship only if it beats the rules baseline by a
+ * stated margin, which is only an honest gate if the baseline is the ruleset the API actually runs
+ * when scoring is unavailable. The alternative — reimplementing the rules in Python for the
+ * evaluation — is the same mistake ADR-0010 §1 rejects for the account context, with the same
+ * failure mode: two implementations drift, and the drift shows up as a model beating a baseline
+ * nobody runs. So the shipped engine evaluates every example as it is exported, exactly as it will
+ * evaluate a live transaction, and the trainer reads the column.
+ *
+ * <p>It is not part of {@code ScoreRequest} and therefore cannot reach the feature extractor, which
+ * builds its vector from the two request fields alone. That matters: a model trained on the rule
+ * score would be partly modelling the rules, and beating them would then mean very little.
  */
-public record TrainingExample(TransactionToScore transaction, AccountContext accountContext, ScenarioType label) {
+public record TrainingExample(
+        TransactionToScore transaction, AccountContext accountContext, ScenarioType label, BigDecimal ruleScore) {
 
-    public static TrainingExample of(ScoreRequest request, ScenarioType label) {
-        return new TrainingExample(request.transaction(), request.accountContext(), label);
+    public static TrainingExample of(ScoreRequest request, ScenarioType label, RuleOutcome rules) {
+        return new TrainingExample(request.transaction(), request.accountContext(), label, rules.score());
     }
 }

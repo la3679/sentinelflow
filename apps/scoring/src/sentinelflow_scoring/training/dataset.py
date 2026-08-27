@@ -63,6 +63,18 @@ class TrainingData:
     :param labels: the original shape name per row. Not used for fitting; kept so
         the evaluation can report recall per shape, which is the number that says
         *which* patterns a model actually finds.
+    :param rule_scores: what the API's own ruleset scored each example, on the
+        contract's 0-to-100 scale. **Read, never computed here.** ADR-0010 §5 lets
+        a model ship only if it beats the rules baseline by a stated margin, and
+        that is an honest gate only when the baseline is the ruleset the API runs
+        when scoring is unavailable. A Python reimplementation would drift from
+        it, and the drift would present as a model beating a baseline nobody runs
+        — the same failure ADR-0010 §1 rejects for the account context.
+
+        **Never a feature.** It is not part of the ``ScoreRequest``, so
+        :func:`sentinelflow_scoring.features.extract` cannot see it. A model
+        trained on the rule score would be partly modelling the rules, and beating
+        them would then mean very little.
     :param feature_names: the column order, fixed and carried into the registry.
     :param manifest: the export's own manifest, verbatim.
     """
@@ -72,6 +84,7 @@ class TrainingData:
     groups: NDArray[np.str_]
     times: NDArray[np.datetime64]
     labels: tuple[str, ...]
+    rule_scores: NDArray[np.float64]
     feature_names: tuple[str, ...]
     manifest: dict[str, Any]
 
@@ -107,13 +120,21 @@ def load(directory: Path) -> TrainingData:
     labels: list[str] = []
     groups: list[str] = []
     times: list[datetime] = []
+    rule_scores: list[float] = []
 
     for number, line in _lines(dataset_file):
         try:
             label = line["label"]
+            rule_score = float(line["ruleScore"])
             request = ScoreRequest.model_validate(
                 {"transaction": line["transaction"], "accountContext": line["accountContext"]}
             )
+        except KeyError as error:
+            raise DatasetError(
+                f"{dataset_file} line {number} has no {error.args[0]}. An export written before "
+                "the API carried its own rule score cannot be compared against the baseline that "
+                "ships. Re-export it: make export-dataset"
+            ) from error
         except Exception as error:
             raise DatasetError(
                 f"{dataset_file} line {number} is not a labelled ScoreRequest: {error}"
@@ -123,6 +144,7 @@ def load(directory: Path) -> TrainingData:
         labels.append(label)
         groups.append(request.transaction.account_reference)
         times.append(request.transaction.occurred_at)
+        rule_scores.append(rule_score)
 
     if not rows:
         raise DatasetError(
@@ -154,6 +176,7 @@ def load(directory: Path) -> TrainingData:
         groups=np.array(groups, dtype=np.str_),
         times=np.array([np.datetime64(t.replace(tzinfo=None), "s") for t in times]),
         labels=tuple(labels),
+        rule_scores=np.array(rule_scores, dtype=np.float64),
         feature_names=feature_names,
         manifest=manifest,
     )
