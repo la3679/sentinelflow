@@ -7,7 +7,7 @@
   "dataset_generator_version": "1.1.0",
   "dataset_profile": "LOCAL",
   "dataset_seed": 20260826,
-  "dataset_sha256": "fe5f8b92c1273ea9a1e24e5483cda7ce61f9d725a126ec12fd9eb9403d98895d",
+  "dataset_sha256": "8eb1bac86d0f018d22bfbc8c41bf828dca23be71d2edaa6e9979ff17d642f9dc",
   "environment_lock_sha256": "215e50439e4fabbd331f80e893222ed713b8df867de75be1ebce809b769e340e",
   "feature_names": [
     "account_age_days",
@@ -43,5 +43,5 @@
   "operating_point": 99.99986221214922,
   "seed": 20260826,
   "split_strategy": "group-disjoint by accountReference, holdout restricted to transactions at or after the time cutoff",
-  "trained_at": "2026-08-27T02:44:34Z"
+  "trained_at": "2026-08-27T15:11:21Z"
 }

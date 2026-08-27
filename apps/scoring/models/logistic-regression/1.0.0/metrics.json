@@ -137,22 +137,22 @@
   "minimumMarginOverRules": 0.05,
   "operatingPoint": 99.99986221214922,
   "rules-baseline": {
-    "alert_count": 24,
-    "alert_rate": 0.009603841536614645,
-    "brier": 0.0472328931572629,
+    "alert_count": 18,
+    "alert_rate": 0.007202881152460984,
+    "brier": 0.027725090036014404,
     "confusion": {
       "false_negatives": 62,
-      "false_positives": 11,
-      "true_negatives": 2413,
+      "false_positives": 5,
+      "true_negatives": 2419,
       "true_positives": 13
     },
-    "f1": 0.2626262626262626,
-    "false_positive_rate": 0.004537953795379538,
-    "fbeta": 0.2006172839506173,
+    "f1": 0.27956989247311825,
+    "false_positive_rate": 0.0020627062706270625,
+    "fbeta": 0.20440251572327045,
     "negatives": 2424,
     "positives": 75,
-    "pr_auc": 0.1535300317486569,
-    "precision": 0.5416666666666666,
+    "pr_auc": 0.2611432391594509,
+    "precision": 0.7222222222222222,
     "recall": 0.17333333333333334,
     "recall_by_label": {
       "ACCOUNT_DRAIN": 0.16666666666666666,
@@ -162,9 +162,10 @@
       "OFF_HOURS_NEW_DEVICE": 0.0,
       "VELOCITY_BURST": 0.42857142857142855
     },
-    "roc_auc": 0.5308195819581958,
+    "roc_auc": 0.6659020902090209,
     "threshold": 35.0
   },
+  "rulesetVersion": "1.0.0",
   "selected": "logistic-regression",
   "selectionReason": "logistic-regression has the best holdout PR-AUC (0.8327) among qualifying models and is also the simplest.",
   "trainRows": 7876
