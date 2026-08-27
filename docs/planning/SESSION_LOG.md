@@ -1011,3 +1011,112 @@ None.
 
 Recorded in `PROJECT_STATE.md`: reproducible training with the registry and the model card, then
 `/v1/score` and `/v1/model`, then the rules baseline, the Spring client and persisted assessments.
+
+---
+
+## Session 10 — 2026-08-26 — training, and four defects that only running it could find
+
+Ended on an **emergency checkpoint** at the user's prompt that context was nearly exhausted. The
+training pipeline was already committed and pushed before this entry was written; nothing was left
+uncommitted.
+
+Five pull requests across the session: ADR-0010 (#36), the account-context assembler (#37), the
+off-hours generator fix (#38), the labelled export (#39), the phase checkpoint (#40), and the
+training pipeline (#41).
+
+### What landed
+
+`make train` reads the labelled export, compares four candidates, applies the rule ADR-0010 §5 fixed
+before anything was measured, and writes a registry entry with its manifest, metrics, plots and a
+generated model card. Measured on the LOCAL profile: 20,707 examples, 707 planted, and a holdout of
+2,499 rows carrying 75 positives. Logistic regression selected at PR-AUC 0.8327 against a rules
+baseline of 0.1535.
+
+**The features come from the serving extractor.** The loader parses each line back into a
+`ScoreRequest` and calls `features.extract` — the same function `/v1/score` will call — and a test
+asserts the _values_ match rather than the shapes. That is ADR-0010 §1 asserted rather than trusted.
+
+### The four defects, and why none of them would have shown up in review
+
+**The split produced an empty holdout, twice.** Positives are concentrated in a small minority of
+accounts and each planted shape occupies a narrow window, so an unstratified account holdout
+intersected with a time boundary is empty routinely rather than unluckily. Stratifying on "carries a
+shape" was not enough either — all seven held-out positive accounts had their shapes before the
+cutoff. It stratifies on "carries a shape _after the cutoff_" now.
+
+Both failures were loud, because the split raises rather than reporting a recall over zero
+positives. That was worth more than any amount of care: the alternative implementation would have
+returned 0.0 and been believed.
+
+**One threshold shared across candidates.** Two models can rank identically and place their scores
+at completely different absolute values, so a threshold from one applied to another compares two
+different alert volumes — which is the entire point of budgeting against a review capacity. Each
+candidate takes its operating point from its own out-of-fold distribution now.
+
+**A holdout of three positives.** The DEMO profile produces one. The selected model's PR-AUC moved
+from 0.06 to 0.39 on the difference between finding one of them and none. Nothing about those
+numbers was fabricated and publishing them would still have been dishonest — they would have been
+presented as evidence while being incapable of supporting a conclusion. There is a floor of 20
+positives now, below which nothing is promoted, and the card states the count either way so a reader
+can judge for themselves.
+
+**The model card printed `100.00` for a threshold of `99.99986221`.** No score reaches exactly 100,
+so a reader applying `100.00` would have alerted on nothing at all. This is the one that would have
+survived any review: the number was correct, the rounding was conventional, and the document was
+wrong.
+
+### The plots had to be looked at, not merely generated
+
+The first reliability curve used quantile bins. With 97% of transactions scoring near zero, every
+bin landed in that corner and the plot said nothing about the top of the scale — the only region an
+operating point is ever in. Uniform bins fixed it, and markers are now sized by bin count so the
+jagged middle reads as sparsity rather than as mis-calibration. A plot that is generated and never
+opened is an artefact, not evidence.
+
+### joblib warns on every model load, and it is on the serving path
+
+joblib 1.5.3 assigns to `array.shape`, which NumPy 2.5.2 deprecated. Measured with and without
+compression. When NumPy removes the behaviour the scoring service stops being able to load a model.
+Silenced narrowly by message so `filterwarnings = ["error"]` survives everywhere else, and recorded
+as an open item. ADR-0004 already pins the Python version to joblib's support window; this is the
+second reason to watch it.
+
+### Tests and results — every figure from a run on 2026-08-26
+
+| Command                                        | Result                                         |
+| ---------------------------------------------- | ---------------------------------------------- |
+| `uv run pytest` (apps/scoring)                 | **PASS** — 94 tests, 96.75% coverage, floor 90 |
+| `uv run ruff check`, `ruff format --check`     | **PASS**                                       |
+| `uv run mypy` (strict)                         | **PASS** — 30 source files                     |
+| `./mvnw verify` (apps/api, earlier in session) | **PASS** — 63 unit, 152 integration, gate met  |
+| `bun run format:check`                         | **PASS** — repository-wide                     |
+| `bun scripts/dev/check-docs.mjs`               | **PASS** — 128 links across 37 files           |
+| `uv sync --no-dev` then import check           | matplotlib absent; sklearn and joblib present  |
+| PowerShell parse of `sf.ps1`                   | **PASS** — 0 errors                            |
+
+### Decisions worth recording
+
+- **matplotlib is a training-only dependency**, so the serving image never carries a plotting library
+  on the request path. Verified by installing as the image does rather than by reading the flag.
+  R-2026-08-26-01.
+- **pandas is deliberately not installed** although ADR-0004 anticipated it. The extractor produces a
+  dict of floats and the model wants an array; ADR-0004's table pins a version to use if a need
+  appears, and none has.
+- **`.gitignore` lost its `models/*.joblib` rule**, because ADR-0010 §6 is later and binds. The rule
+  would not have matched the nested entry path anyway, so the artifact was already being committed by
+  accident — now it is by decision, with a command-enforced size ceiling.
+- **The rules baseline in `apps/scoring` is a stand-in and says so.** When `apps/api`'s ruleset lands
+  it must be replaced by scoring that ruleset, not kept alongside it.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: `/v1/score` and `/v1/model` against the registry entry, then the
+rules baseline in `apps/api`, then the Spring client and persisted assessments.
+
+**The local database is on the LOCAL profile** — 20,707 transactions — because the evaluation needed
+it. `PROJECT_STATE.md` records how to move back down, including that truncating without `users`
+fails startup on `users_username_unique`.
