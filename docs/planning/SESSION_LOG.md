@@ -872,3 +872,142 @@ None.
 Recorded in `PROJECT_STATE.md`: the account-context assembler and the labelled export, then
 reproducible training and the registry, then the scoring endpoints, the rules baseline and the
 Spring client.
+
+---
+
+## Session 9 — 2026-08-26 — the assembler, a defect it uncovered, and the labelled export
+
+Four pull requests. Two were what ADR-0010 §1 called for; the third was not planned and is the most
+interesting.
+
+### One assembler, because the second one is the defect
+
+[#37](https://github.com/la3679/sentinelflow/pull/37). All sixteen features are computed from the
+account context, so a training-time assembler that windowed, ordered, capped or truncated even
+slightly differently from the runtime one produces train/serve skew — and skew of that kind is
+invisible to every metric in an evaluation report, because both halves of the comparison come from
+the training assembler and agree with each other perfectly while disagreeing with production. There
+is no assertion that catches it afterwards. There is only not writing the second implementation.
+
+Three properties are enforced by the query rather than by convention. The window ends **strictly**
+before the scored transaction's own `occurredAt` — the API sends history as of when it asked, so a
+replayed transaction legitimately carries rows from after itself — and the strict `<` is also what
+excludes the transaction from its own history without needing its identifier, so one query serves a
+persisted transaction and one that is not yet persisted.
+
+Ordering breaks ties on `id`, which is load-bearing rather than tidy: with `occurredAt` alone, rows
+sharing an instant come back in whatever order the plan produces, and once the result is truncated to
+the cap, _which_ rows survive varies between runs. The same transaction would score differently on a
+retry — an unreproducible score nobody would think to blame on an `ORDER BY`. The integration test
+asserts it with every row at one instant.
+
+Truncation is detected by asking for one row more than the cap. Exactly the cap is not reported as
+truncated: it is a complete answer, and claiming otherwise would turn every downstream count into a
+floor when it is exact.
+
+**The balance is a parameter, and that seam is the one place ADR-0010's guarantee is narrower than it
+reads.** `transactions` has no balance-after column, so a historical balance is not reconstructible
+from the schema. Making it a parameter puts the obligation on the caller in the open rather than
+letting an export inherit a wrong number silently.
+
+### The off-hours shape had never been in the off hours
+
+[#38](https://github.com/la3679/sentinelflow/pull/38), found while building the export and fixed
+before any of it became a training label.
+
+`OFF_HOURS_NEW_DEVICE` landed two hours after whatever time of day the run began. Measured, seed
+20260826, profile CI: a midnight window start gave UTC hours 2 and 3; noon gave 14 and 15; 17:23:41
+gave 19 and 21. The production caller passes `Instant.now()`, so midnight — the one start that made
+it correct — essentially never happens. In every real seeded demo the planted "off-hours" transaction
+sat at an ordinary hour and `is_off_hours` never fired on it.
+
+Two guarantees were in conflict and one was unstated. Offsets from the window start are what make the
+dataset reproducible and what the checksum covers; an off-hours shape is a _time of day_, which
+cannot be expressed as an offset from an arbitrary instant. `generate()` now anchors the window start
+to a UTC day boundary, so the precondition holds for every caller rather than for the ones who
+remember it. Anchoring rather than computing an absolute target is deliberate: snapping to 02:00
+would have made offsets depend on the hour a run started, and the same dataset would then hash
+differently between runs.
+
+**The existing test passed for the wrong reason**, which is the part worth keeping. It asserted
+`offset().toHours() % 24` was between 2 and 3 — a property of the offset arithmetic, not of when the
+transaction occurred — and the suite's fixture window began at midnight, where the two agree exactly.
+The `@DisplayName` claimed the right property and the assertion checked a different one. It reads
+`occurredAt` now, and a second test runs four window starts including 12:00, 17:23:41 and 23:59:59.
+
+A test whose fixture happens to sit exactly where a defect is invisible is worse than no test: it
+reports the property as checked.
+
+### The labelled export, and the failure that would not announce itself
+
+[#39](https://github.com/la3679/sentinelflow/pull/39). Labels are recovered rather than read, because
+`ScenarioType` never enters the schema. The export regenerates from the same seed and joins to the
+stored rows by idempotency key — derived from the seed, a sequence number and the transaction's
+offset within the window, never from a clock — so an export run days later still lands every label on
+its own row. `export()` therefore takes no instant at all: the window end is immaterial to the
+output, and the signature saying so is better than implying it must match.
+
+**A join shifted by one would produce a complete, well-formed, entirely mislabelled file.** The
+trainer would run, the metrics would compute, and the model would simply be mediocre for a reason
+nobody could attribute. Both halves therefore regenerate through one `ScenarioDataset` — two copies
+of the same two queries are two chances for an `ORDER BY` to drift — and the integration test
+re-derives the join backwards, line to `transactionId` to the stored row to its key. Two independent
+routes to the same answer is the only check a shifted join fails.
+
+It calls the runtime assembler, balance read included, which is exact rather than approximate because
+**nothing in this application ever changes an account balance**. A test asserts that invariant
+directly, so introducing balance mutation fails it and forces the export onto the parameter seam
+rather than leaving a feature quietly wrong.
+
+### Running it, rather than reading it
+
+The compose wiring and the bind mount are exactly what no test covers, so the export was run against
+the live stack. Seed 20260826, profile CI: the loader reported 242 generated, 242 written, 42
+planted; the exporter reported 242 examples, 42 planted, dataset SHA-256 `91571d40…`.
+
+`sha256sum` on the host matched the manifest, so the bind mount and the checksum agree. The
+manifest's `scenarioChecksum` equalled the checksum the _loader_ logged at seed time, which is the
+regeneration matching the load. The file itself: 0 context rows at or after their own transaction,
+amounts strings throughout, 2 null devices present rather than omitted, and the two off-hours
+examples at 02:17:08Z and 03:46:08Z — the previous commit's fix, correct through the whole pipeline.
+
+### Tests and results — every figure from a run on 2026-08-26
+
+| Command                                  | Result                                                         |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| `./mvnw verify` (JDK 25.0.4.1+1)         | **PASS** — 63 unit, 152 integration, coverage gate met         |
+| The same, on the GitHub runner           | **PASS** — same counts, gate met                               |
+| JaCoCo over both suites                  | 81.6% lines (1315/1612), 71.8% branches (216/301)              |
+| `bun scripts/dev/check-docs.mjs`         | **PASS** — 128 links across 37 files, 0 broken, 0 placeholders |
+| `bun scripts/dev/check-contracts.mjs`    | **PASS** — every document                                      |
+| `bun run format:check` (repository-wide) | **PASS**                                                       |
+| PowerShell parse of `sf.ps1`             | **PASS** — 0 errors                                            |
+
+Integration tests went 138 to 152 and unit tests 61 to 63. The new suites are
+`AccountContextAssemblerIT` (14), `ScoringPayloadContractIT` (8), `TrainingDatasetExporterIT` (14)
+and `ScoringContextPropertiesTests` (4), plus two generator tests.
+
+### Decisions worth recording
+
+- **ADR-0010 was corrected against the scoring contract before it merged.** The draft said the
+  service "returns a calibrated probability in [0, 1]"; the merged contract fixes `modelScore` at 0
+  to 100 and says it is not a probability. Nothing failed and no check would have caught it — a
+  decision document reads as permission, so it would have been what the next implementation followed.
+  Only the units were wrong; calibration is a property of the mapping, not of the units.
+- **The coverage gate stays at 0.70/0.60** despite measuring above both, for the reason recorded last
+  session: the next turn comes when Phase 4 finishes.
+- **Two items are deliberately left for the training commit** rather than resolved quietly here: the
+  `.gitignore` rule that ignores `apps/scoring/models/*.joblib` while ADR-0010 §6 says the artifact is
+  committed, and the fact that `balanceDrainRatio` is measured against a balance that never moves, so
+  an `ACCOUNT_DRAIN` reads as three independent partial drains rather than one cumulative emptying.
+  Both belong in the model card and the evaluation document, where a reader would otherwise assume
+  the opposite.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: reproducible training with the registry and the model card, then
+`/v1/score` and `/v1/model`, then the rules baseline, the Spring client and persisted assessments.

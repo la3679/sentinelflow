@@ -14,15 +14,15 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-26T23:05Z                                                                                                                                |
+| Last updated UTC     | 2026-08-27T01:45Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 4 in progress: the boundary, the data, the contract and the model decision                                                        |
-| Current phase        | Phase 4 — synthetic data and scoring (five of fourteen pieces done)                                                                              |
-| Current task         | the account-context assembler and the labelled export, then reproducible training                                                                |
+| Overall status       | active — Phase 4 in progress: everything up to the model itself has landed                                                                       |
+| Current phase        | Phase 4 — synthetic data and scoring (seven of fourteen pieces done)                                                                             |
+| Current task         | reproducible training, evaluation and the model registry                                                                                         |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `docs/adr-model-and-evaluation`                                                                                                                  |
+| Working branch       | `docs/phase-4-export-checkpoint`                                                                                                                 |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
@@ -128,7 +128,7 @@ prompt-dump into something verified, with two generated screenshots.
 
 ## In progress — Phase 4
 
-Five pieces have landed. The rest of the phase is the model itself and the client that calls it.
+Seven pieces have landed. The rest of the phase is the model itself and the client that calls it.
 
 **[ADR-0008](docs/adr/0008-scoring-service-boundary.md), merged as PR
 [#29](https://github.com/la3679/sentinelflow/pull/29).** Written before either side of the boundary
@@ -238,6 +238,89 @@ margin, and **the rules ship alone if none does**; a gap inside the cross-valida
 fold noise and goes to logistic regression; and the operating point is chosen against an
 alert-volume budget rather than by maximising F1, because an analyst team is a fixed-capacity queue.
 
+**The account-context assembler, merged as PR
+[#37](https://github.com/la3679/sentinelflow/pull/37).** One implementation behind both training and
+serving. Three properties are enforced by the query rather than by convention: the window ends
+**strictly** before the scored transaction's own `occurredAt` (which also excludes it from its own
+history, without needing its identifier); ordering breaks ties on `id`, because with `occurredAt`
+alone the rows surviving a truncation would vary between plans and the same transaction would score
+differently on a retry; and truncation is detected by asking for one row more than the cap, with
+exactly the cap reported as complete rather than truncated.
+
+**The balance is a parameter, which is the one place ADR-0010's "same assembler" guarantee is
+narrower than it reads.** `transactions` has no balance-after column, so a historical balance is not
+reconstructible from the schema. The seam exists so an export cannot inherit a wrong balance
+silently — see the export below for why it is currently unused.
+
+**The labelled export, merged as PR
+[#39](https://github.com/la3679/sentinelflow/pull/39).** One JSON object per line: the exact
+`ScoreRequest` plus the planted `ScenarioType`, with a manifest carrying the generator version, seed,
+profile, context version, lookback, class distribution, `negativeLabel`, scenario checksum and a
+SHA-256 over the file. Written to `data/generated/training/`, which `.gitignore` already excludes.
+
+**Labels are recovered, not read.** The export regenerates from the same seed and joins to the
+stored rows by idempotency key — which the generator derives from the seed, a sequence number and
+the transaction's offset within the window, never from a clock. So `export()` takes no instant: the
+window end is immaterial, and the signature says so rather than implying it must match.
+
+**A shifted join is the failure that would not announce itself.** It would produce a complete,
+well-formed, entirely mislabelled file; the trainer would run and the model would simply be
+mediocre. Both halves therefore regenerate through one `ScenarioDataset`, and the integration test
+re-derives the join backwards — line, to `transactionId`, to the stored row, to its key — because
+two independent routes to the same answer is the only check a shifted join fails.
+
+**It calls the runtime assembler, balance read included**, which is exact rather than approximate
+because **nothing in this application ever changes an account balance**. A test asserts that
+invariant directly, so introducing balance mutation fails it and forces the export onto the seam
+above rather than leaving a feature quietly wrong.
+
+### The off-hours shape was not in the off hours, and had never been
+
+Merged as PR [#38](https://github.com/la3679/sentinelflow/pull/38), found while building the export.
+
+`OFF_HOURS_NEW_DEVICE` landed two hours after whatever time of day the run began. Measured before
+the fix, seed 20260826, profile CI:
+
+| Window start           | UTC hours the shape landed on |
+| ---------------------- | ----------------------------- |
+| `2026-08-12T00:00:00Z` | 2, 3                          |
+| `2026-08-12T12:00:00Z` | 14, 15                        |
+| `2026-08-12T17:23:41Z` | 19, 21                        |
+
+The production caller is `SeedRunner`, which passes `Instant.now()`, so midnight — the one window
+start that made it correct — essentially never happens. In every real seeded demo the planted
+"off-hours" transaction sat at an ordinary hour, and `is_off_hours` never fired on it.
+
+**The cause was two guarantees in conflict, one of them unstated.** Offsets from the window start
+are what make the dataset reproducible and what the manifest's checksum covers; an off-hours shape
+is defined by a time of day, which cannot be expressed as an offset from an arbitrary instant. The
+code assumed a midnight-aligned window start and never said so. `generate()` now anchors it, so the
+precondition holds for every caller rather than for the ones who remember.
+
+**The existing test passed for the wrong reason**, which is the more useful half. It asserted
+`offset().toHours() % 24` was between 2 and 3 — a property of the offset arithmetic, not of when the
+transaction occurred — and the fixture window began at midnight, where the two agree exactly. It
+reads the hour from `occurredAt` now, and a second test runs four window starts including 12:00,
+17:23:41 and 23:59:59.
+
+`GENERATOR_VERSION` moved 1.0.0 → 1.1.0: the same seed now produces different traffic, and the
+manifest records which generator drew a dataset precisely so that is attributable.
+
+### Two things the training work has to resolve rather than inherit
+
+- **`.gitignore` and ADR-0010 §6 disagree about the model artifact.** The ignore rule
+  `apps/scoring/models/*.joblib` predates the ADR, which says the artifact is committed so a demo can
+  score without someone running a training job first. ADRs bind until superseded, so the ignore rule
+  is what changes — but it is a deliberate decision to make in the training commit, with the ADR
+  noting that it supersedes the earlier rule, rather than a line quietly deleted.
+- **`balanceDrainRatio` is measured against a balance that never moves.** Since nothing mutates a
+  balance, each transaction's drain ratio is against the account's opening balance rather than a
+  running one — so an `ACCOUNT_DRAIN`'s three withdrawals read as three independent partial drains
+  rather than as one cumulative emptying. The velocity and one-hour-sum features are what actually
+  carry that shape. Not a defect in the feature, which computes what its name says; a limitation of
+  what the schema records, and one the model card and `EVALUATION.md` must state rather than let a
+  reader assume otherwise.
+
 ### What remains in Phase 4
 
 | Piece                                       | State                                                    |
@@ -247,13 +330,14 @@ alert-volume budget rather than by maximising F1, because an analyst team is a f
 | Scoring contract                            | **done** (#31)                                           |
 | Versioned feature pipeline                  | **done** (#34)                                           |
 | ADR-0010, model and evaluation choice       | **done**                                                 |
-| Account-context assembler                   | not started — **moved ahead of training**, ADR-0010 §1   |
-| Labelled dataset export                     | not started — `apps/api`, offline, never persisted       |
+| Account-context assembler                   | **done** (#37) — shared by training and serving          |
+| Labelled dataset export                     | **done** (#39) — `make export-dataset`, never persisted  |
 | Transparent rules baseline                  | not started — `apps/api`, per ADR-0002                   |
 | Reproducible training, evaluation, registry | not started                                              |
 | Model card and `EVALUATION.md`              | not started                                              |
 | `/v1/score` and `/v1/model` implementations | not started                                              |
 | Spring scoring client with resilience       | not started — consumes the assembler, does not write one |
+| Off-hours generator defect                  | **fixed** (#38) — found while building the export        |
 | Persisted risk assessments                  | not started                                              |
 | `make replay`                               | not started — lands with the client, see below           |
 
@@ -667,36 +751,35 @@ None.
 
 ## Next three actions
 
-Phase 4 is in progress and `main` is green. Nothing is blocked. ADR-0010 is decided, and it moved
-the account-context assembler ahead of training — that reorder is what item 1 is.
+Phase 4 is in progress and `main` is green. Nothing is blocked. The assembler and the labelled
+export have landed, so training now has a dataset produced by the code that will serve it.
 
-1. **The account-context assembler in `apps/api`, and the labelled export built on it.** One
-   implementation, used by the runtime scoring call and by training, per ADR-0010 §1: it computes
-   the bounded history ADR-0008 fixes as what crosses the boundary — the lookback window, the
-   newest-first ordering, the 200-row cap and the `truncated` flag the contract already declares.
-   The export then runs `ScenarioGenerator` and writes one JSONL record per transaction — the exact
-   `ScoreRequest` body plus the planted `ScenarioType`. **The label goes in that file and nowhere
-   else**; `ScenarioLoaderIT` already asserts against `information_schema` that no label column
-   exists, and that assertion stays true.
-2. **Reproducible training, evaluation, and the model registry.** An explicit offline command, never
-   an API side effect. Save the dataset fingerprint, the feature version, the split strategy, the
-   seeds, the hyperparameters, the environment lock, the metrics JSON, the plots, the artifact
-   checksum and the model card. Split group-disjoint on account **and** time-ordered (ADR-0010 §3);
-   calibrate underneath the contract's 0–100 scale, and report Brier and a reliability curve (§4).
-   **Accuracy is never the headline** under
-   this imbalance — PR-AUC is, with precision, recall, false-positive rate and alert volume at the
-   budgeted operating point beside it. `docs/ml/MODEL_CARD.md` and `docs/ml/EVALUATION.md` ship with
-   the model, not after it. If nothing beats the rules baseline by the stated margin, the rules ship
-   alone and that outcome is recorded rather than worked around.
-3. **`/v1/score` and `/v1/model`, then the rules baseline, the Spring client and persisted
-   assessments.** The rules baseline lives in `apps/api` (ADR-0002), which is what makes a degraded
-   assessment a real answer rather than a null with a flag on it. The client carries the timeouts,
-   bounded retry and circuit breaker ADR-0008 §3 fixes; the breaker is load-bearing, because without
-   it every record in a backlog pays the full timeout before degrading. It **consumes the assembler
-   from item 1** rather than writing a second one. The first real `TransactionCreatedHandler`
-   registers into the list the consumer already injects, so the consumer needs no change.
-   `make replay` lands here, since a scoring outage and a poison event are the scenarios worth
-   replaying.
+1. **Reproducible training, evaluation, and the model registry.** An explicit offline command, never
+   an API side effect (§12.6). Read `data/generated/training/dataset.jsonl`, take the negative class
+   from the manifest's `negativeLabel` rather than hard-coding `NORMAL`, and save the dataset
+   fingerprint, feature version, split strategy, seeds, hyperparameters, environment lock, metrics
+   JSON, plots, artifact checksum and model card. Split group-disjoint on account **and**
+   time-ordered (ADR-0010 §3); calibrate underneath the contract's 0–100 scale and report Brier and
+   a reliability curve (§4). **Accuracy is never the headline** under this imbalance — PR-AUC is,
+   with precision, recall, false-positive rate and alert volume at the budgeted operating point
+   beside it. `docs/ml/MODEL_CARD.md` and `docs/ml/EVALUATION.md` ship with the model, not after it.
+   If nothing beats the rules baseline by the stated margin, **the rules ship alone** and that
+   outcome is recorded rather than worked around. Resolve the two inherited items above in this
+   commit: the `.gitignore`-versus-ADR-0010-§6 disagreement about the artifact, and the model card's
+   statement of the static-balance limitation.
+2. **`/v1/score` and `/v1/model` in `apps/scoring`.** Written against the contract that already
+   exists, loading the registry entry only after its SHA-256 and feature version check out, and
+   returning `modelVersion`, `featureVersion`, bounded reason codes and a measured
+   `inferenceDurationMs`. The feature pipeline and the request models are already there and already
+   tested against the same contract document.
+3. **The rules baseline, the Spring client and persisted assessments.** The rules baseline lives in
+   `apps/api` (ADR-0002), which is what makes a degraded assessment a real answer rather than a null
+   with a flag on it. The client carries the timeouts, bounded retry and circuit breaker ADR-0008 §3
+   fixes; the breaker is load-bearing, because without it every record in a backlog pays the full
+   timeout before degrading. It **consumes `AccountContextAssembler`** rather than writing a second
+   one. The first real `TransactionCreatedHandler` registers into the list the consumer already
+   injects, so the consumer needs no change. `make replay` lands here, since a scoring outage and a
+   poison event are the scenarios worth replaying.
 
 ## Session startup commands
 
