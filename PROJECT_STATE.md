@@ -219,11 +219,18 @@ in the evaluation report can detect** — both sides of the comparison would com
 assembler. The assembler therefore moves ahead of training, and the Spring client consumes it
 instead of writing a second one.
 
-**The score is a calibrated probability, which follows from ADR-0008 §4 rather than from taste.** One
-threshold, owned by the API, has to mean the same thing under a model and under a rules-only degraded
-assessment. That rules `IsolationForest` out of production before anything is trained — its anomaly
-score is unbounded and dataset-relative, and calibrating it against labels defeats the reason it was
-included. It stays as an unsupervised comparison.
+**The 0–100 score has to be calibrated underneath, which follows from ADR-0008 §4 rather than from
+taste.** One threshold, owned by the API, has to mean the same thing under a model and under a
+rules-only degraded assessment, which requires a scale that is stable across model versions. The
+units stay the contract's: `sentinelflow-scoring.yaml` already fixes `modelScore` at 0 to 100 and
+says it is **not** a probability, because the positive class is "belongs to a planted shape" and not
+"is fraud". Calibration is a property of the mapping rather than of the units, so the two are not in
+tension — a first draft of the ADR said "returns a calibrated probability", was caught against the
+contract before merge, and the correction is recorded in the ADR's alternatives.
+
+That rules `IsolationForest` out of production before anything is trained — its anomaly score is
+unbounded and dataset-relative, and giving it a stable 0–100 meaning means calibrating against the
+labels it was included for being able to ignore. It stays as an unsupervised comparison.
 
 **The selection rule is fixed in advance so it cannot be rationalised afterwards.** PR-AUC is the
 headline and accuracy is never one; a model ships only if it beats the rules baseline by a stated
@@ -675,7 +682,8 @@ the account-context assembler ahead of training — that reorder is what item 1 
    an API side effect. Save the dataset fingerprint, the feature version, the split strategy, the
    seeds, the hyperparameters, the environment lock, the metrics JSON, the plots, the artifact
    checksum and the model card. Split group-disjoint on account **and** time-ordered (ADR-0010 §3);
-   calibrate, and report Brier and a reliability curve (§4). **Accuracy is never the headline** under
+   calibrate underneath the contract's 0–100 scale, and report Brier and a reliability curve (§4).
+   **Accuracy is never the headline** under
    this imbalance — PR-AUC is, with precision, recall, false-positive rate and alert volume at the
    budgeted operating point beside it. `docs/ml/MODEL_CARD.md` and `docs/ml/EVALUATION.md` ship with
    the model, not after it. If nothing beats the rules baseline by the stated margin, the rules ship

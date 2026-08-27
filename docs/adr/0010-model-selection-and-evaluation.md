@@ -107,24 +107,41 @@ for choosing the operating point, and their numbers are reported as what they ar
 **Seeds are fixed and recorded** — the generator's, NumPy's, and every estimator's `random_state` —
 and stored in the training manifest beside the dataset fingerprint and the feature version.
 
-### 4. The score is a calibrated probability in [0, 1], and that is why Isolation Forest cannot ship
+### 4. The 0–100 score must be calibrated underneath, which is why Isolation Forest cannot ship
 
 [ADR-0008](0008-scoring-service-boundary.md) §4 gives the API one threshold, applied to a final
 score, which must mean the same thing whether the model answered or the rules answered alone. That
-is only coherent if the score is on a defined, stable scale — so the scoring service returns a
-**calibrated probability of the transaction belonging to a planted suspicious shape**, and
-calibration quality is reported (Brier score and a reliability curve) rather than assumed.
+is only coherent if the scale is stable across model versions and shared with the rules baseline.
 
-Without this, an alerting threshold of 0.8 would mean one thing under a logistic model, another
-under a boosted one, and something unrelated under a rules-only degraded assessment — and a model
-promotion would silently re-tune the business's alert volume without anyone changing the policy.
+**The units are the contract's, not this ADR's.**
+[`sentinelflow-scoring.yaml`](../../contracts/openapi/sentinelflow-scoring.yaml) already fixes
+`modelScore` as a number from 0 to 100 and states, in the schema itself, that it is **not** a
+probability — because calling it one invites "this transaction is 87% likely to be fraud", which no
+model trained here supports. That is authoritative and this ADR does not reopen it.
 
-**`IsolationForest` emits an unbounded, dataset-relative anomaly score, not a probability.** It is
-kept as an unsupervised comparison because it answers a question worth asking — how much of the
-planted structure is visible without labels at all — and it is excluded from candidacy because
-mapping its output onto a probability requires calibrating against the labels it was chosen for
-being able to ignore. Reporting it as a peer of the supervised candidates would be comparing two
-different quantities that happen to be printed to the same number of decimal places.
+**What is required is calibration, which is a property of the mapping and not of the units.** The
+estimator is fitted to produce a well-calibrated probability of the positive class, calibration is
+measured (Brier score and a reliability curve) rather than assumed, and the calibrated value is then
+carried onto the contract's 0–100 scale. A calibrated quantity is still calibrated after a fixed
+monotone rescaling, so there is no tension between the two requirements — only between "calibrated"
+and the everyday reading of the word "probability", which is exactly what the contract's wording
+guards against.
+
+**The positive class is "belongs to a planted suspicious shape", not "is fraud".** Those are
+different propositions, and the second is not something synthetic data can support a claim about.
+This is the substantive reason the contract's caution is right, and the model card repeats it.
+
+Without calibration underneath, a threshold of 80 would mean one thing under a logistic model,
+another under a boosted one, and something unrelated under a rules-only degraded assessment — and
+promoting a model would silently re-tune the business's alert volume with nobody changing the
+policy.
+
+**`IsolationForest` emits an unbounded, dataset-relative anomaly score with no calibrated mapping
+onto any fixed scale.** It is kept as an unsupervised comparison because it answers a question worth
+asking — how much of the planted structure is visible without labels at all — and it is excluded
+from candidacy because giving it a stable 0–100 meaning requires calibrating against the labels it
+was chosen for being able to ignore. Reporting it as a peer of the supervised candidates would be
+comparing two different quantities that happen to be printed to the same number of decimal places.
 
 ### 5. The selection rule is fixed here, before any of it is measured
 
@@ -199,9 +216,17 @@ scored on recognising rows it has already seen most of.
 partly in each side. Group-only splitting, without the time constraint, was rejected for allowing
 training on the test period's future.
 
-**Letting the scoring service return a band instead of a probability.** Already rejected in
+**Letting the scoring service return a band instead of a score.** Already rejected in
 [ADR-0008](0008-scoring-service-boundary.md); repeated here because the calibration requirement in
 §4 is what makes that rejection implementable rather than merely stated.
+
+**Serving the raw calibrated probability on the wire, in [0, 1].** Rejected, and the rejection is
+the contract's rather than this ADR's: `modelScore` is already specified as 0 to 100 with an
+explicit note that it is not a probability. An earlier draft of §4 said the service returns a
+calibrated probability and was corrected against the contract before this ADR was merged —
+recorded here because the correction is the point. A decision document that quietly contradicts an
+authoritative contract is worse than one that never mentioned the scale, since it reads as
+permission.
 
 **Selecting the model by highest PR-AUC, full stop.** Rejected: it makes the tree-based model the
 default outcome of the exercise regardless of margin, and it offers no answer at all to the case

@@ -123,8 +123,8 @@ exists.
 - Labelled dataset export: the exact `ScoreRequest` body plus the planted `ScenarioType`, written
   offline and never persisted to the schema
 - Reproducible model training: logistic-regression baseline, tree-based model if it materially
-  helps, Isolation Forest as an unsupervised comparison; the served score is a calibrated
-  probability (ADR-0010 §4)
+  helps, Isolation Forest as an unsupervised comparison; the contract's 0–100 `modelScore` is
+  calibrated underneath and its calibration measured, not assumed (ADR-0010 §4)
 - Time-aware / group-aware splitting; precision, recall, F1, PR-AUC, false-positive rate,
   confusion matrix, alert volume, and inference latency reported — **never accuracy as the
   headline**

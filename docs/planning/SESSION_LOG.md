@@ -808,17 +808,35 @@ path this ADR exists to close.
 ### Calibration is a consequence of ADR-0008, not a preference
 
 ADR-0008 §4 gives the API one alerting threshold that must mean the same thing under a model score
-and under a rules-only degraded score. That is only coherent if the score is on a defined, stable
-scale — so the service returns a calibrated probability, and Brier and a reliability curve are
-reported rather than assumed. Without it, a threshold of 0.8 means one thing under logistic
-regression and another under a boosted model, and promoting a model would silently re-tune the
-business's alert volume with nobody changing the policy.
+and under a rules-only degraded score. That is only coherent if the scale is stable across model
+versions — so the estimator is fitted to be well calibrated, and Brier and a reliability curve are
+reported rather than assumed. Without it, a threshold means one thing under logistic regression and
+another under a boosted model, and promoting a model would silently re-tune the business's alert
+volume with nobody changing the policy.
 
 **That rules `IsolationForest` out of production before anything is trained.** Its anomaly score is
-unbounded and dataset-relative, and mapping it onto a probability means calibrating against the
-labels it was included for being able to ignore. It stays as an unsupervised comparison, which is
-the honest role for it, rather than being reported as a peer of the supervised candidates — two
-different quantities printed to the same number of decimal places.
+unbounded and dataset-relative, and giving it a stable meaning on a fixed scale means calibrating
+against the labels it was included for being able to ignore. It stays as an unsupervised comparison,
+which is the honest role for it, rather than being reported as a peer of the supervised candidates —
+two different quantities printed to the same number of decimal places.
+
+### The first draft of that section contradicted the contract, and reading the contract caught it
+
+Worth recording as its own item, because nothing failed and no check would have.
+
+The draft said the service "returns a calibrated probability in [0, 1]". The merged scoring
+contract, from #31, already fixes `modelScore` as a number from 0 to 100 and states in the schema
+that it is **not** a probability — because calling it one invites "87% likely to be fraud", which
+synthetic planted-shape labels cannot support. CLAUDE.md makes contracts authoritative and forbids
+an ADR quietly re-deciding one, and that draft would have done exactly that: not as an obvious
+conflict a reviewer trips over, but as a decision document granting permission the contract does not.
+
+The substance survived; only the units were wrong. What ADR-0008 actually needs is a **stable scale
+across model versions**, and calibration is a property of the mapping, not of the units — a
+calibrated quantity stays calibrated after a fixed monotone rescale onto 0–100. So the score is
+calibrated underneath and served on the contract's scale, the positive class is named as "belongs to
+a planted shape" rather than "is fraud", and the rejected alternative is written into the ADR so the
+next reader sees that the scale was considered rather than overlooked.
 
 ### The selection rule was fixed before any number existed
 
