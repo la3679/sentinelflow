@@ -29,8 +29,11 @@ import org.springframework.stereotype.Service;
 
 import io.github.la3679.sentinelflow.api.persistence.entity.TransactionRecord;
 import io.github.la3679.sentinelflow.api.persistence.repository.TransactionRepository;
+import io.github.la3679.sentinelflow.api.risk.rules.RuleEngine;
+import io.github.la3679.sentinelflow.api.risk.rules.RuleOutcome;
 import io.github.la3679.sentinelflow.api.scoring.AccountContextAssembler;
 import io.github.la3679.sentinelflow.api.scoring.ScoringContextProperties;
+import io.github.la3679.sentinelflow.api.scoring.payload.ScoreRequest;
 import io.github.la3679.sentinelflow.api.seed.SeedProfile;
 import io.github.la3679.sentinelflow.api.seed.scenario.GeneratedTransaction;
 import io.github.la3679.sentinelflow.api.seed.scenario.ScenarioDataset;
@@ -89,6 +92,7 @@ public class TrainingDatasetExporter {
     private final ScenarioDataset dataset;
     private final TransactionRepository transactions;
     private final AccountContextAssembler assembler;
+    private final RuleEngine ruleEngine;
     private final ScoringContextProperties contextProperties;
     private final TrainingExportProperties properties;
     private final ObjectMapper objectMapper;
@@ -98,6 +102,7 @@ public class TrainingDatasetExporter {
             ScenarioDataset dataset,
             TransactionRepository transactions,
             AccountContextAssembler assembler,
+            RuleEngine ruleEngine,
             ScoringContextProperties contextProperties,
             TrainingExportProperties properties,
             ObjectMapper objectMapper,
@@ -105,6 +110,7 @@ public class TrainingDatasetExporter {
         this.dataset = dataset;
         this.transactions = transactions;
         this.assembler = assembler;
+        this.ruleEngine = ruleEngine;
         this.contextProperties = contextProperties;
         this.properties = properties;
         this.objectMapper = objectMapper;
@@ -148,6 +154,11 @@ public class TrainingDatasetExporter {
         List<GeneratedTransaction> generated = dataset.generate(seed, profile, REGENERATION_REFERENCE);
         Map<String, UUID> accountIds = accountIdsByReference();
 
+        // Read once and recorded in the manifest. Every example in one file is
+        // scored by one ruleset, and a dataset whose rule scores came from two
+        // of them would compare a model against a baseline that never existed.
+        String rulesetVersion = null;
+
         Map<ScenarioType, Integer> distribution = new EnumMap<>(ScenarioType.class);
         int exported = 0;
         int unmatched = 0;
@@ -174,7 +185,14 @@ public class TrainingDatasetExporter {
                     continue;
                 }
 
-                TrainingExample example = TrainingExample.of(assembler.assemble(stored.get()), candidate.scenario());
+                // The shipped engine, on the shipped request. Not a copy of the
+                // rules for training: ADR-0010 section 5's margin over the
+                // baseline only means something if the baseline is what the API
+                // runs when scoring is unavailable.
+                ScoreRequest request = assembler.assemble(stored.get());
+                RuleOutcome rules = ruleEngine.evaluate(request);
+                rulesetVersion = rules.rulesetVersion();
+                TrainingExample example = TrainingExample.of(request, candidate.scenario(), rules);
                 writer.write(objectMapper.writeValueAsString(example));
                 // \n, never the platform separator: the dataset's checksum is
                 // over these bytes, and the same data must not fingerprint
@@ -215,6 +233,7 @@ public class TrainingDatasetExporter {
                 generated.size(),
                 distribution,
                 TrainingExportManifest.NEGATIVE_LABEL,
+                rulesetVersion,
                 ScenarioDataset.checksumOf(generated),
                 HexFormat.of().formatHex(digest.digest()));
 

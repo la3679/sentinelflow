@@ -36,6 +36,9 @@ import io.github.la3679.sentinelflow.api.seed.scenario.ScenarioType;
  *     evaluation report is meaningless without it.
  * @param negativeLabel which label is the negative class. Stated here rather than assumed by the
  *     trainer, so {@code NORMAL} is not a magic string in two languages that can drift apart.
+ * @param rulesetVersion which ruleset produced the {@code ruleScore} on every example. Recorded
+ *     because the model-selection gate is a margin over that baseline (ADR-0010 §5), and a margin
+ *     over an unnamed baseline is not a result anyone can reproduce.
  * @param scenarioChecksum SHA-256 over what the generator described. Two runs producing the same
  *     value produced the same data.
  * @param datasetSha256 SHA-256 over the dataset file's bytes. This is the fingerprint the model
@@ -53,6 +56,7 @@ public record TrainingExportManifest(
         int generated,
         Map<ScenarioType, Integer> distribution,
         ScenarioType negativeLabel,
+        String rulesetVersion,
         String scenarioChecksum,
         String datasetSha256) {
 

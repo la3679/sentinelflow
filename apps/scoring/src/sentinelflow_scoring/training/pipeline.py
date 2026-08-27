@@ -42,7 +42,6 @@ from sentinelflow_scoring.training.evaluation import (
     ALERT_BUDGET,
     Metrics,
     evaluate,
-    rules_baseline_scores,
     threshold_for_budget,
 )
 from sentinelflow_scoring.training.splitting import Split, cross_validation_folds, split
@@ -128,6 +127,7 @@ class TrainingResult:
     split: Split
     threshold: float
     rules: Metrics
+    rules_version: str
     candidates: list[CandidateResult]
     selection: Selection
     estimator: object | None
@@ -138,6 +138,10 @@ class TrainingResult:
             "alertBudget": ALERT_BUDGET,
             "operatingPoint": self.threshold,
             "minimumMarginOverRules": MINIMUM_MARGIN_OVER_RULES,
+            # Which floor the margin was measured over. `apps/api` scored every
+            # example with the ruleset it runs, and a margin over an unnamed
+            # baseline is not a result anyone can reproduce.
+            "rulesetVersion": self.rules_version,
             "holdoutCutoff": str(self.split.holdout_cutoff),
             "trainRows": int(self.split.train.size),
             "holdoutRows": int(self.split.test.size),
@@ -168,13 +172,19 @@ def train(data: TrainingData, seed: int) -> TrainingResult:
 
     folds = cross_validation_folds(data, division.train, FOLDS, seed)
 
+    # The baseline is read, never recomputed. `apps/api`'s ruleset scored every
+    # example as it was exported, by the same engine that runs when the scoring
+    # service is unreachable — so the margin ADR-0010 §5 requires is a margin over
+    # what actually ships rather than over a Python approximation of it.
+    #
+    # Its operating point comes from the training rows, exactly as every
+    # candidate's does. Taking it from the holdout would give the baseline the one
+    # advantage the models are denied.
     rules = evaluate(
         test_y,
-        rules_baseline_scores(test_x, data.feature_names),
+        data.rule_scores[division.test],
         labels=test_labels,
-        threshold=threshold_for_budget(
-            rules_baseline_scores(data.x[division.train], data.feature_names), ALERT_BUDGET
-        ),
+        threshold=threshold_for_budget(data.rule_scores[division.train], ALERT_BUDGET),
     )
 
     results: list[CandidateResult] = []
@@ -221,6 +231,7 @@ def train(data: TrainingData, seed: int) -> TrainingResult:
         split=division,
         threshold=selection.model.threshold if selection.model else rules.threshold,
         rules=rules,
+        rules_version=str(data.manifest.get("rulesetVersion", "unrecorded")),
         candidates=results,
         selection=selection,
         estimator=fitted[selection.model.name] if selection.model else None,
@@ -332,12 +343,7 @@ def write_entry(
     plot_directory = directory / "plots"
     plot_directory.mkdir(exist_ok=True)
     test_y = data.y[result.split.test]
-    curves = {
-        RULES_BASELINE: (
-            test_y,
-            rules_baseline_scores(data.x[result.split.test], data.feature_names),
-        )
-    }
+    curves = {RULES_BASELINE: (test_y, data.rule_scores[result.split.test])}
     for candidate in CANDIDATES:
         estimator = candidate.build(seed)
         _fit(estimator, data.x[result.split.train], data.y[result.split.train])

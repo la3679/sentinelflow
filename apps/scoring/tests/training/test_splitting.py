@@ -88,6 +88,7 @@ def test_refuses_a_dataset_with_too_few_accounts(export: Path) -> None:
         groups=np.array(["ACC-000001"] * len(data), dtype=np.str_),
         times=data.times,
         labels=data.labels,
+        rule_scores=data.rule_scores,
         feature_names=data.feature_names,
         manifest=data.manifest,
     )
@@ -108,6 +109,7 @@ def test_refuses_when_the_holdout_would_have_no_positives(export: Path) -> None:
         groups=data.groups,
         times=times,
         labels=data.labels,
+        rule_scores=data.rule_scores,
         feature_names=data.feature_names,
         manifest=data.manifest,
     )

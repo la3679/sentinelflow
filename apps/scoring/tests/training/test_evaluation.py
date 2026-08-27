@@ -13,7 +13,6 @@ import pytest
 from sentinelflow_scoring.training.evaluation import (
     ALERT_BUDGET,
     evaluate,
-    rules_baseline_scores,
     threshold_for_budget,
 )
 
@@ -96,35 +95,6 @@ def test_recall_by_label_is_empty_when_labels_are_not_supplied() -> None:
 def test_an_empty_score_array_is_an_error_not_a_threshold() -> None:
     with pytest.raises(ValueError, match="no scores"):
         threshold_for_budget(np.array([], dtype=np.float64))
-
-
-def test_the_rules_baseline_is_bounded_and_needs_no_fitting() -> None:
-    names = (
-        "amount_to_account_mean_ratio",
-        "balance_drain_ratio",
-        "count_5m",
-        "distinct_merchants_1h",
-        "is_country_change",
-        "is_new_device",
-        "is_off_hours",
-    )
-    quiet = np.zeros((1, len(names)))
-    loud = np.array([[9.0, 0.9, 6.0, 5.0, 1.0, 1.0, 1.0]])
-
-    assert rules_baseline_scores(quiet, names)[0] == 0.0
-    assert rules_baseline_scores(loud, names)[0] == 100.0
-    assert (rules_baseline_scores(loud, names) <= 100.0).all()
-
-
-def test_the_rules_baseline_tolerates_an_unknown_feature_set() -> None:
-    """A missing column contributes nothing rather than raising.
-
-    The baseline has to keep working when the feature version moves, because it
-    is the floor a model is measured against and a floor that disappears makes
-    every model look like an improvement.
-    """
-    scores = rules_baseline_scores(np.zeros((3, 2)), ("something", "else"))
-    assert scores.tolist() == [0.0, 0.0, 0.0]
 
 
 def test_the_default_budget_is_one_percent() -> None:
