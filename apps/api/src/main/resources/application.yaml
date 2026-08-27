@@ -166,6 +166,25 @@ sentinelflow:
     # dead-lettered and the partition moves on.
     max-attempts: 5
 
+  scoring:
+    context:
+      # How much account history crosses the scoring boundary (ADR-0008), and
+      # what the same assembler puts in the labelled training export (ADR-0010
+      # section 1). Both values are stated on every request rather than assumed
+      # by the service, because a feature defined over 24 hours that only
+      # received an hour of history is not a smaller number - it is a number
+      # meaning something other than what its name says.
+      #
+      # 24 hours is the longest window any current feature is defined over: the
+      # 24-hour amount sum. Shortening it makes that feature wrong rather than
+      # cheaper, and the service warns rather than answering confidently.
+      lookback-window: ${SENTINELFLOW_SCORING_LOOKBACK_WINDOW:24h}
+      # The contract declares maxItems 200 and the properties class clamps to
+      # it, so a larger value here cannot produce a request the service is
+      # required to reject. Bounded on purpose: a request that grew with an
+      # account's history would be a denial-of-service primitive.
+      max-recent-transactions: ${SENTINELFLOW_SCORING_MAX_RECENT_TRANSACTIONS:200}
+
   seed:
     enabled: ${SENTINELFLOW_SEED_ENABLED:false}
     # The same value produces the same dataset on any machine, which is what
