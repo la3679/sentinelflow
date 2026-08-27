@@ -154,7 +154,7 @@ cd apps/scoring && uv run python -m sentinelflow_scoring.training
 
 | Model                     | Holdout PR-AUC | CV fold mean | CV spread | Eligible         |
 | ------------------------- | -------------- | ------------ | --------- | ---------------- |
-| `rules-baseline`          | 0.1535         | —            | —         | floor            |
+| `rules-baseline`          | 0.2611         | —            | —         | floor            |
 | **`logistic-regression`** | **0.8327**     | 0.8867       | 0.0723    | **selected**     |
 | `hist-gradient-boosting`  | 0.8081         | 0.8841       | 0.0814    | yes              |
 | `isolation-forest`        | 0.7154         | 0.7840       | 0.1035    | no (ADR-0010 §4) |
@@ -164,7 +164,7 @@ the simplest, so the tie-break never had to be applied.
 
 At the operating point (`99.99986221` on the 0-to-100 scale), the selected model gives precision
 1.000, recall 0.200, a false-positive rate of 0.000 and an alert rate of 0.60% against the 1%
-budget. The rules baseline at its own budgeted point gives precision 0.542 and recall 0.173.
+budget. The rules baseline at its own budgeted point gives precision 0.722 and recall 0.173.
 
 Full numbers, including the per-shape recall table and every candidate's metrics, are in
 `apps/scoring/models/logistic-regression/1.0.0/metrics.json`. The plots are beside it.
@@ -200,12 +200,17 @@ Full numbers, including the per-shape recall table and every candidate's metrics
   than rows, so the interval around every figure is wider than 2,499 rows suggests.
 - **F-beta at β=2 encodes a cost assumption** about a missed case versus a wasted review that no
   measurement here supports.
-- **The rules baseline used for this comparison lives in `apps/scoring`, not `apps/api`.** ADR-0002
-  §3 puts the production ruleset in the API, where it must run in-process when scoring is
-  unreachable. What is needed for the comparison is the same _shape_ of rule; when the API's ruleset
-  lands, this stand-in must be replaced by scoring that ruleset rather than kept alongside it. Two
-  rule implementations would drift, and the drift would show as a model beating a baseline nobody
-  runs.
+- **The baseline is now the ruleset that ships, and the earlier figure was too generous.** Until
+  2026-08-27 this comparison used a Python stand-in in `apps/scoring`, which scored the same holdout
+  at PR-AUC **0.1535** where `apps/api`'s ruleset — the one that runs in-process when scoring is
+  unreachable — scores **0.2611**. Every previously published margin over "the rules" was therefore
+  measured against something weaker than the rules, by roughly 0.11 PR-AUC. The stand-in has been
+  deleted rather than replaced: `apps/api` evaluates every example with `RuleEngine` as the labelled
+  dataset is exported, and the trainer reads the column. Two rule implementations would have
+  drifted, and the drift would have shown as a model beating a baseline nobody runs.
+- **The rule score is a comparison column and never a feature.** It is not part of `ScoreRequest`, so
+  the extractor cannot see it. A model trained on it would be partly modelling the rules, and beating
+  them would then mean very little.
 
 ## Reproducing this
 

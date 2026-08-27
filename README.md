@@ -62,6 +62,13 @@ versions, and a measured inference duration; `GET /v1/model` publishes what that
 at. Every figure comes from the run recorded in [`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md), on
 synthetic data.
 
+**The rules answer too, in-process.** Seven transparent indicators run inside `apps/api` — velocity,
+an amount against the account's own baseline, a new device, a country change, the small hours, a
+balance drain, distinct merchants within the hour — because that is what has to answer when the
+scoring service cannot be reached. They are also the floor the model is measured against: the same
+engine scores every example as the labelled dataset is exported, so the margin in the model card is
+a margin over the ruleset that actually ships rather than over a reimplementation of it.
+
 **What does not run yet:** nothing calls the scoring service — the risk consumer's handler seam is
 still empty, and the Spring client that fills it, with its timeouts and circuit breaker, is the next
 piece of Phase 4. No assessment is persisted yet. The console still renders from a mock fixture
@@ -298,6 +305,20 @@ Every figure below came from a run that actually happened, and each block says w
 is estimated, and a figure that has not been re-measured keeps the date it was measured on rather
 than being quietly refreshed.
 
+**2026-08-27**, on the commit that added the scoring endpoints and the rules baseline:
+
+| Suite                             | Command                              | Result                                                         |
+| --------------------------------- | ------------------------------------ | -------------------------------------------------------------- |
+| API — unit                        | `./mvnw verify -DskipITs`            | **91 passed / 91**                                             |
+| API — integration                 | `./mvnw verify -DskipUnitTests=true` | **154 passed / 154**, coverage gate met                        |
+| Scoring — unit                    | `make test-scoring`                  | **171 passed / 171**                                           |
+| Scoring — coverage                | `uv run pytest --cov`                | 97.36% statements, floor 90                                    |
+| Scoring — types                   | `uv run mypy`                        | strict, **0 issues**, 42 files                                 |
+| Scoring image                     | `docker build apps/scoring`          | **PASS** — 610 MB; serves `/v1/score` with the committed model |
+| Documentation links, placeholders | `make docs-check`                    | **PASS** — 141 links across 40 files, 0 broken                 |
+| Contracts                         | `make contracts-check`               | **PASS** — every schema, example and API document              |
+| Formatting, repository-wide       | `make format-check`                  | **PASS**                                                       |
+
 **2026-08-26**, on the commit that finished Phase 3:
 
 | Suite                             | Command                | Result                                                  |
@@ -320,9 +341,6 @@ applied and the same test counts. H2 is never accepted as evidence, and neither 
 | Console — coverage       | `bun run test:coverage` | 40.4% lines                                 |
 | Console — browser + a11y | `make test-e2e`         | **58 passed / 58** (29 desktop + 29 tablet) |
 | axe, WCAG 2.1 A/AA       | in the above            | **0 violations**, 8 routes, 2 viewports     |
-| Scoring — unit           | `make test-scoring`     | **6 passed / 6**                            |
-| Scoring — coverage       | `uv run pytest --cov`   | 83% lines                                   |
-| Scoring — types          | `uv run mypy`           | strict, **0 issues**, 6 files               |
 | Running stack            | `make smoke`            | **23 passed / 0 failed**                    |
 | Secrets, full history    | `make security`         | **0 leaks**                                 |
 | Container scan           | Trivy in CI             | **0 fixable HIGH or CRITICAL**              |
@@ -331,10 +349,10 @@ The console's 40.4% line coverage is honest rather than flattering: its routes a
 Playwright suite instead, and writing unit tests purely to move that number would be
 [exactly the shortcut this project refuses](CONTRIBUTING.md).
 
-The API's coverage gate is a ratchet — measured, then set below the measurement, raised only when a
-phase genuinely raises coverage, and never lowered to go green. It is currently LINE 0.70 and BRANCH
-0.60. `apps/web` and `apps/scoring` have no threshold yet; they get one against a baseline that
-means something, in Phases 4 and 6.
+Both coverage gates are ratchets — measured, then set below the measurement, raised only when a
+change genuinely raises coverage, and never lowered to go green. `apps/api` is at LINE 0.70 and
+BRANCH 0.60; `apps/scoring` is at 90% of statements, set when the feature pipeline gave it a
+baseline that meant something. `apps/web` has no threshold yet; it gets one in Phase 6.
 
 **No latency, throughput, or false-positive figure is claimed anywhere in this repository.** None
 has been measured. Phase 9 measures them and reports the method alongside the result.
