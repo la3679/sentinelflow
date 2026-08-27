@@ -89,9 +89,9 @@ public final class SchemaFixtures {
                 INSERT INTO risk_assessments (
                     transaction_id, assessment_version, rule_score, model_score, final_score,
                     risk_band, degraded, model_version, feature_version, policy_version,
-                    reason_codes, scoring_latency_ms, alert_raised, assessed_at)
+                    reason_codes, scoring_latency_ms, alert_raised, assessed_at, ruleset_version)
                 VALUES (?, 1, 40.00, 60.00, 55.00, 'HIGH', false, '1.0.0', '1.0.0', '1.0.0',
-                        '[{"code":"VELOCITY_5M_HIGH","description":"Synthetic reason for a schema test","contribution":25,"source":"RULE"}]'::jsonb, 12, true, now())
+                        '[{"code":"VELOCITY_5M_HIGH","description":"Synthetic reason for a schema test","contribution":25,"source":"RULE"}]'::jsonb, 12, true, now(), '1.0.0')
                 RETURNING id
                 """, UUID.class, transactionId);
     }

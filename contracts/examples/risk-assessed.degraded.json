@@ -19,6 +19,7 @@
     "degraded": true,
     "modelVersion": null,
     "featureVersion": null,
+    "rulesetVersion": "1.0.0",
     "policyVersion": "1.0.0",
     "reasonCodes": [
       {

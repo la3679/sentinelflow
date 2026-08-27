@@ -68,6 +68,19 @@ public class RiskAssessment extends AbstractEntity {
     private String policyVersion;
 
     /**
+     * The ruleset that produced {@link #ruleScore} and every {@code RULE} reason.
+     *
+     * <p><strong>Not nullable, including on a degraded assessment.</strong> The other two component
+     * versions describe a scoring call that may not have happened; this one describes the half that
+     * always runs, in this process, in this transaction. An assessment naming a model and a policy
+     * but not the weights that set its floor cannot be reproduced. Added in V8, because nothing had
+     * written this table until the assessment workflow and so nothing had been forced to put every
+     * version it depends on somewhere.
+     */
+    @Column(name = "ruleset_version", nullable = false, length = 32, updatable = false)
+    private String rulesetVersion;
+
+    /**
      * The one place JSONB is the honest representation: a reason list is genuinely variable in
      * length, and nothing queries or constrains an individual member. The domain does not live in
      * here - every other field on this entity is a column.
@@ -97,9 +110,10 @@ public class RiskAssessment extends AbstractEntity {
 
     protected RiskAssessment() {}
 
-    private RiskAssessment(UUID transactionId, int assessmentVersion, String policyVersion) {
+    private RiskAssessment(UUID transactionId, int assessmentVersion, String rulesetVersion, String policyVersion) {
         this.transactionId = transactionId;
         this.assessmentVersion = assessmentVersion;
+        this.rulesetVersion = rulesetVersion;
         this.policyVersion = policyVersion;
     }
 
@@ -114,12 +128,13 @@ public class RiskAssessment extends AbstractEntity {
             RiskBand riskBand,
             String modelVersion,
             String featureVersion,
+            String rulesetVersion,
             String policyVersion,
             List<ReasonCode> reasonCodes,
             int scoringLatencyMs,
             boolean alertRaised,
             Instant assessedAt) {
-        RiskAssessment assessment = new RiskAssessment(transactionId, assessmentVersion, policyVersion);
+        RiskAssessment assessment = new RiskAssessment(transactionId, assessmentVersion, rulesetVersion, policyVersion);
         assessment.ruleScore = ruleScore;
         assessment.modelScore = modelScore;
         assessment.finalScore = finalScore;
@@ -145,11 +160,12 @@ public class RiskAssessment extends AbstractEntity {
             BigDecimal ruleScore,
             BigDecimal finalScore,
             RiskBand riskBand,
+            String rulesetVersion,
             String policyVersion,
             List<ReasonCode> reasonCodes,
             boolean alertRaised,
             Instant assessedAt) {
-        RiskAssessment assessment = new RiskAssessment(transactionId, assessmentVersion, policyVersion);
+        RiskAssessment assessment = new RiskAssessment(transactionId, assessmentVersion, rulesetVersion, policyVersion);
         assessment.ruleScore = ruleScore;
         assessment.finalScore = finalScore;
         assessment.riskBand = riskBand;
@@ -195,6 +211,10 @@ public class RiskAssessment extends AbstractEntity {
 
     public String getFeatureVersion() {
         return featureVersion;
+    }
+
+    public String getRulesetVersion() {
+        return rulesetVersion;
     }
 
     public String getPolicyVersion() {

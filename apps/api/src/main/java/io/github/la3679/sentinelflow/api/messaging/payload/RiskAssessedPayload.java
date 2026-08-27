@@ -24,6 +24,10 @@ import io.github.la3679.sentinelflow.api.persistence.entity.RiskAssessment;
  * outcome rather than an error, and {@code degraded} states it explicitly so a consumer filtering
  * for degraded assessments does not have to encode the inference {@code modelScore == null}.
  *
+ * <p>{@code rulesetVersion} and {@code policyVersion} are never null. The rules are the half that
+ * always runs and the banding always happens, so an assessment can always name both - which is what
+ * makes a degraded assessment a defensible answer rather than a partial one.
+ *
  * <p><strong>Scores are JSON numbers here and money is not.</strong> That is not an inconsistency:
  * ADR-0007 keeps money out of JSON numbers because a rounding difference in the last place is a
  * different amount of money, and a score is a computed measure where it changes nothing a decision
@@ -44,6 +48,7 @@ public record RiskAssessedPayload(
         boolean degraded,
         String modelVersion,
         String featureVersion,
+        String rulesetVersion,
         String policyVersion,
         List<ReasonCode> reasonCodes,
         int scoringLatencyMs,
@@ -75,6 +80,7 @@ public record RiskAssessedPayload(
                 assessment.isDegraded(),
                 assessment.getModelVersion(),
                 assessment.getFeatureVersion(),
+                assessment.getRulesetVersion(),
                 assessment.getPolicyVersion(),
                 assessment.getReasonCodes(),
                 assessment.getScoringLatencyMs(),

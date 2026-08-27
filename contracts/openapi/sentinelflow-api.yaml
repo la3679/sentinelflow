@@ -674,6 +674,13 @@ components:
           description: Explicit rather than inferred from a null modelScore.
         modelVersion: { type: [string, "null"] }
         featureVersion: { type: [string, "null"] }
+        rulesetVersion:
+          type: string
+          description: |
+            The ruleset that produced `ruleScore` and every `RULE` reason.
+            Always present, including on a degraded assessment: the rules
+            are the half that always runs, and a degraded assessment is
+            made of nothing else.
         policyVersion: { type: string }
         reasonCodes:
           type: array
@@ -691,6 +698,7 @@ components:
           finalScore,
           riskBand,
           degraded,
+          rulesetVersion,
           policyVersion,
           reasonCodes,
           assessedAt,

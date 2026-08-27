@@ -46,6 +46,10 @@
       "oneOf": [{ "$ref": "common.v1.json#/$defs/version" }, { "type": "null" }],
       "description": "Version of the feature pipeline. Two scores are only comparable when this matches."
     },
+    "rulesetVersion": {
+      "$ref": "common.v1.json#/$defs/version",
+      "description": "Version of the ruleset that produced `ruleScore` and every `RULE` reason code. Always present, including on a degraded assessment - the rules are the half that always runs, and a degraded assessment is made of nothing else. Separate from `policyVersion` because thresholds and weights move on their own schedule from banding."
+    },
     "policyVersion": {
       "$ref": "common.v1.json#/$defs/version",
       "description": "Version of the thresholds and banding policy. Always present: banding happens even when the model does not."
@@ -86,6 +90,7 @@
     "degraded",
     "modelVersion",
     "featureVersion",
+    "rulesetVersion",
     "policyVersion",
     "reasonCodes",
     "scoringLatencyMs",
