@@ -185,6 +185,40 @@ sentinelflow:
       # account's history would be a denial-of-service primitive.
       max-recent-transactions: ${SENTINELFLOW_SCORING_MAX_RECENT_TRANSACTIONS:200}
 
+    client:
+      # Calling the scoring service (ADR-0008 section 3). Every number here is
+      # small for one reason: this call happens inside a Kafka consumer that
+      # retries by blocking its partition, so everything queued behind a record
+      # waits for it. The whole budget is validated at startup against a
+      # ten-second ceiling rather than left as an intention.
+      #
+      # The service name on the compose network, not the published port. The
+      # published one exists so a developer can curl it.
+      base-url: ${SENTINELFLOW_SCORING_BASE_URL:http://scoring:8000}
+      # A reachable service on this network connects immediately, so a longer
+      # value only delays the discovery that it is not there.
+      connect-timeout: ${SENTINELFLOW_SCORING_CONNECT_TIMEOUT:1s}
+      # Inference is arithmetic over a nineteen-column vector. A slow answer is
+      # a sick service, and waiting longer produces a stale score rather than a
+      # better one.
+      read-timeout: ${SENTINELFLOW_SCORING_READ_TIMEOUT:2s}
+      # Three attempts. Enough for a restart or a dropped connection; a
+      # dependency that fails three times in a row is not about to succeed on
+      # the fourth, and the degraded path exists so it does not have to.
+      max-retries: ${SENTINELFLOW_SCORING_MAX_RETRIES:2}
+      # Full jitter, the same distribution as the outbox and the consumer.
+      # Without it, everything that failed during an outage retries in lockstep
+      # the instant it recovers and knocks it over again.
+      retry-base: ${SENTINELFLOW_SCORING_RETRY_BASE:100ms}
+      retry-max-delay: ${SENTINELFLOW_SCORING_RETRY_MAX_DELAY:1s}
+      # The part that matters at scale. Without a breaker every record in a
+      # backlog pays the full timeout before degrading, so a scoring outage
+      # becomes consumer lag proportional to traffic.
+      circuit-breaker-failure-threshold: ${SENTINELFLOW_SCORING_BREAKER_THRESHOLD:5}
+      # Long enough for a container to restart, short enough that a recovered
+      # service is scoring again within a minute.
+      circuit-breaker-open-duration: ${SENTINELFLOW_SCORING_BREAKER_OPEN:30s}
+
     export:
       # The labelled training dataset (ADR-0010 section 1). Off unless asked,
       # like the seed and for the same reason: it writes files and reads the
