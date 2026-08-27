@@ -74,6 +74,7 @@ class ScoringClientTests {
     private HttpServer server;
     private final AtomicInteger requests = new AtomicInteger();
     private final AtomicReference<String> lastCorrelationHeader = new AtomicReference<>();
+    private final AtomicReference<String> lastUpgradeHeader = new AtomicReference<>();
     private final List<Integer> responses = new ArrayList<>();
 
     @BeforeEach
@@ -107,6 +108,33 @@ class ScoringClientTests {
         assertThat(lastCorrelationHeader.get())
                 .as("ties this call to the transaction, the event and every log line about it")
                 .isEqualTo(CORRELATION.toString());
+    }
+
+    @Test
+    @DisplayName("no request asks to upgrade to a protocol the scoring service does not speak")
+    void doesNotAttemptAnHttp2Upgrade() {
+        respondWith(200);
+
+        client().score(request(), CORRELATION);
+
+        // The JDK's HttpClient defaults to HTTP_2, which against an http:// URI
+        // means every request carries `Upgrade: h2c`. The scoring service is
+        // uvicorn and serves HTTP/1.1 only: it logs "Unsupported upgrade
+        // request", fails to read the body that arrived with it, and answers 422
+        // naming the whole body as invalid.
+        //
+        // That is not hypothetical. It is what happened the first time the
+        // pipeline ran against the real stack rather than against this stub -
+        // every scoring call rejected, 13,455 assessments degraded and 6,224
+        // events dead-lettered - and this suite was green throughout, because
+        // com.sun.net.httpserver answers an upgrade attempt by ignoring it.
+        //
+        // So the assertion is on the wire rather than on the setting: a client
+        // configured back to HTTP_2 would fail here even though this stub would
+        // still serve it.
+        assertThat(lastUpgradeHeader.get())
+                .as("uvicorn cannot read a request that asks to become h2c")
+                .isNull();
     }
 
     @Test
@@ -279,6 +307,7 @@ class ScoringClientTests {
     private void handle(HttpExchange exchange) throws IOException {
         requests.incrementAndGet();
         lastCorrelationHeader.set(exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
+        lastUpgradeHeader.set(exchange.getRequestHeaders().getFirst("Upgrade"));
         // Drain the request body; leaving it unread makes the client see the
         // connection close rather than the status this test chose.
         exchange.getRequestBody().readAllBytes();
