@@ -14,7 +14,7 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-27T03:10Z                                                                                                                                |
+| Last updated UTC     | 2026-08-27T03:25Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 4: a model is trained, evaluated and registered                                                                                   |
 | Current phase        | Phase 4 — synthetic data and scoring (ten of fourteen pieces done)                                                                               |
@@ -22,11 +22,11 @@
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/scoring-training-pipeline` — pushed, PR open                                                                                               |
+| Working branch       | none — `main` is current                                                                                                                         |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | #41 — the training pipeline                                                                                                                      |
+| Open PRs             | none                                                                                                                                             |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
