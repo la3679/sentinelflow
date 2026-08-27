@@ -28,24 +28,24 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phases 0 to 3 complete, Phase 4 nearly complete
+## Current status — Phases 0 to 4 complete, Phase 5 next
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
 
-| Phase | Scope                                              | State           |
-| ----- | -------------------------------------------------- | --------------- |
-| 0     | Research gate, product baseline, repository        | **complete**    |
-| 1     | Monorepo, developer foundation, CI, containers     | **complete**    |
-| 2     | Contracts, domain model, PostgreSQL migrations     | **complete**    |
-| 3     | Transaction ingestion, transactional outbox, Kafka | **complete**    |
-| 4     | Synthetic data generation and risk scoring         | **in progress** |
-| 5     | Alert lifecycle, investigations, audit             | not started     |
-| 6     | Operations console wired to the real API           | not started     |
-| 7     | Observability and resilience                       | not started     |
-| 8     | Security and release-quality hardening             | not started     |
-| 9     | Performance, documentation, clean-clone check      | not started     |
-| 10    | v1.0.0 release                                     | not started     |
+| Phase | Scope                                              | State        |
+| ----- | -------------------------------------------------- | ------------ |
+| 0     | Research gate, product baseline, repository        | **complete** |
+| 1     | Monorepo, developer foundation, CI, containers     | **complete** |
+| 2     | Contracts, domain model, PostgreSQL migrations     | **complete** |
+| 3     | Transaction ingestion, transactional outbox, Kafka | **complete** |
+| 4     | Synthetic data generation and risk scoring         | **complete** |
+| 5     | Alert lifecycle, investigations, audit             | **next**     |
+| 6     | Operations console wired to the real API           | not started  |
+| 7     | Observability and resilience                       | not started  |
+| 8     | Security and release-quality hardening             | not started  |
+| 9     | Performance, documentation, clean-clone check      | not started  |
+| 10    | v1.0.0 release                                     | not started  |
 
 **What runs today:** `docker compose up` starts PostgreSQL, Kafka, the Spring Boot API, the FastAPI
 scoring service, the console, Prometheus and Grafana; all seven report healthy and Prometheus
@@ -339,7 +339,7 @@ assessment:
 | --------------------------------- | ---------------------- | ------------------------------------------------- |
 | API — full verify                 | `./mvnw verify`        | **147 unit + 172 integration passed**, gate met   |
 | API — coverage                    | JaCoCo, both suites    | 85.7% lines (1794/2093), 76.9% branches (362/471) |
-| Documentation links, placeholders | `make docs-check`      | **PASS** — 153 links across 41 files, 0 broken    |
+| Documentation links, placeholders | `make docs-check`      | **PASS** — 154 links across 41 files, 0 broken    |
 | Contracts                         | `make contracts-check` | **PASS** — every schema, example and API document |
 | Formatting, repository-wide       | `make format-check`    | **PASS**                                          |
 
