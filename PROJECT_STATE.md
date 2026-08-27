@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-27T20:10Z                                                                                                                                |
+| Last updated UTC     | 2026-08-27T21:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 4: the pipeline is end to end and scored; open PR awaiting merge                                                                  |
-| Current phase        | Phase 4 — synthetic data and scoring (all fifteen pieces done, on a branch)                                                                      |
-| Current task         | merge `feat/assessment-workflow`, then close Phase 4 against its gate                                                                            |
+| Overall status       | active — Phase 4 complete and merged; Phase 5 not started                                                                                        |
+| Current phase        | Phase 5 — alerts, investigations and audit (not started)                                                                                         |
+| Current task         | open Phase 5 with alert creation, attaching to a band that already exists                                                                        |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/assessment-workflow` — pushed, CI green, pull request open                                                                                 |
+| Working branch       | none — `main` is current                                                                                                                         |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | one — the assessment workflow                                                                                                                    |
+| Open PRs             | none                                                                                                                                             |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -76,8 +76,8 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 1 — monorepo and developer foundation**
 - [x] **Phase 2 — contracts, domain, and database**
 - [x] **Phase 3 — ingestion, outbox, and Kafka**
-- [ ] **Phase 4 — synthetic data and scoring** ← in progress
-- [ ] Phase 5 — alerts and investigations
+- [x] **Phase 4 — synthetic data and scoring**
+- [ ] **Phase 5 — alerts and investigations** ← next
 - [ ] Phase 6 — operations frontend
 - [ ] Phase 7 — observability and resilience
 - [ ] Phase 8 — security and quality hardening
@@ -126,9 +126,9 @@ against the current schema and exercised locally before commit.
 `CLAUDE_CODE_SETUP.md`, four new research entries, and a README rewritten from Lovable's
 prompt-dump into something verified, with two generated screenshots.
 
-## In progress — Phase 4
+## Completed — Phase 4, merged as PRs [#29](https://github.com/la3679/sentinelflow/pull/29) through [#47](https://github.com/la3679/sentinelflow/pull/47)
 
-All fifteen pieces have landed, the last two on `feat/assessment-workflow`: the workflow that joins the ruleset, the client and the policy into a persisted assessment, and the replay that demonstrates it.
+All fifteen pieces landed, the last two in [#47](https://github.com/la3679/sentinelflow/pull/47): the workflow that joins the ruleset, the client and the policy into a persisted assessment, and the replay that demonstrates it.
 
 **[ADR-0008](docs/adr/0008-scoring-service-boundary.md), merged as PR
 [#29](https://github.com/la3679/sentinelflow/pull/29).** Written before either side of the boundary
@@ -739,6 +739,31 @@ one is still handled.
   synchronously rather than returning a failed future; and a unit test reading `../../contracts`,
   which cannot work inside the module-only Docker context where CI runs the unit suite.
 
+## Acceptance criteria status — Phase 4 gate
+
+| Criterion                                       | Status   | Evidence                                                                                 |
+| ----------------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| Training reproducible from a documented command | **pass** | `make train`, from a fingerprinted export at a recorded seed; ADR-0010 §6                |
+| Evaluation report generated                     | **pass** | `docs/ml/EVALUATION.md` and `docs/ml/MODEL_CARD.md`, both generated, never hand-written  |
+| Model checksum and version stored               | **pass** | `manifest.json` carries the artifact SHA-256; loading verifies it before serving         |
+| Service contracts tested                        | **pass** | `ScoringPayloadContractIT`, `RiskAssessedContractIT`, and `make contracts-check`         |
+| Failure behaviour tested                        | **pass** | `RiskAssessmentWorkflowIT` — scored, degraded and rejected, against PostgreSQL and Kafka |
+
+**The fourth criterion was the one that needed the workflow.** Until Phase 4's last piece,
+`ScoringClientTests` covered the client's own three outcomes and nothing covered what the pipeline
+did with them. `RiskAssessmentWorkflowIT` closes that: a 503 degrades and still marks the transaction
+`ASSESSED`, a 422 writes no assessment and dead-letters the record after one attempt, and a
+redelivered event produces exactly one assessment and one outbox row.
+
+**CI green, verified.** All ten required checks passed on #47, and the api job ran the Testcontainers
+suites on the runner rather than merely compiling them — 147 unit and 172 integration tests, coverage
+gate met at LINE 0.80 and BRANCH 0.70.
+
+**One thing the gate does not cover, stated rather than left implicit.** Three defects in this phase
+were invisible to every suite and were found by running the compose stack. A green gate is evidence
+about the code, not about the deployment the demo runs on, and Phase 9's clean-clone check is where
+that distinction gets its own gate.
+
 ## Acceptance criteria status — Phase 3 gate
 
 | Criterion                                     | Status   | Evidence                                                                         |
@@ -868,7 +893,7 @@ Every figure below came from a run on the date its section names. Nothing here i
 | `./mvnw verify` (JDK 25.0.4.1+1)           | **PASS** — 147 unit tests, 172 integration tests              |
 | JaCoCo, both suites                        | 85.7% lines (1794/2093), 76.9% branches (362/471)             |
 | `bun scripts/dev/check-contracts.mjs`      | **PASS** — every schema, example and API document             |
-| `bun scripts/dev/check-docs.mjs`           | **PASS** — 153 links across 41 files                          |
+| `bun scripts/dev/check-docs.mjs`           | **PASS** — 154 links across 41 files                          |
 | `bunx prettier --check`                    | **PASS** — every file touched                                 |
 | `./scripts/dev/replay.sh` (both scenarios) | **PASS** — 4 degraded then 4 scored; DLQ +1; undeliverable +1 |
 | `.\scripts\dev\sf.ps1 replay`              | **PASS** — same outcomes on the reference Windows path        |
@@ -1154,23 +1179,28 @@ None.
 
 ## Next three actions
 
-Phase 4's work is done and pushed on `feat/assessment-workflow`. Nothing is blocked.
+Phase 4 is complete and merged; `main` is green. Phase 5 has not started. Nothing is blocked.
 
-1. **Merge the pull request**, once its checks are green. Self-review the whole diff first: it is
-   eight commits and touches contracts, a migration, the API, `compose.yaml`, the Makefile and the
-   PowerShell runner. Prefer a merge commit.
-2. **Close Phase 4 against its gate.** Training reproducible from a documented command · evaluation
-   report generated · model checksum and version stored · service contracts and failure behaviour
-   tested. All four are now met: `RiskAssessmentWorkflowIT` covers the scored, degraded and rejected
-   paths against real PostgreSQL and real Kafka, and `make replay` demonstrates two of them against
-   the running stack. Tick the phase in this file and in
-   [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md).
-3. **Open Phase 5 with alert creation.** It attaches to a band that already exists and is already
-   persisted, and reopens none of the scoring. Settle `alerts.top_reason_code` there, in one change
-   across the contract, the entity and the event — it is the same mismatch `reason_codes` had, and
-   it is deliberately still untouched.
+1. **Alert creation from the persisted band.** ADR-0011 put banding in the assessment precisely so
+   this attaches to a band that already exists and reopens none of the scoring: read the band, apply
+   the policy that decides an alert is worth raising, and write `alerts` plus its first
+   `alert_actions` row and an `alert.created` outbox row in the same transaction as the assessment.
+   `Alert`, `AlertAction` and `AuditLogEntry` all have mappings and no callers today.
+2. **Settle `alerts.top_reason_code` in the same change.** It is a string on the entity while
+   `contracts/schemas/alert-created.v1.json` describes an object — the identical mismatch
+   `risk_assessments.reason_codes` had, and it will be found the same way: by the first code that has
+   to write it. One change across the contract, the entity and the event.
+3. **The alert state machine and its audit trail.** Every transition audited, invalid and concurrent
+   changes handled, and the auditor role's mutations failing as expected. `alerts.version` exists for
+   the optimistic concurrency this needs.
 
-### What this session found by running the stack rather than the suites
+**Before starting, re-read** [ADR-0008 §4](docs/adr/0008-scoring-service-boundary.md) on who owns the
+threshold and [ADR-0011 §3](docs/adr/0011-risk-banding-and-the-final-score.md) on the bands. The
+default band bounds are a starting point rather than a measurement — the model's operating point sits
+at 99.9998 on this scale, so almost nothing scores between 40 and 90 — and Phase 5 is where they are
+supposed to be revisited against measured alert volume.
+
+### What the last session found by running the stack rather than the suites
 
 Three defects, all invisible to a green build, recorded here because the lesson generalises: the
 Testcontainers suites and the compose stack are not the same system, and only one of them is what a

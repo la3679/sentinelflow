@@ -1593,7 +1593,15 @@ figure in those messages stands.
 
 None.
 
+### Outcome
+
+Merged as [#47](https://github.com/la3679/sentinelflow/pull/47) with all ten required checks green.
+Phase 4 is closed against its gate: training reproducible from a documented command, evaluation
+report generated, model checksum and version stored, and service contracts and failure behaviour
+tested — the last of which needed exactly this workflow, since until now nothing covered what the
+pipeline did with the client's three outcomes.
+
 ### Next actions
 
-Recorded in `PROJECT_STATE.md`. Phase 4's gate is met once the pull request merges; Phase 5 opens with
-alert creation attaching to a band that already exists and is already persisted.
+Recorded in `PROJECT_STATE.md`. Phase 5 opens with alert creation attaching to a band that already
+exists and is already persisted, and settling `alerts.top_reason_code` in the same change.
