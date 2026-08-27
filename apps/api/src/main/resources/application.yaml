@@ -286,6 +286,13 @@ sentinelflow:
       # between 40 and 90 - and it is the number to revisit first against
       # measured alert volume and a stated review capacity. Change it and the
       # policy version above moves with it.
+      #
+      # This number and the floor above decide something together that neither
+      # decides alone: with a rule score of zero the combination caps at
+      # model-weight x 100 = 60, which is below 70, so a transaction that trips
+      # no transparent indicator cannot open an alert however confident the
+      # model is. That is intended and is ADR-0011 section 4; move either number
+      # and the implication moves with it, which is why two tests assert it.
       alert-from-band: ${SENTINELFLOW_RISK_POLICY_ALERT_FROM_BAND:HIGH}
 
       # What the queue does with an alert, per alerting band. Separate from the

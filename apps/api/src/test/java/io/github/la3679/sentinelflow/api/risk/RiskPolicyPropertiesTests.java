@@ -249,6 +249,46 @@ class RiskPolicyPropertiesTests {
                 .hasMessageContaining("alert-from-band is required");
     }
 
+    // ----------------------------------------------------------------------- //
+    // Where the floor and the threshold meet
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("a maximal model over a silent ruleset does not reach the alerting band")
+    void theModelAloneCannotOpenAnAlert() {
+        // ADR-0011 section 4. This is an implication of two decisions that were
+        // each taken separately - the floor in section 1 and the alerting band
+        // in section 3 - and it is asserted here so that changing either one
+        // cannot alter it quietly. An alert whose entire justification is "the
+        // model was confident" is the one an analyst cannot review.
+        BigDecimal perfectModelNoRules = policy.combine(BigDecimal.ZERO, new BigDecimal("100"));
+
+        assertThat(perfectModelNoRules)
+                .as("the floor caps the model's own contribution at modelWeight x 100")
+                .isEqualByComparingTo("60.00");
+        assertThat(policy.raisesAlert(policy.bandFor(perfectModelNoRules)))
+                .as("60 bands MEDIUM, and alerting starts at HIGH")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("25 is the rule score at which a maximal model first clears the alerting band")
+    void aRuleScoreOfTwentyFiveIsWhereAlertingBegins() {
+        // 0.6 x 100 + 0.4 x 25 = 70 exactly, and 25 is the weight of the single
+        // strongest indicator in today's ruleset. So at least one rule an
+        // analyst can read has to have fired, and the weaker ones only alert
+        // alongside something else.
+        assertThat(policy.combine(new BigDecimal("24"), new BigDecimal("100"))).isEqualByComparingTo("69.60");
+        assertThat(policy.raisesAlert(policy.bandFor(policy.combine(new BigDecimal("24"), new BigDecimal("100")))))
+                .isFalse();
+
+        BigDecimal atTheBoundary = policy.combine(new BigDecimal("25"), new BigDecimal("100"));
+        assertThat(atTheBoundary).isEqualByComparingTo("70.00");
+        assertThat(policy.raisesAlert(policy.bandFor(atTheBoundary)))
+                .as("the band's lower bound is inclusive, so 70 alerts")
+                .isTrue();
+    }
+
     private static RiskPolicyProperties policy(BigDecimal modelWeight) {
         return new RiskPolicyProperties("1.1.0", modelWeight, bounds(), RiskBand.HIGH, priorities());
     }
