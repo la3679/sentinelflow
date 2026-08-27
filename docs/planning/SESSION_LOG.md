@@ -1120,3 +1120,104 @@ rules baseline in `apps/api`, then the Spring client and persisted assessments.
 **The local database is on the LOCAL profile** — 20,707 transactions — because the evaluation needed
 it. `PROJECT_STATE.md` records how to move back down, including that truncating without `users`
 fails startup on `users_username_unique`.
+
+---
+
+## Session 11 — 2026-08-27 — the model becomes reachable
+
+Phase 4's eleventh piece: `POST /v1/score` and `GET /v1/model` in `apps/scoring`, against the
+registry entry session 10 trained. Three commits on `feat/scoring-inference-api`.
+
+### What was built
+
+**`serving/`, a package beside `training/` rather than inside it.** The dependency runs one way —
+serving imports the registry and the score rescale, and nothing in training imports serving — which
+is ADR-0010 §6's "training is a command, never an API side effect" made structural. `.claude/rules/python.md`
+described a `models/` package that never existed; it now describes what is there, and says why
+`models/` is not available as a package name.
+
+**`POST /v1/score`** extracts features, runs inference, and returns the contract's fields and no
+others. **`GET /v1/model`** publishes the manifest's identity and the selected model's holdout
+figures, read from the metrics document beside the artifact rather than restated anywhere.
+
+**Reasons are the linear model taken apart.** `coefficient x standardised value`, averaged across
+the three calibrated folds, on the log-odds scale before calibration. That is not an approximation
+of the model — for a logistic regression it is the model, which is the property ADR-0010 §5 chose it
+for over a tree ensemble that scored no better than fold noise. Calibration is monotone, so the
+contributions explain the ranking and deliberately do not sum to the 0-to-100 score.
+
+### Three decisions inside the reason codes
+
+- **An indicator is reported only when it fired.** `is_new_device` at 0.0 still has a standardised
+  value and therefore a non-zero contribution, so the arithmetic would happily emit `NEW_DEVICE` for
+  a transaction on a device the account has always used. That is not a weak explanation, it is one
+  that says the opposite of what happened.
+- **Direction describes the feature, not the contribution.** A below-average value with a negative
+  coefficient pushes the score up; calling that `_HIGH` would tell an analyst the data said something
+  it did not. `_HIGH` and `_LOW` come from the standardised value's sign.
+- **A model that cannot be decomposed returns no reasons and says so.** An invented explanation is
+  worse than an absent one, because only one of the two is visibly missing.
+
+### Loading is mostly refusals, and one of them has no symptom
+
+One entry serves, or the process does not start. The checksum and the feature version were already
+checked; the column order was not, though the registry's own docstring claimed it was. That is the
+one that matters most: a model handed its columns in a different order still returns a number, still
+between 0 and 100, and it is an answer about different quantities. No error, no warning, nothing
+downstream notices. `FEATURE_NAMES` now declares the order and `registry.load` requires the caller to
+supply it — required rather than optional, because a check that has to be asked for is one that will
+eventually not be.
+
+Two entries at the running feature version are a refusal rather than a tie-break, because picking
+either would make which model produced a score depend on directory iteration order. The escape hatch
+is a configuration pin, and half a pin is rejected at startup.
+
+An empty registry is deliberately **not** a refusal: the service runs, reports `modelLoaded: false`,
+returns a retryable 503 from both endpoints, and the API degrades to rules. Refusing to start would
+turn a designed degradation into an outage.
+
+### Three defects found by running it
+
+- **The training suite was overwriting `docs/ml/MODEL_CARD.md` on every run.** `--docs` defaults to
+  the repository's own documentation tree and the end-to-end tests never passed it, so every
+  `make test-scoring` replaced the published card with one describing the TEST fixture: 1,280
+  examples where the real card records 20,707, a different profile, a different holdout, a different
+  operating point. It went unnoticed because the file is generated and a regenerated generated file
+  looks exactly like one. Found by `git status` after a test run, not by reading the test.
+- **`/health/ready` returned `model_loaded` where the contract says `modelLoaded`.** It had been the
+  only endpoint whose body was not camel case since Phase 1, and nothing checked response shapes
+  against the contract — only request shapes. There is now a response-side conformance test, which
+  is the reason the drift is worth more than its one-line fix.
+- **The image never carried `models/`.** ADR-0010 §6 commits the artifact so a demo can score without
+  a training run first, and the Dockerfile copied only the virtual environment — so the promise held
+  everywhere except the place the service actually runs. `.dockerignore` still carried a
+  `models/*.joblib` rule that expressed the opposite intent and never matched the nested path anyway.
+
+### Tests and results — every figure from a run on 2026-08-27
+
+| Command                                     | Result                                                        |
+| ------------------------------------------- | ------------------------------------------------------------- |
+| `uv run pytest --cov` (apps/scoring)        | **PASS** — 171 tests, 97.36% coverage, floor 90               |
+| The same, before this session               | 94 tests, 96.75%                                              |
+| `uv run mypy` (strict)                      | **PASS** — 0 issues, 42 source files                          |
+| `uv run ruff check` / `ruff format --check` | **PASS**                                                      |
+| `docker build apps/scoring`                 | **PASS** — 610 MB                                             |
+| Container `/health/ready`                   | `{"status":"UP","modelLoaded":true}`                          |
+| Container `/v1/model`                       | serves the committed manifest and its holdout figures         |
+| Container `/v1/score`                       | 200, ten reasons, correlation id echoed; a bad body gives 422 |
+| `/app/models` inside the image              | manifest, metrics, artifact — no plots, no card               |
+| `bun run format:check`                      | **PASS** — repository-wide                                    |
+| `bun scripts/dev/check-docs.mjs`            | **PASS** — 141 links across 40 files                          |
+| `bun scripts/dev/check-contracts.mjs`       | **PASS** — all three API documents                            |
+
+Every module under `serving/` is at 100% statement and branch coverage; `training/registry.py`
+reached 100% with the discovery and metrics-reading tests.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: the rules baseline in `apps/api`, then the Spring scoring client with
+its timeouts, bounded retry and circuit breaker, then persisted assessments and `make replay`.

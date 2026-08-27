@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-27T03:25Z                                                                                                                                |
+| Last updated UTC     | 2026-08-27T07:40Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 4: a model is trained, evaluated and registered                                                                                   |
-| Current phase        | Phase 4 — synthetic data and scoring (ten of fourteen pieces done)                                                                               |
-| Current task         | `/v1/score` and `/v1/model` in `apps/scoring`, against the registry entry                                                                        |
+| Overall status       | active — Phase 4: the model is trained, registered and now served                                                                                |
+| Current phase        | Phase 4 — synthetic data and scoring (eleven of fourteen pieces done)                                                                            |
+| Current task         | the transparent rules baseline in `apps/api`, per ADR-0002 §3                                                                                    |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | none — `main` is current                                                                                                                         |
+| Working branch       | `feat/scoring-inference-api`                                                                                                                     |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none                                                                                                                                             |
+| Open PRs             | [#43](https://github.com/la3679/sentinelflow/pull/43) — the inference API                                                                        |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -128,7 +128,7 @@ prompt-dump into something verified, with two generated screenshots.
 
 ## In progress — Phase 4
 
-Ten pieces have landed. The rest of the phase is the model itself and the client that calls it.
+Eleven pieces have landed. What remains is the rules baseline, the client that calls the scoring service, and the assessments it persists.
 
 **[ADR-0008](docs/adr/0008-scoring-service-boundary.md), merged as PR
 [#29](https://github.com/la3679/sentinelflow/pull/29).** Written before either side of the boundary
@@ -396,6 +396,66 @@ manifest records which generator drew a dataset precisely so that is attributabl
   what the schema records, and one the model card and `EVALUATION.md` must state rather than let a
   reader assume otherwise.
 
+### The inference API, merged as PR [#43](https://github.com/la3679/sentinelflow/pull/43)
+
+**The model is reachable.** `POST /v1/score` returns the 0-to-100 score, the model and feature
+versions, bounded reason codes, a measured inference duration and the extractor's warnings;
+`GET /v1/model` publishes the manifest's identity and the selected model's holdout figures, read
+from the metrics document beside the artifact rather than restated anywhere. Both were specified in
+Phase 4's third piece and implemented against that specification.
+
+**Reasons are the linear model taken apart, not an approximation of it.** `coefficient x
+standardised value`, averaged across the three calibrated folds, on the log-odds scale before
+calibration — which for a logistic regression is not a model explanation technique, it is the model.
+Calibration is monotone, so the contributions explain the ranking and deliberately do not sum to the
+score, and the README says so rather than leaving a reader to assume they do.
+
+Three rules inside that, each of which is the difference between arithmetic and an explanation an
+analyst can act on: an indicator is reported **only when it fired**, because `is_new_device` at 0.0
+still has a contribution and `NEW_DEVICE` on a device the account has always used says the opposite
+of what happened; direction (`_HIGH`, `_LOW`) describes the **feature**, not the contribution, since
+a below-average value under a negative coefficient pushes the score up; and a model that cannot be
+decomposed returns an empty list and a warning, because an invented explanation is worse than an
+absent one.
+
+**Loading is a set of refusals.** One entry serves or the process does not start: the checksum, the
+feature version, the recorded column order, and that the metrics beside an artifact describe that
+artifact. Two entries at the running feature version are a refusal rather than a tie-break — picking
+either would make which model produced a score depend on directory order — with a configuration pin
+as the escape hatch, and half a pin rejected at startup. An empty registry is deliberately not a
+refusal: the service runs, reports `modelLoaded: false`, returns a retryable 503, and the API
+degrades to rules.
+
+### Three defects the inference work found
+
+- **The training suite was overwriting `docs/ml/MODEL_CARD.md` on every run.** `--docs` defaults to
+  the repository's own documentation tree and the end-to-end tests never passed it, so every
+  `make test-scoring` replaced the published card with one for the TEST fixture: 1,280 examples where
+  the real card records 20,707, and a different profile, holdout and operating point. Invisible
+  because the file is generated and a regenerated generated file looks exactly like one. Found by
+  `git status` after a test run. Fixed in its own commit, with a test that asserts `--docs` is
+  honoured so the reason is written down rather than remembered.
+- **`/health/ready` returned `model_loaded` where the contract says `modelLoaded`.** The only
+  endpoint whose body was not camel case, since Phase 1. Nothing had noticed because the conformance
+  suite checked **request** shapes only. There is now a response-side one, which is worth more than
+  the one-line fix it produced.
+- **The image never carried `models/`.** ADR-0010 §6 commits the artifact so a demo can score without
+  a training run first, and the Dockerfile copied only the virtual environment — so the promise held
+  everywhere except where the service runs. `.dockerignore` still carried a `models/*.joblib` rule
+  expressing the opposite intent, which had never matched the nested path anyway.
+
+### The column-order check had no symptom, which is why it is a refusal
+
+The registry validated the checksum and the feature version and its own docstring claimed it also
+validated the column order. It did not. A model handed its columns in a different order still returns
+a number, still between 0 and 100, and it is an answer about different quantities — no exception, no
+warning, nothing downstream that would ever notice.
+
+`FEATURE_NAMES` now declares the canonical order and `registry.load` **requires** the caller to
+supply the order it is about to use. Required rather than optional, because a check that has to be
+asked for is one that will eventually not be. A test asserts the declared tuple against what
+`extract` actually returns, so a declared list that nothing produces cannot pass for a check either.
+
 ### What remains in Phase 4
 
 | Piece                                       | State                                                      |
@@ -410,7 +470,7 @@ manifest records which generator drew a dataset precisely so that is attributabl
 | Transparent rules baseline                  | not started — `apps/api`, per ADR-0002                     |
 | Reproducible training, evaluation, registry | **done** (#41) — `make train`                              |
 | Model card and `EVALUATION.md`              | **done** (#41) — the card is generated, never hand-written |
-| `/v1/score` and `/v1/model` implementations | not started                                                |
+| `/v1/score` and `/v1/model` implementations | **done** (#43) — served from the registry entry            |
 | Spring scoring client with resilience       | not started — consumes the assembler, does not write one   |
 | Off-hours generator defect                  | **fixed** (#38) — found while building the export          |
 | Persisted risk assessments                  | not started                                                |
@@ -624,6 +684,31 @@ available.
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
 
+### 2026-08-27 — Phase 4, the inference API
+
+| Command                                     | Result                                                          |
+| ------------------------------------------- | --------------------------------------------------------------- |
+| `uv run pytest --cov` (apps/scoring)        | **PASS** — 171 tests, 97.36% coverage, floor 90                 |
+| The same, before this work                  | 94 tests, 96.75%                                                |
+| `uv run mypy` (scoring, strict)             | **PASS** — 0 issues, 42 source files                            |
+| `uv run ruff check` / `ruff format --check` | **PASS**                                                        |
+| `docker build apps/scoring`                 | **PASS** — 610 MB                                               |
+| Container `GET /health/ready`               | `{"status":"UP","modelLoaded":true}`                            |
+| Container `GET /v1/model`                   | serves the committed manifest and its holdout figures           |
+| Container `POST /v1/score`                  | 200 with ten reasons; correlation id echoed; bad body gives 422 |
+| `/app/models` inside the image              | manifest, metrics, artifact — plots and card excluded           |
+| `bun run format:check` (repository-wide)    | **PASS**                                                        |
+| `bun scripts/dev/check-docs.mjs`            | **PASS** — 141 links across 40 files, 0 broken, 0 placeholders  |
+| `bun scripts/dev/check-contracts.mjs`       | **PASS** — all three API documents                              |
+
+Every module under `serving/` measures 100% statement and branch coverage, and
+`training/registry.py` reached 100% with the discovery and metrics-reading tests. The scoring floor
+stays at 90: it has now measured above 95 three times, and ratcheting it mid-phase is churn — the
+turn comes when Phase 4 closes.
+
+The scoring service was **not** run under `make up` for this work. Everything above is the image
+built from this tree, run alone with its published port; nothing here is a claim about the stack.
+
 ### 2026-08-26 — Phase 4, so far
 
 Local run under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`, then reproduced on the GitHub runner.
@@ -753,6 +838,13 @@ checks.
   build on `25.0.4+7`, local `./mvnw` runs on `25.0.4.1+1`. Both are Java 25 LTS. Revisit when
   Adoptium publishes `25.0.4.1`.
 - **`noUnusedLocals` / `noUnusedParameters` are still `false`** in `apps/web/tsconfig.json`.
+- **`compose.yaml` makes the API wait for scoring to be _healthy_.** Readiness is 503 when no model
+  is loaded, so a registry the image could not serve would block the API from starting at all —
+  which contradicts ADR-0008 §3, where an unreachable scoring service is exactly what the degraded
+  path exists for. It does not bite today, because the image now carries the artifact and reports
+  ready. **Revisit with the Spring client**, which is the change that makes degradation real: the
+  likely answer is `service_started` for that one dependency, and it should land with the retry and
+  breaker that prove it rather than ahead of them.
 - **Coverage thresholds are enforced in `apps/api` only** — LINE 0.70, BRANCH 0.60, ratcheted on
   2026-08-26 from 0.50/0.40 after Phase 3 measured 77.6% and 66.1%. `apps/scoring` gained its own
   floor with the feature pipeline — `fail_under = 90`, measured at 95.9%. Both are ratchets: raised
@@ -826,31 +918,30 @@ None.
 
 ## Next three actions
 
-Phase 4 is in progress and `main` is green. Nothing is blocked. A model is trained, evaluated and
-registered, so the two service endpoints now have something real to serve.
+Phase 4 is in progress and `main` is green. Nothing is blocked. The model is trained, registered and
+now served, so what remains is the caller and what it writes down.
 
-1. **`/v1/score` and `/v1/model` in `apps/scoring`.** Written against the contract that already
-   exists and is already tested from both sides. Load the registry entry through
-   `training.registry.load`, which refuses on a checksum mismatch or a feature-version mismatch
-   before the model is used — both are refusals rather than warnings, because a model served against
-   features it was not fitted on produces confident, wrong, unattributable scores. Assert the
-   manifest's `feature_names` against the extractor's own column order at load time as well: a model
-   handed its columns in a different order is not a broken model, it is one quietly answering about
-   different quantities. Return `modelVersion`, `featureVersion`, bounded reason codes and a measured
-   `inferenceDurationMs`. The 0–100 `modelScore` comes from `candidates.to_contract_score`.
-2. **The rules baseline in `apps/api`.** ADR-0002 §3 puts the production ruleset there, because it
+1. **The rules baseline in `apps/api`.** ADR-0002 §3 puts the production ruleset there, because it
    must run in-process when scoring is unreachable — which is what makes a degraded assessment a real
    answer rather than a null with a flag on it. **When it lands, replace
    `training.evaluation.rules_baseline_scores` with something that scores that same ruleset.** It is
    a stand-in today and says so in its own docstring; two rule implementations would drift, and the
-   drift would show up as a model beating a baseline nobody runs.
-3. **The Spring scoring client and persisted assessments.** The client carries the timeouts, bounded
+   drift would show up as a model beating a baseline nobody runs. Its reason codes should read like
+   the ones `/v1/score` now emits — `VELOCITY_1M_HIGH`, `NEW_DEVICE` — with `source: RULE` telling
+   the two apart on the assessment, per the API contract's `ReasonCode`.
+2. **The Spring scoring client and persisted assessments.** The client carries the timeouts, bounded
    retry and circuit breaker ADR-0008 §3 fixes; the breaker is load-bearing, because without it every
    record in a backlog pays the full timeout before degrading. It **consumes
-   `AccountContextAssembler`** rather than writing a second one. The first real
-   `TransactionCreatedHandler` registers into the list the consumer already injects, so the consumer
-   needs no change. `make replay` lands here, since a scoring outage and a poison event are the
-   scenarios worth replaying.
+   `AccountContextAssembler`** rather than writing a second one, and it sends exactly the
+   `ScoreRequest` the assembler already produces for the export — the request side of the contract is
+   tested from both ends, so a mismatch is a bug in one of them rather than an open question. The
+   first real `TransactionCreatedHandler` registers into the list the consumer already injects, so
+   the consumer needs no change. A 422 is never retried and dead-letters; a 503 is retried within
+   budget and then degrades to rules.
+3. **`make replay`, which lands with the client.** It still fails loudly and deliberately: the
+   scenarios worth replaying are §8.3's operational ones — a scoring-service outage, a malformed
+   event reaching the dead-letter path — and neither exists to replay until the client does. Revisit
+   the `compose.yaml` health dependency recorded under "Known issues" in the same change.
 
 ### Before resuming, note the local database is on the LOCAL profile
 
