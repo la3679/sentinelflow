@@ -6,7 +6,6 @@ import { AlertStatusChip, PriorityChip, RiskBandChip } from "@/components/chips"
 import { QueryState } from "@/components/data-state";
 import { PageHeader, Panel } from "@/components/panel";
 import { PaginationBar } from "@/components/pagination-bar";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -23,8 +22,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ALERT_STATUS_LABELS, formatAge, formatMoney, RISK_BAND_LABELS } from "@/domain/labels";
-import { ALERT_STATUSES, RISK_BANDS, type AlertStatus, type RiskBand } from "@/domain/types";
+import { ALERT_PRIORITY_LABELS, ALERT_STATUS_LABELS, formatAgeSince } from "@/domain/labels";
+import {
+  ALERT_PRIORITIES,
+  ALERT_STATUSES,
+  type AlertPriority,
+  type AlertStatus,
+} from "@/domain/types";
 import { useListAlertsQuery } from "@/api/sentinelApi";
 
 export const Route = createFileRoute("/alerts/")({
@@ -34,12 +38,12 @@ export const Route = createFileRoute("/alerts/")({
       {
         name: "description",
         content:
-          "Filterable, paginated queue of synthetic fraud alerts with priority, status, final score, age and assignee.",
+          "Filterable, paginated queue of synthetic fraud alerts with priority, status, final score, age and assignment.",
       },
       { property: "og:title", content: "Alert queue — SentinelFlow" },
       {
         property: "og:description",
-        content: "Work a synthetic fraud alert queue by priority, status and risk band.",
+        content: "Work a synthetic fraud alert queue by priority and status.",
       },
     ],
   }),
@@ -48,53 +52,48 @@ export const Route = createFileRoute("/alerts/")({
 
 const PAGE_SIZE = 20;
 
-function AlertQueuePage() {
-  const [page, setPage] = useState(1);
-  const [status, setStatus] = useState<AlertStatus | "ALL">("ALL");
-  const [riskBand, setRiskBand] = useState<RiskBand | "ALL">("ALL");
-  const [search, setSearch] = useState("");
+/** The sentinel the filter selects use for "do not filter", which is not a value the API takes. */
+const ANY = "ANY";
 
-  const query = useListAlertsQuery({ page, pageSize: PAGE_SIZE, status, riskBand, search });
+function AlertQueuePage() {
+  const [page, setPage] = useState(0);
+  const [status, setStatus] = useState<AlertStatus | typeof ANY>(ANY);
+  const [priority, setPriority] = useState<AlertPriority | typeof ANY>(ANY);
+
+  const query = useListAlertsQuery({
+    page,
+    size: PAGE_SIZE,
+    ...(status === ANY ? {} : { status }),
+    ...(priority === ANY ? {} : { priority }),
+  });
 
   return (
     <AppShell>
       <PageHeader
         title="Alert queue"
-        description="Synthetic alerts ordered by priority, then by final score."
+        description="Open work before closed, then by priority, then oldest first — the queue's own order, which the server decides."
       />
 
       <Panel
         title="Filters"
-        bodyClassName="grid gap-4 p-4 md:grid-cols-3"
+        bodyClassName="grid gap-4 p-4 md:grid-cols-2"
         headingLevel="h2"
         className="mb-4"
       >
-        <div className="space-y-2">
-          <Label htmlFor="alert-search">Search</Label>
-          <Input
-            id="alert-search"
-            placeholder="ALR-000012, ACC-000045, TXN-000101"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setPage(1);
-            }}
-          />
-        </div>
         <div className="space-y-2">
           <Label htmlFor="alert-status">Status</Label>
           <Select
             value={status}
             onValueChange={(value) => {
-              setStatus(value as AlertStatus | "ALL");
-              setPage(1);
+              setStatus(value as AlertStatus | typeof ANY);
+              setPage(0);
             }}
           >
             <SelectTrigger id="alert-status" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All statuses</SelectItem>
+              <SelectItem value={ANY}>All statuses</SelectItem>
               {ALERT_STATUSES.map((item) => (
                 <SelectItem key={item} value={item}>
                   {ALERT_STATUS_LABELS[item]}
@@ -104,22 +103,22 @@ function AlertQueuePage() {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="alert-band">Risk band</Label>
+          <Label htmlFor="alert-priority">Priority</Label>
           <Select
-            value={riskBand}
+            value={priority}
             onValueChange={(value) => {
-              setRiskBand(value as RiskBand | "ALL");
-              setPage(1);
+              setPriority(value as AlertPriority | typeof ANY);
+              setPage(0);
             }}
           >
-            <SelectTrigger id="alert-band" className="w-full">
+            <SelectTrigger id="alert-priority" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All risk bands</SelectItem>
-              {RISK_BANDS.map((item) => (
+              <SelectItem value={ANY}>All priorities</SelectItem>
+              {ALERT_PRIORITIES.map((item) => (
                 <SelectItem key={item} value={item}>
-                  {RISK_BAND_LABELS[item]}
+                  {ALERT_PRIORITY_LABELS[item]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -136,16 +135,17 @@ function AlertQueuePage() {
           onRetry={() => void query.refetch()}
           loadingLabel="Loading alert queue"
           loadingRows={8}
-          isEmpty={(data) => data.items.length === 0}
+          isEmpty={(data) => data.content.length === 0}
           emptyTitle="No alerts match these filters"
-          emptyHint="Clear the search box or widen the status and risk-band filters."
+          emptyHint="Widen the status and priority filters, or seed the stack so there are alerts to work."
         >
           {(data) => (
             <>
               <div className="overflow-x-auto">
                 <Table>
                   <caption className="sr-only">
-                    Synthetic alert queue, page {data.page} of {data.totalPages}
+                    Synthetic alert queue, page {data.page.page + 1} of{" "}
+                    {Math.max(1, data.page.totalPages)}
                   </caption>
                   <TableHeader>
                     <TableRow>
@@ -157,14 +157,12 @@ function AlertQueuePage() {
                         Final score
                       </TableHead>
                       <TableHead scope="col">Age</TableHead>
-                      <TableHead scope="col">Top reason</TableHead>
-                      <TableHead scope="col">Account</TableHead>
-                      <TableHead scope="col">Amount</TableHead>
-                      <TableHead scope="col">Assignee</TableHead>
+                      <TableHead scope="col">Summary</TableHead>
+                      <TableHead scope="col">Assignment</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.items.map((alert) => (
+                    {data.content.map((alert) => (
                       <TableRow key={alert.alertId}>
                         <TableCell>
                           <Link
@@ -172,7 +170,7 @@ function AlertQueuePage() {
                             params={{ alertId: alert.alertId }}
                             className="tabular underline underline-offset-4"
                           >
-                            {alert.alertId}
+                            {alert.alertReference}
                           </Link>
                         </TableCell>
                         <TableCell>
@@ -185,26 +183,23 @@ function AlertQueuePage() {
                           <RiskBandChip band={alert.riskBand} />
                         </TableCell>
                         <TableCell className="tabular text-right">{alert.finalScore}</TableCell>
-                        <TableCell className="tabular">{formatAge(alert.ageMinutes)}</TableCell>
-                        <TableCell className="tabular">{alert.topReasonCode}</TableCell>
-                        <TableCell className="tabular">{alert.accountId}</TableCell>
-                        <TableCell className="tabular">
-                          {formatMoney(alert.money.amount, alert.money.currency)}
+                        <TableCell className="tabular">{formatAgeSince(alert.createdAt)}</TableCell>
+                        <TableCell className="max-w-md text-xs">{alert.summary}</TableCell>
+                        {/*
+                          The API sends an assignee's identifier and nothing
+                          resolves it to a name, so this column says whether the
+                          alert is held rather than by whom. A UUID in a queue
+                          row is not a person anybody recognises.
+                        */}
+                        <TableCell className="text-xs">
+                          {alert.assigneeId ? "Assigned" : "Unassigned"}
                         </TableCell>
-                        <TableCell className="tabular">{alert.assignee ?? "Unassigned"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-              <PaginationBar
-                page={data.page}
-                totalPages={data.totalPages}
-                totalItems={data.totalItems}
-                pageSize={data.pageSize}
-                onPageChange={setPage}
-                itemNoun="alerts"
-              />
+              <PaginationBar meta={data.page} onPageChange={setPage} itemNoun="alerts" />
             </>
           )}
         </QueryState>

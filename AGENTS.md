@@ -41,9 +41,11 @@ user-experience affordance only — never treat it as a security boundary.
 
 ## Mock data layer, and what is left of it
 
-`apps/web/src/mocks/` is a **temporary** deterministic fixture layer, now about
-half retired. An earlier version of this file said the migration was "limited to
-replacing `mockBaseQuery` with `fetchBaseQuery`";
+`apps/web/src/mocks/` is a **temporary** deterministic fixture layer, now down
+to four screens: the overview, reports, model and policy, and system health.
+Every alert and transaction screen reads the API. An earlier version of this
+file said the migration was "limited to replacing `mockBaseQuery` with
+`fetchBaseQuery`";
 [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)
 checked that endpoint by endpoint and found it is four pieces of work, not one.
 **The audit is the authoritative list.**

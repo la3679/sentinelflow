@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 
-import { expect, test } from "./fixtures";
+import { ALERT_ID, ALERT_REFERENCE, expect, test } from "./fixtures";
 
 /** Every route the console is expected to render, and whether it needs a session. */
 const ROUTES = [
@@ -133,23 +133,29 @@ test.describe("synthetic-data disclosure", () => {
 });
 
 test.describe("the transport", () => {
-  test("signing in is the one request the console makes, and it carries no token", async ({
-    page,
-    api,
-    signIn,
-  }) => {
+  test("the login carries no token and everything after it does", async ({ page, api, signIn }) => {
     await signIn(page, "/alerts");
     // Navigated in the application rather than reloaded: a reload drops the
     // in-memory token, which is a different test.
     await page.getByRole("link", { name: "Operations overview" }).click();
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-    // The screens behind these routes still read fixtures: the four endpoints
-    // they want have no server counterpart yet. See
+    const paths = api.requests.map((r) => `${r.method} ${r.path}`);
+    expect(paths[0]).toBe("POST /api/v1/auth/login");
+    expect(api.requests[0]?.authorization, "a login carries no bearer token").toBeNull();
+
+    // The queue is a real request now. The overview is not: its endpoint has no
+    // server counterpart yet, and the four that do not are listed in
     // docs/frontend/API_MIGRATION_AUDIT.md. When they gain one this expectation
     // changes, rather than the console quietly starting to make requests.
-    expect(api.requests.map((r) => `${r.method} ${r.path}`)).toEqual(["POST /api/v1/auth/login"]);
-    expect(api.requests[0]?.authorization, "a login carries no bearer token").toBeNull();
+    expect(paths).toContain("GET /api/v1/alerts");
+    expect(paths).not.toContain("GET /api/v1/overview");
+
+    for (const request of api.requests.slice(1)) {
+      expect(request.authorization, `${request.path} carries the bearer token`).toBe(
+        "Bearer header.payload.not-a-signature",
+      );
+    }
   });
 
   test("a refused sign-in says so without saying which half was wrong", async ({ page, api }) => {
@@ -165,22 +171,56 @@ test.describe("the transport", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test("renders alert rows from the deterministic fixtures", async ({ page, api, signIn }) => {
+  test("renders alert rows from the API, by their references", async ({ page, api, signIn }) => {
     void api;
     await signIn(page, "/alerts");
     // The queue resolves on a delay; wait for a row rather than counting a
-    // skeleton.
-    await expect(page.getByText(/ALR-/).first()).toBeVisible();
+    // skeleton. The reference is what a person reads; the identifier is what
+    // the link routes on (ADR-0007).
+    await expect(page.getByText(ALERT_REFERENCE).first()).toBeVisible();
     expect(await page.getByRole("row").count()).toBeGreaterThan(1);
   });
 
   test("opens an alert detail from the queue", async ({ page, api, signIn }) => {
     void api;
     await signIn(page, "/alerts");
-    await expect(page.getByRole("link", { name: /ALR-/ }).first()).toBeVisible();
-    await page.getByRole("link", { name: /ALR-/ }).first().click();
-    await expect(page).toHaveURL(/\/alerts\/ALR-/);
+    await page.getByRole("link", { name: ALERT_REFERENCE }).first().click();
+    await expect(page).toHaveURL(new RegExp(`/alerts/${ALERT_ID}$`));
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+
+  test("offers only the moves the alert says this reader may make", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    void api;
+    await signIn(page, `/alerts/${ALERT_ID}`);
+
+    // Rendered from legalTargets and nothing else. The console used to hold a
+    // second copy of the state machine that offered two moves the server
+    // answers 409 to and hid four legal ones.
+    await expect(page.getByRole("button", { name: "Move to In review" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /move to closed/i })).toHaveCount(0);
+  });
+
+  test("a transition answers 409 by re-reading the alert and offering the move again", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    await signIn(page, `/alerts/${ALERT_ID}`);
+    api.conflictOnNextTransition();
+
+    await page.getByRole("button", { name: "Move to In review" }).click();
+
+    // Not a toast saying "conflict": the alert is re-read, what it is now is
+    // stated, and the move is offered again at the version that came back.
+    const notice = page
+      .getByRole("alert")
+      .filter({ hasText: /changed while you were reading it/i });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(/in review/i);
   });
 });
 

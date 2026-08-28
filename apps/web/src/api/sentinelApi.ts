@@ -2,17 +2,18 @@ import { createApi } from "@reduxjs/toolkit/query/react";
 
 import { sentinelBaseQuery, type SentinelRequest } from "@/api/transport";
 import type {
-  AlertDetail,
+  Alert,
+  AlertAction,
+  AlertPriority,
   AlertStatus,
-  AlertSummary,
   ModelPolicySnapshot,
   OverviewSnapshot,
-  Paginated,
+  Page,
   ReportsSnapshot,
+  RiskAssessment,
   RiskBand,
   SystemHealthSnapshot,
   Transaction,
-  TransactionDetail,
 } from "@/domain/types";
 
 /** `POST /auth/login`. The one request made without a token, and the one that returns one. */
@@ -29,20 +30,30 @@ export interface TokenResponse {
   roles: string[];
 }
 
+/**
+ * The queue's filters, which are exactly the ones `GET /alerts` accepts.
+ *
+ * There is no free-text search and no risk-band filter, because the API has
+ * neither. Offering one would be a control that quietly did nothing — Phase 6's
+ * gate is that there are none of those.
+ *
+ * `page` is zero-based here because it is zero-based in the contract. Carrying
+ * a one-based page in the client and subtracting on the way out is the kind of
+ * translation that survives until somebody forgets it.
+ */
 export interface AlertListArgs {
   page: number;
-  pageSize: number;
-  status: AlertStatus | "ALL";
-  riskBand: RiskBand | "ALL";
-  search: string;
+  size: number;
+  status?: AlertStatus | undefined;
+  priority?: AlertPriority | undefined;
 }
 
+/** The filters `GET /transactions` accepts, and no others. */
 export interface TransactionListArgs {
   page: number;
-  pageSize: number;
-  status: Transaction["status"] | "ALL";
-  riskBand: RiskBand | "ALL";
-  search: string;
+  size: number;
+  accountReference?: string | undefined;
+  riskBand?: RiskBand | undefined;
 }
 
 /** A request the server answers today. */
@@ -56,10 +67,22 @@ const real = (input: SentinelRequest): SentinelRequest => input;
  */
 const fixture = (input: SentinelRequest): SentinelRequest => ({ ...input, transport: "mock" });
 
+/** Query parameters, with the ones nobody chose left off rather than sent empty. */
+function params(
+  values: Record<string, string | number | undefined>,
+): Record<string, string | number> {
+  return Object.fromEntries(
+    Object.entries(values).filter((entry): entry is [string, string | number] => {
+      const [, value] = entry;
+      return value !== undefined && value !== "";
+    }),
+  );
+}
+
 export const sentinelApi = createApi({
   reducerPath: "sentinelApi",
   baseQuery: sentinelBaseQuery,
-  tagTypes: ["Alert", "AlertList", "Overview"],
+  tagTypes: ["Alert", "AlertList", "AlertHistory", "Overview"],
   endpoints: (builder) => ({
     login: builder.mutation<TokenResponse, LoginArgs>({
       query: (credentials) => real({ url: "/auth/login", method: "POST", body: credentials }),
@@ -68,60 +91,86 @@ export const sentinelApi = createApi({
       query: () => fixture({ url: `/overview` }),
       providesTags: ["Overview"],
     }),
-    listTransactions: builder.query<Paginated<Transaction>, TransactionListArgs>({
-      query: (args) => fixture({ url: `/transactions`, params: { ...args } }),
+    listTransactions: builder.query<Page<Transaction>, TransactionListArgs>({
+      query: (args) => real({ url: `/transactions`, params: params({ ...args }) }),
     }),
-    getTransaction: builder.query<TransactionDetail, string>({
+    getTransaction: builder.query<Transaction, string>({
+      query: (transactionId) => real({ url: `/transactions/${encodeURIComponent(transactionId)}` }),
+    }),
+    /**
+     * `404` is a normal outcome here rather than a failure: ingestion is
+     * asynchronous, so a transaction can legitimately have no assessment yet.
+     */
+    getTransactionAssessment: builder.query<RiskAssessment, string>({
       query: (transactionId) =>
-        fixture({ url: `/transactions/${encodeURIComponent(transactionId)}` }),
+        real({ url: `/transactions/${encodeURIComponent(transactionId)}/assessment` }),
     }),
-    listAlerts: builder.query<Paginated<AlertSummary>, AlertListArgs>({
-      query: (args) => fixture({ url: `/alerts`, params: { ...args } }),
+    listAlerts: builder.query<Page<Alert>, AlertListArgs>({
+      query: (args) => real({ url: `/alerts`, params: params({ ...args }) }),
       providesTags: ["AlertList"],
     }),
-    getAlert: builder.query<AlertDetail, string>({
-      query: (alertId) => fixture({ url: `/alerts/${encodeURIComponent(alertId)}` }),
+    getAlert: builder.query<Alert, string>({
+      query: (alertId) => real({ url: `/alerts/${encodeURIComponent(alertId)}` }),
       providesTags: (_result, _error, alertId) => [{ type: "Alert" as const, id: alertId }],
     }),
+    getAlertHistory: builder.query<Page<AlertAction>, { alertId: string; size?: number }>({
+      query: ({ alertId, size = 50 }) =>
+        real({ url: `/alerts/${encodeURIComponent(alertId)}/history`, params: { size } }),
+      providesTags: (_result, _error, { alertId }) => [
+        { type: "AlertHistory" as const, id: alertId },
+      ],
+    }),
+    /**
+     * `PUT`, and one operation for both directions: a null `assigneeId` releases
+     * the alert back to the queue rather than assigning it to nobody.
+     */
     assignAlert: builder.mutation<
-      AlertDetail,
-      { alertId: string; assignee: string; actor: string }
+      Alert,
+      { alertId: string; assigneeId: string | null; expectedVersion: number; note?: string }
     >({
-      query: ({ alertId, assignee, actor }) =>
-        fixture({
-          url: `/alerts/${encodeURIComponent(alertId)}/assignee`,
-          method: "PATCH",
-          body: { assignee, actor },
+      query: ({ alertId, assigneeId, expectedVersion, note }) =>
+        real({
+          url: `/alerts/${encodeURIComponent(alertId)}/assignment`,
+          method: "PUT",
+          body: { assigneeId, expectedVersion, ...(note ? { note } : {}) },
         }),
       invalidatesTags: (_r, _e, { alertId }) => [
         { type: "Alert" as const, id: alertId },
+        { type: "AlertHistory" as const, id: alertId },
         "AlertList",
       ],
     }),
     transitionAlert: builder.mutation<
-      AlertDetail,
-      { alertId: string; status: AlertStatus; actor: string }
+      Alert,
+      { alertId: string; targetStatus: AlertStatus; expectedVersion: number; note?: string }
     >({
-      query: ({ alertId, status, actor }) =>
-        fixture({
-          url: `/alerts/${encodeURIComponent(alertId)}/status`,
-          method: "PATCH",
-          body: { status, actor },
+      query: ({ alertId, targetStatus, expectedVersion, note }) =>
+        real({
+          url: `/alerts/${encodeURIComponent(alertId)}/transition`,
+          method: "POST",
+          body: { targetStatus, expectedVersion, ...(note ? { note } : {}) },
         }),
       invalidatesTags: (_r, _e, { alertId }) => [
         { type: "Alert" as const, id: alertId },
+        { type: "AlertHistory" as const, id: alertId },
         "AlertList",
         "Overview",
       ],
     }),
-    addAlertNote: builder.mutation<AlertDetail, { alertId: string; body: string; actor: string }>({
-      query: ({ alertId, body, actor }) =>
-        fixture({
+    /**
+     * A note carries no `expectedVersion`, because it appends rather than
+     * replaces: two analysts writing one at the same time both succeed, the
+     * alert row is not touched, and its version does not move. The response is
+     * the history entry that was written, not the alert.
+     */
+    addAlertNote: builder.mutation<AlertAction, { alertId: string; note: string }>({
+      query: ({ alertId, note }) =>
+        real({
           url: `/alerts/${encodeURIComponent(alertId)}/notes`,
           method: "POST",
-          body: { body, actor },
+          body: { note },
         }),
-      invalidatesTags: (_r, _e, { alertId }) => [{ type: "Alert" as const, id: alertId }],
+      invalidatesTags: (_r, _e, { alertId }) => [{ type: "AlertHistory" as const, id: alertId }],
     }),
     getReports: builder.query<ReportsSnapshot, void>({
       query: () => fixture({ url: `/reports` }),
@@ -140,8 +189,10 @@ export const {
   useGetOverviewQuery,
   useListTransactionsQuery,
   useGetTransactionQuery,
+  useGetTransactionAssessmentQuery,
   useListAlertsQuery,
   useGetAlertQuery,
+  useGetAlertHistoryQuery,
   useAssignAlertMutation,
   useTransitionAlertMutation,
   useAddAlertNoteMutation,
