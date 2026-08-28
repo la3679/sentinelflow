@@ -573,6 +573,134 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /reports/alert-summary:
+    get:
+      tags: [reports]
+      operationId: getAlertSummary
+      summary: Count one window of alerts (Phase 5)
+      description: |
+        Counts the alerts created in a window, by status, priority and band.
+
+        **The window is required and has no default.** A report with no window
+        is a report over the whole table, which grows without limit. Defaulting
+        it to "the last seven days" would be a number this service invented
+        rather than one the caller chose, and a client that did not notice would
+        quote a figure about a period it never asked for.
+
+        **`from` is inclusive and `to` is exclusive**, so two adjacent windows
+        neither double-count a row on the boundary nor lose it.
+
+        **Not paged, and deliberately.** Six statuses, four priorities and four
+        bands are the whole response however many alerts the window holds, so it
+        cannot grow with the dataset and a page parameter would be one nobody
+        could use.
+
+        **Readable by every authenticated role, including `AUDITOR`.** Nothing
+        here mutates anything.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WindowFrom"
+        - $ref: "#/components/parameters/WindowTo"
+      responses:
+        "200":
+          description: The window's counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: |
+            The window is inverted or wider than the maximum.
+
+            An inverted window matches no rows, so the honest-looking answer is
+            an empty report - which reads as "there were no alerts" and is the
+            worst thing a report can say when it is not true. `detail` names
+            which of the two rules refused it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /reports/alerts.csv:
+    get:
+      tags: [reports]
+      operationId: exportAlerts
+      summary: Export one window of alerts as CSV (Phase 5)
+      description: |
+        The same window as the summary, one row per alert, as a downloadable
+        file.
+
+        **`text/csv` with `Content-Disposition: attachment`**, and a filename
+        naming the window it covers - a file called `export.csv` is one nobody
+        can identify a week later.
+
+        **Capped rather than paged.** A report a person opens in a spreadsheet
+        is a file, not a cursor, and asking an analyst to stitch four pages
+        together in Excel is how a report becomes wrong. A window holding more
+        rows than the cap is refused with `413` instead, which says exactly what
+        to narrow.
+
+        **Every cell is neutralised against formula injection.** A value
+        beginning `=`, `+`, `-`, `@`, tab or carriage return is prefixed with an
+        apostrophe, because the alert summary is generated from a transaction
+        reference that arrived through an ingestion endpoint left open until
+        Phase 8 - so a cell in this file can contain characters somebody outside
+        the system chose.
+
+        Line endings are CRLF and the encoding is UTF-8, per RFC 4180.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/WindowFrom"
+        - $ref: "#/components/parameters/WindowTo"
+      responses:
+        "200":
+          description: |
+            The window as CSV: a header row, then one row per alert, oldest
+            first. An empty window returns the header and nothing else - a
+            header with no rows is a true answer, where an empty body would be
+            indistinguishable from a failure that returned `200`.
+          headers:
+            Content-Disposition:
+              description: |
+                `attachment` with a filename of the form
+                `sentinelflow-alerts-{from}-to-{to}.csv`.
+              schema:
+                type: string
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            text/csv:
+              schema:
+                type: string
+                description: |
+                  Columns, in order: `alertReference`, `status`, `priority`,
+                  `riskBand`, `finalScore`, `assigneeId`, `summary`,
+                  `createdAt`, `closedAt`. `finalScore` is a decimal string, and
+                  `assigneeId` and `closedAt` are empty when unset.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: |
+            The window holds more alerts than one export carries.
+
+            `413` rather than `422`: the request is entirely valid and it is the
+            *response* that cannot be produced, so a client should narrow the
+            window rather than look for a mistake in what it sent. The problem
+            body carries both `rows` and `limit`, so the window can be narrowed
+            arithmetically rather than by halving it until it works.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ExportTooLargeProblem"
+        "422":
+          description: The window is inverted or wider than the maximum.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
   /models/active:
     get:
       tags: [model]
@@ -652,6 +780,32 @@ components:
         minimum: 1
         maximum: 200
         default: 50
+
+    WindowFrom:
+      name: from
+      in: query
+      required: true
+      description: |
+        Inclusive lower bound on the alert's `createdAt`. ISO 8601 with an
+        explicit offset.
+      schema:
+        type: string
+        format: date-time
+      example: "2026-08-01T00:00:00Z"
+
+    WindowTo:
+      name: to
+      in: query
+      required: true
+      description: |
+        **Exclusive** upper bound on `createdAt`, and it must be after `from`.
+        The window may not exceed **366 days** - long enough for any review
+        period this demo has data for, and short enough that the count behind a
+        summary stays a scan of a bounded slice.
+      schema:
+        type: string
+        format: date-time
+      example: "2026-08-29T00:00:00Z"
 
     TransactionId:
       name: transactionId
@@ -1203,6 +1357,75 @@ components:
           $ref: "#/components/schemas/PageMeta"
       required: [content, page]
       additionalProperties: false
+
+    AlertSummary:
+      type: object
+      description: |
+        Counts over one window. **Every number here is counted, never
+        estimated** - nothing is sampled and nothing is cached, because a figure
+        in an operations report that is quietly approximate is worse than no
+        figure: it is one somebody will quote.
+
+        The three maps always carry **every** key of their enum, including the
+        zeroes. A missing key and a zero are the same fact and a client should
+        not have to know that; a chart with a gap where `CRITICAL` should be
+        reads as missing data rather than as none.
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: |
+            The window this report covers, echoed back so the answer carries the
+            period it is about.
+        to: { type: string, format: date-time }
+        total: { type: integer, minimum: 0 }
+        open:
+          type: integer
+          minimum: 0
+          description: |
+            Derived from `closedAt` being absent, not from a list of statuses.
+            "Which statuses mean open" is a fact about the state machine, and
+            duplicating it here would be a second place to change when a status
+            is added.
+        closed: { type: integer, minimum: 0 }
+        byStatus:
+          type: object
+          description: One key per `AlertStatus`, zeroes included.
+          propertyNames:
+            $ref: "#/components/schemas/AlertStatus"
+          additionalProperties: { type: integer, minimum: 0 }
+        byPriority:
+          type: object
+          description: One key per `AlertPriority`, zeroes included.
+          propertyNames:
+            $ref: "#/components/schemas/AlertPriority"
+          additionalProperties: { type: integer, minimum: 0 }
+        byBand:
+          type: object
+          description: One key per `RiskBand`, zeroes included.
+          propertyNames:
+            $ref: "#/components/schemas/RiskBand"
+          additionalProperties: { type: integer, minimum: 0 }
+      required: [from, to, total, open, closed, byStatus, byPriority, byBand]
+      additionalProperties: false
+
+    ExportTooLargeProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          description: |
+            A `Problem` carrying both numbers, so a client can compute how much
+            to narrow the window by rather than guess at it.
+          properties:
+            rows:
+              type: integer
+              minimum: 0
+              description: How many alerts the requested window holds.
+            limit:
+              type: integer
+              minimum: 1
+              description: The most rows one export carries.
+          required: [rows, limit]
 
     ModelMetadata:
       type: object
