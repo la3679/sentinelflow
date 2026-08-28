@@ -14,11 +14,11 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T16:30Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T19:45Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 6; the transport and the real sign-in are done, and the console now calls the API                                                 |
+| Overall status       | active — Phase 6; every alert and transaction screen reads the API, and four screens are left on fixtures                                        |
 | Current phase        | Phase 6 — operations frontend (in progress)                                                                                                      |
-| Current task         | the types, and deleting `ALLOWED_TRANSITIONS`                                                                                                    |
+| Current task         | the four endpoints the console invents — piece 4 of the migration audit                                                                          |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -26,7 +26,7 @@
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none — [#59](https://github.com/la3679/sentinelflow/pull/59) merged                                                                              |
+| Open PRs             | none — [#63](https://github.com/la3679/sentinelflow/pull/63) merged                                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -971,11 +971,75 @@ The schema's description of that field was corrected instead, for a different re
 
 ## In progress — Phase 6
 
-**Three pull requests merged and one open**: the API migration audit as
+**Six pull requests merged, nothing open**: the API migration audit as
 [#56](https://github.com/la3679/sentinelflow/pull/56), the alert's legal targets as
 [#57](https://github.com/la3679/sentinelflow/pull/57), a state checkpoint as
-[#58](https://github.com/la3679/sentinelflow/pull/58), and the transport and authentication as
-[#59](https://github.com/la3679/sentinelflow/pull/59).
+[#58](https://github.com/la3679/sentinelflow/pull/58), the transport and authentication as
+[#59](https://github.com/la3679/sentinelflow/pull/59), the transaction read endpoints as
+[#62](https://github.com/la3679/sentinelflow/pull/62), and the typed domain with the alert and
+transaction screens as [#63](https://github.com/la3679/sentinelflow/pull/63).
+
+### Three endpoints the contract described and nobody had built
+
+`GET /transactions`, `GET /transactions/{id}` and `GET /transactions/{id}/assessment` have been in
+`contracts/openapi/` since Phase 3. **`TransactionController` implemented only the `POST`.** Nothing
+had noticed because nothing had called them: the console rendered transactions from fixtures, and
+the audit that opened Phase 6 says it checked the handlers and on these three checked the contract.
+
+Built in [#62](https://github.com/la3679/sentinelflow/pull/62) with 16 integration tests. Three
+decisions in it worth knowing:
+
+- **The response publishes references, and the entity holds none.** `TransactionRecord` carries the
+  account and the merchant as bare UUIDs; the contract publishes `ACC-000123` and `MER-0042`. The
+  page is a projection joined in the database, because resolving two references per row afterwards
+  is an N+1 over a page of up to 200.
+- **The band comes from the highest-version assessment**, through a `LEFT JOIN` that names the
+  version. A plain join would page a rescored transaction once per assessment; an inner join would
+  hide every transaction that has not been scored yet, which is a normal state and exactly the one
+  an operator looks for.
+- **Two distinct 404s.** "No such transaction" is the caller's mistake; "not scored yet" is this
+  system still working. Same status because a client polling acts identically either way, different
+  problem type so the log and the body need not be as vague as the status code.
+
+**One defect worth keeping.** PostgreSQL refused the paged query at prepare time — `could not
+determine data type of parameter $5` — on a bare `:occurredAfter IS NULL`. Valid HQL and valid JPQL;
+a placeholder in that position has no context to be typed from, while the enum and string filters
+beside it need no cast because Hibernate binds those with a declared type. The two
+`cast(... as Instant)` calls are load-bearing, and removing either returns every list request to a
+500 that no test of the query's _logic_ would catch.
+
+**A fourth is still missing.** `GET /models/active` is in the contract at Phase 4 and has no
+handler either. `model_registry` exists as a table, has constraint tests, and **nothing has ever
+written a row to it** — the real registry is the one the scoring service serves from disk at
+`GET /v1/model`. That is piece 4's problem, and it is a decision rather than a gap to fill.
+
+### The console reads the API for every alert and every transaction
+
+[#63](https://github.com/la3679/sentinelflow/pull/63). `domain/types.ts` is rewritten against the
+contract, and the four screens that read it read the API.
+
+- **`ALLOWED_TRANSITIONS` is deleted rather than corrected**, and the controls render from the
+  alert's own `legalTargets`. A corrected copy would have gone stale the next time either side
+  changed, which is exactly what had already happened to it.
+- **The `409` is answered rather than reported.** Re-read the alert, say what it is now, offer the
+  same move again at the version that came back — or say why it is no longer available. A stale
+  version and an illegal transition reach a person as one sentence, because to a person they are
+  one event.
+- **Three controls were deleted, not migrated**, because Phase 6's gate is that there are none that
+  do nothing: the queue's free-text search and risk-band filter (`GET /alerts` has neither), the
+  feed's authorisation-status filter with the enum behind it (this system scores and never
+  authorises), and the assignee picker.
+
+**The assignee picker is the sharpest of the three, and it is worse than the audit thought.** The
+audit recorded that an assignee renders as a UUID. The real position is that **this console cannot
+assign an alert to anybody at all**: assignment takes an identifier, nothing resolves a name to one,
+and the login response carries the operator's roles but not their own identifier — so not even
+"assign to me" is buildable. Release, which sends `null`, is the only assignment it can honestly
+make, and the screen says why.
+
+**Nothing goes from a transaction to its alert either.** `GET /alerts` filters on status, priority
+and assignee, and there is no lookup by transaction. The transaction page says so rather than
+offering a link it would have to guess at.
 
 ### The console calls the API, and signs in to do it
 
@@ -1046,9 +1110,9 @@ The audit is the authoritative list. The four pieces it identifies:
 | Piece                        | State                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------- |
 | Transport and authentication | **done** — [#59](https://github.com/la3679/sentinelflow/pull/59)           |
-| Types and mapping            | not started — next                                                         |
+| Types and mapping            | **done** — [#63](https://github.com/la3679/sentinelflow/pull/63)           |
 | Two small API additions      | **one of two done** — legal targets merged; the assignee name is undecided |
-| The four invented endpoints  | not started — each needs a decision, and the overview matters most         |
+| The four invented endpoints  | not started — next; each needs a decision, and the overview matters most   |
 
 ### The console offers buttons the server refuses, which is a gate failure
 
@@ -1066,7 +1130,7 @@ so an analyst is not offered the administrative close and an auditor is offered 
 comparing what it was offered against what a refusal names cannot be shown two answers. A test
 asserts they are equal.
 
-**Deleting `ALLOWED_TRANSITIONS` is the console's half and has not been done yet.**
+**Deleting `ALLOWED_TRANSITIONS` was the console's half, and [#63](https://github.com/la3679/sentinelflow/pull/63) did it.**
 
 ### Three findings from the audit that are decisions rather than mapping
 
@@ -1332,6 +1396,34 @@ available.
 | `main` protected                    | **pass** | Ruleset `21493410`, verified through the rules API                              |
 
 ## Test and verification evidence
+
+### 2026-08-28 — Phase 6, the transaction endpoints and the typed console
+
+| Check                                 | Result                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `./mvnw verify` (apps/api)            | **PASS** — 204 unit and 279 integration tests, 0 failures, JDK 25.0.4.1+1     |
+| JaCoCo gate (LINE 0.80, BRANCH 0.70)  | **met** — line 0.8991, branch 0.8030, instruction 0.9088                      |
+| `TransactionReadIT`                   | **16 passed**, against real PostgreSQL — the new suite                        |
+| `bun run verify` (apps/web)           | **PASS** — lint clean, typecheck clean, 41 unit tests in 6 files, build built |
+| `bun run test:e2e` (apps/web)         | **PASS** — 72 tests, desktop and tablet, axe clean on all eight routes        |
+| `bun scripts/dev/check-contracts.mjs` | **PASS** — every schema, example and API document                             |
+| `bun scripts/dev/check-docs.mjs`      | **PASS** — 182 links across 44 files, 0 broken, no placeholders               |
+| `bun run format:check`                | **PASS**                                                                      |
+
+Merged as [#62](https://github.com/la3679/sentinelflow/pull/62) and
+[#63](https://github.com/la3679/sentinelflow/pull/63); all ten required checks passed on each.
+
+**The e2e stub answers in the contract's shapes, field for field.** That is what makes 72 passing
+tests against no backend meaningful: a screen that passes there cannot break against the real API
+for a reason the suite could have caught. Two of the new tests are the ones that would have caught
+this session's own bugs — that only `legalTargets` moves are offered, and that a `409` re-reads the
+alert and offers the move again.
+
+**Not run this session:** `make smoke`, the compose stack, and `apps/scoring`'s suite. The scoring
+service was not touched.
+
+**The README screenshots were regenerated** from the same production bundle, so the alert queue
+image shows the columns the API actually serves rather than the fixture's.
 
 ### 2026-08-28 — Phase 6, the transport and the real sign-in
 
@@ -1885,23 +1977,32 @@ None.
 
 ## Next three actions
 
-Phase 6 is under way. The audit, the first of its two API additions, and the transport with real
-authentication are merged; nothing is open and `main` is green.
+Phase 6 is under way. The audit, the first of its two API additions, the transport with real
+authentication, the transaction read endpoints and the typed console are merged; nothing is open and
+`main` is green. Two of the migration's four pieces are done.
 
-1. **The types, and deleting `ALLOWED_TRANSITIONS`.** `domain/types.ts` rewritten against the
-   contract: the real enums (`AlertPriority` is `LOW | MEDIUM | HIGH | URGENT`, not `P1–P4`;
-   `TransactionStatus` describes a payment switch this system is not), the reference/identifier pair
-   (ADR-0007 — a queue row showing a UUID is unreadable), `version` for the optimistic concurrency
-   that currently has no client at all, `SYSTEM` as a fourth role, and the removal of the
-   client-supplied `actor` from three mutation bodies. The transition controls then render from
-   `legalTargets`, and `/alerts` and `/transactions` lose their `transport: "mock"`.
-   **The `409` is the real work here**, and it is not plumbing: re-read the alert, show what changed,
-   ask again. `SentinelError.extensions` already carries `currentVersion` and `legalTargets`.
-2. **Then decide the four invented endpoints**, starting with the overview, and record each decision
-   where somebody will find it. The audit sets out what each one wants and what exists.
-3. **Then the screens themselves** — the remaining Phase 6 deliverables, against real data rather
-   than fixtures, and the gate: no dead controls, keyboard and accessibility checks, the core e2e
-   journey, and current screenshots.
+1. **Decide the four endpoints the console invents**, and record each decision where somebody will
+   find it. The audit sets out what each wants; what has since been established about what exists:
+
+   - **`GET /overview`** is the landing page and wants three systems' worth of data. Alert counts by
+     status, priority and band are already `GET /reports/alert-summary`. The throughput series has
+     no source at all. Latency percentiles and consumer lag are Prometheus and Kafka, not this API —
+     and Phase 7 is where they arrive with the signals behind them. The likely honest answer is that
+     the overview becomes real for the parts that exist and openly defers the rest, rather than the
+     API growing a dependency on Prometheus a phase early.
+   - **`GET /model-policy`** needs `GET /models/active`, **which is in the contract at Phase 4 and
+     has no handler**. Worse, `model_registry` has never had a row written to it: the registry of
+     record is the one `apps/scoring` serves from disk. So the decision is not "build the endpoint",
+     it is _where the model registry of record lives_ — and that is an ADR.
+   - **`GET /reports`** wants a daily trend and feedback aggregates. `GET /reports/alert-summary`
+     answers counts over one window and nothing else, so this screen is partly real today.
+   - **`GET /health`** wants component states and pipeline lag, which is Phase 7's subject matter.
+
+2. **Then the screens themselves** — the remaining Phase 6 deliverables, and the gate: no dead
+   controls, keyboard and accessibility checks, the core e2e journey, and current screenshots. The
+   alert and transaction screens already meet it; the four above are what is left.
+3. **Then close Phase 6 against its gate**, with the evidence each criterion rests on, the way
+   Phases 2 to 5 were closed.
 
 **One decision is the user's and blocks nothing.** `make reset-demo` then `make seed`, because the
 demo database predates alert creation and holds **zero alerts** — every reporting endpoint honestly

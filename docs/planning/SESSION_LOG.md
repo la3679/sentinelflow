@@ -2250,3 +2250,73 @@ Recorded in `PROJECT_STATE.md`: merge #59 once green, then the types and the del
 `ALLOWED_TRANSITIONS` — where the `409` is the real work rather than the renames — then a decision
 per invented endpoint starting with the overview. Separately and blocking nothing, `make reset-demo`
 then `make seed` is still the user's to run.
+
+## 2026-08-28 — the README reconciled, and the console wired to the API
+
+### What was done
+
+**The README was reconciled against the repository first**, at the user's request. It still said
+Phase 5 was in progress and named the reporting endpoints and the CSV export as what does not run
+yet; both merged in [#52](https://github.com/la3679/sentinelflow/pull/52). It also carried a known
+limitation saying the console's sign-in screen is presentational, which
+[#59](https://github.com/la3679/sentinelflow/pull/59) had made false. Every replacement was checked
+against the code — the handlers, the contract paths, `transport.ts` and `sentinelApi.ts` — rather
+than against the state file alone. Merged as [#61](https://github.com/la3679/sentinelflow/pull/61).
+
+**Then Phase 6's second piece**, which turned into two pull requests because of what it found:
+[#62](https://github.com/la3679/sentinelflow/pull/62) built three transaction read endpoints that
+did not exist, and [#63](https://github.com/la3679/sentinelflow/pull/63) rewrote the console's
+domain against the contract and pointed every alert and transaction screen at the API.
+
+### Things worth keeping
+
+- **An audit that reads one of two documents and reports on both has not been made.**
+  `API_MIGRATION_AUDIT.md` says it checked the contract _and the handlers_; on
+  `GET /transactions`, `GET /transactions/{id}` and `GET /transactions/{id}/assessment` it checked
+  only the contract, and recorded as "maps, with field renames" three endpoints that answered 404.
+  This is the third instance of one shape this project keeps meeting — the reference collision, the
+  seed's idempotency guard, and now this — where a check tests a proxy for the thing rather than the
+  thing. **It was found by writing the client the audit called for**, which is the only way it was
+  ever going to be found.
+- **A fourth endpoint is still missing and it is a decision, not a gap.** `GET /models/active` is in
+  the contract at Phase 4 with no handler, and `model_registry` has never had a row written to it —
+  the registry of record is the one `apps/scoring` serves from disk. Building the endpoint over an
+  empty table would produce a permanent 404 that looked like an outage.
+- **Deleting a control is a legitimate outcome of a migration.** Three went in #63 — the queue's
+  search box and risk-band filter, the feed's authorisation-status filter, and the assignee picker —
+  because the API has no counterpart for any of them, and a filter that quietly matches everything
+  is exactly the dead control Phase 6's gate forbids.
+- **The assignee case is worse than the audit recorded, and the sharper version is the useful one.**
+  "An assignee renders as a UUID" is a display problem. "This console cannot assign an alert to
+  anybody" is the real position: assignment takes an identifier, nothing resolves a name to one, and
+  the login response carries roles but not the operator's own identifier — so not even "assign to
+  me" is buildable. Release is the only assignment it can honestly make.
+- **PostgreSQL cannot type a bare `:param IS NULL`.** The paged transaction query is valid HQL and
+  valid JPQL and was refused at prepare time with `could not determine data type of parameter $5`.
+  The enum and string filters beside it need no cast, so the failure looks arbitrary until you see
+  that a placeholder in that position has no context to be typed from. Two `cast(... as Instant)`
+  calls fix it, and the javadoc says they are load-bearing — no test of the query's _logic_ would
+  catch their removal.
+- **A stub in the contract's shapes is what makes an e2e suite with no backend mean anything.** The
+  Playwright stub answers field for field with `contracts/openapi/`, so a screen that passes there
+  cannot break against the real API for a reason the suite could have caught. Two of the new tests
+  are the ones that would have caught this session's own mistakes.
+
+### Verification
+
+| Check                                | Result                                                              |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| `./mvnw verify` (apps/api)           | **PASS** — 204 unit and 279 integration tests, 0 failures           |
+| JaCoCo gate (LINE 0.80, BRANCH 0.70) | **met** — line 0.8991, branch 0.8030                                |
+| `bun run verify` (apps/web)          | **PASS** — 41 unit tests in 6 files                                 |
+| `bun run test:e2e` (apps/web)        | **PASS** — 72 tests, axe clean on all eight routes                  |
+| contracts, docs, formatting          | **PASS** — 182 links, 0 broken; all contract checks; prettier clean |
+
+All ten required checks passed on each of #61, #62 and #63.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: piece 4 of the migration — a decision per invented endpoint, with
+the overview and the model registry being the two that are genuinely architectural rather than
+mechanical. Separately and blocking nothing, `make reset-demo` then `make seed` is still the user's
+to run.
