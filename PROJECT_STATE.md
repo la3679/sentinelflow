@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-27T21:40Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T00:20Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5 started; alert creation written, not yet covered end to end                                                                     |
+| Overall status       | active — Phase 5; alert creation covered end to end and open as a pull request                                                                   |
 | Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
-| Current task         | an integration test for the alert path, then the PR                                                                                              |
+| Current task         | the alert state machine, once the alert-creation pull request has merged                                                                         |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/alert-creation` — pushed, no pull request yet                                                                                              |
+| Working branch       | `feat/alert-creation` — pushed, pull request [#49](https://github.com/la3679/sentinelflow/pull/49) open                                          |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none                                                                                                                                             |
+| Open PRs             | [#49](https://github.com/la3679/sentinelflow/pull/49) — Phase 5 alert creation                                                                   |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -741,9 +741,9 @@ one is still handled.
 
 ## In progress — Phase 5
 
-**Stopped at a checkpoint, not at a finish line.** Everything below compiles, is unit-tested and is
-pushed on `feat/alert-creation`. The alert path has **no end-to-end coverage yet**, which is the next
-action and the reason there is no pull request.
+**The first piece is complete and open as a pull request.** Everything below is written, unit-tested,
+covered end to end against a real broker and database, and pushed on `feat/alert-creation`. What
+remains of Phase 5 — the state machine, assignment, notes, feedback, authorization — has not started.
 
 **The alerting rule joined the policy object** rather than starting a second one. ADR-0008 §4 gives
 this service "the alerting policy applied to a final score at runtime", and deciding which bands are
@@ -771,7 +771,7 @@ computed, inside `RiskAssessmentService`'s two pure methods, and the raiser acts
 policy a second time would be two answers to one question, and the day they disagreed a row would
 claim an alert nobody could find.
 
-### The model alone cannot raise an alert, and that is arithmetic nobody wrote down
+### The model alone cannot raise an alert — now a stated policy rather than an accident
 
 ADR-0011's combination is `max(rule, 0.6 x model + 0.4 x rule)`. With a rule score of zero the best a
 perfect model can produce is **60**, and the alerting band starts at 70 — so **a transaction that
@@ -784,22 +784,50 @@ alert when at least one indicator an analyst can read has fired" is a defensible
 explainability-first console, and it is arguably the point of the floor. But it has to be a stated
 decision rather than an accident, and right now it is an accident.
 
-**Not resolved in this session, deliberately.** Changing the formula or the threshold would be
-re-deciding an ADR without evidence, and the evidence — measured alert volume against a stated
-review capacity — is what ADR-0011 already says these numbers should be revisited against. Recorded
-here and in the next actions so the decision is taken deliberately rather than inherited.
+**Resolved by stating it, not by moving a number.** It is now **ADR-0011 §4**, with the arithmetic
+written out, the reason it is wanted, and the cost of wanting it. The reason: the console is
+explainability-first, so every alert it raises can be opened on an indicator an analyst can check and
+dispute, and an alert justified only by "the model was confident" is the one they learn to clear
+without reading. The cost, stated in the same place: a shape the model recognises and the ruleset
+misses is scored, banded, persisted and visible, and opens nothing.
+
+Changing the formula or the threshold instead would have been re-deciding an ADR without the measured
+alert volume that ADR already asks these numbers to be revisited against. Two tests in
+`RiskPolicyPropertiesTests` now pin both halves — a maximal model over a silent ruleset bands MEDIUM,
+and 25 is the rule score where the combination first clears 70 — so moving either number cannot alter
+the implication silently. The ADR's "revisit if" gained the condition that would reopen it, and the
+route back is a new rule that makes the shape transparent rather than an alert nobody can review.
 
 ### What is done, and what is not
 
-| Piece                                          | State                                              |
-| ---------------------------------------------- | -------------------------------------------------- |
-| Alerting policy on `RiskPolicyProperties`      | **done** — 19 unit tests                           |
-| `alert_reference_seq` (V9)                     | **done** — `MigrationIT` asserts it applied        |
-| `AlertCreatedPayload` and its contract test    | **done** — 4 assertions, including the `NEW` const |
-| `AlertRaiser`, and the wiring into the service | **written, not covered end to end**                |
-| An integration test for the alert path         | **not started** — the next action                  |
-| Alert state machine, assignment, notes, audit  | not started                                        |
-| Role authorization, reporting endpoints        | not started                                        |
+| Piece                                          | State                                                            |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| Alerting policy on `RiskPolicyProperties`      | **done** — 21 unit tests                                         |
+| `alert_reference_seq` (V9)                     | **done** — `MigrationIT` asserts it applied                      |
+| `AlertCreatedPayload` and its contract test    | **done** — 4 assertions, including the `NEW` const               |
+| `AlertRaiser`, and the wiring into the service | **done** — five cases in `RiskAssessmentWorkflowIT` exercise it  |
+| An integration test for the alert path         | **done** — the alert, its summary, its history row, its event    |
+| "The model alone cannot alert" (ADR-0011 §4)   | **decided and recorded** — stated as policy, asserted by 2 tests |
+| Alert state machine, assignment, notes, audit  | not started                                                      |
+| Role authorization, reporting endpoints        | not started                                                      |
+
+### What the alert-path test needed, and why it is worth reading
+
+**No scoring stub can provoke an alert on its own**, which is ADR-0011 §4 arriving as a practical
+obstacle in the first test that needed one. The fixture builds an account history the ruleset reacts
+to: four transactions inside five minutes fire `VELOCITY_5M_HIGH` for 25, a fifth originating
+elsewhere adds `COUNTRY_CHANGE` for 15, and 40 against the stub's model score of 92.5 combines to
+71.5 — HIGH, at HIGH priority.
+
+**The instants are fixed rather than `now()`.** Two of the seven rules read the clock: the velocity
+window is five minutes wide, and `OFF_HOURS` fires between 02:00 and 04:59 UTC. A history built from
+`now()` would have scored 40 by day and 50 overnight, so a suite asserting 71.50 would have failed
+only on builds that ran in the small hours. `SchemaFixtures.insertTransactionFrom` takes the instant
+for that reason, and now has its first caller.
+
+**One merchant across the whole history, deliberately.** A fresh merchant per row would fire
+`DISTINCT_MERCHANTS_1H_HIGH` as well, and the test states its arithmetic exactly rather than
+asserting a band and hoping.
 
 ### A correction to this file
 
@@ -959,6 +987,30 @@ available.
 ## Test and verification evidence
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-28 — Phase 5, the alert path covered end to end, and ADR-0011 §4
+
+| Command                                    | Result                                            |
+| ------------------------------------------ | ------------------------------------------------- |
+| `./mvnw verify -DskipITs` (JDK 25.0.4.1+1) | **PASS** — 156 unit tests                         |
+| `./mvnw verify -DskipUnitTests=true`       | **PASS** — 181 integration tests                  |
+| `./mvnw verify` (both suites)              | **PASS** — every coverage check met               |
+| JaCoCo, both suites                        | 87.0% lines (1907/2193), 77.8% branches (388/499) |
+| `bun run format:check`                     | **PASS** — repository-wide                        |
+| `bun scripts/dev/check-docs.mjs`           | **PASS** — 152 links across 41 files              |
+| `bun scripts/dev/check-contracts.mjs`      | **PASS** — every schema, example and API document |
+
+**Line coverage recovered from 83.4% to 87.0% and branch coverage from 77.0% to 77.8%**, which is
+what the previous entry said the missing integration test was worth. Nothing was written to move a
+coverage number; the figures moved because `AlertRaiser` is now executed by tests that assert what it
+wrote.
+
+`apps/web` and `apps/scoring` were not re-run; nothing in either changed.
+
+Still not demonstrated on the compose stack. The alert path has been exercised against real
+PostgreSQL and real Kafka in Testcontainers, and the previous session's three defects are why that is
+recorded as a difference rather than a formality — a demo runs on the compose stack, and nothing has
+raised an alert there yet.
 
 ### 2026-08-27 — Phase 5, the alerting policy and alert creation (checkpoint, not a finish)
 
@@ -1272,24 +1324,20 @@ None.
 
 ## Next three actions
 
-Phase 5's first piece is written and pushed on `feat/alert-creation`, and is **not** covered end to
-end. `main` is green and carries none of it. Nothing is blocked.
+Phase 5's first piece is complete, covered end to end, and open as pull request
+[#49](https://github.com/la3679/sentinelflow/pull/49). `main` is green and carries none of it yet.
+Nothing is blocked.
 
-1. **An integration test for the alert path**, extending `RiskAssessmentWorkflowIT` against the same
-   real broker and database. The account needs a history the ruleset reacts to, because of the
-   arithmetic above: four transactions inside five minutes fires `VELOCITY_5M_HIGH` for 25, a fifth
-   originating elsewhere adds `COUNTRY_CHANGE` for 15, and 40 with the stub's model score of 92.5
-   combines to 71.5 — HIGH, and an alert at HIGH priority. `SchemaFixtures.insertTransactionFrom`
-   was added for exactly that and has no caller yet. Assert the alert, its `CREATED` history row
-   attributed to the system principal, the outbox row keyed by the alert's identifier, and that a
-   redelivered event does not open a second alert.
-2. **Decide the "model alone cannot alert" question deliberately**, and record it. Either state it
-   as intended policy in ADR-0011's consequences with the arithmetic written out, or supersede one of
-   the two decisions that produce it. Do not leave it as an accident, and do not change a number
-   without the alert-volume evidence ADR-0011 already asks for.
-3. **Then the rest of Phase 5**: the alert state machine with every transition audited, assignment,
-   notes and feedback, role authorization with the auditor's mutations failing as expected, and
-   optimistic concurrency on `alerts.version`.
+1. **Merge [#49](https://github.com/la3679/sentinelflow/pull/49) once CI is green**, then branch for
+   the next piece. Do not stack the state machine on an unmerged branch.
+2. **The alert state machine, with every transition audited.** `AlertStatus` already names the six
+   states and `alert_actions` already refuses a `TRANSITIONED` row that does not say what it moved
+   from and to. What does not exist is the object that says which moves are legal, the service that
+   applies one, or the endpoint that asks for it. Optimistic concurrency on `alerts.version` belongs
+   with it rather than after it: two analysts opening the same alert is the ordinary case in a queue,
+   and the loser of that race has to be told.
+3. **Then assignment, notes and feedback, and role authorization** — the auditor's mutations failing
+   as expected is the assertion that matters, not the happy path.
 
 ### What an earlier session found by running the stack rather than the suites
 

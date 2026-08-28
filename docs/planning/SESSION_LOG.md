@@ -1689,3 +1689,79 @@ None.
 
 Recorded in `PROJECT_STATE.md`: the integration test for the alert path, then deciding the "model
 alone cannot alert" question deliberately, then the rest of Phase 5.
+
+---
+
+## Session 16 — 2026-08-28 — the alert path covered end to end, and an accident turned into a decision
+
+Resumed on `feat/alert-creation` with a clean tree in sync with the remote, and continued from the
+first incomplete item in `PROJECT_STATE.md` rather than restarting anything. Two commits, pushed, and
+the branch opened as a pull request.
+
+### The integration test the last session owed
+
+Five cases in `RiskAssessmentWorkflowIT`, against the same real broker and database the rest of that
+suite uses: the alert itself, its summary, its attribution, its `alert.created` event, and what a
+redelivery does. The existing scored-path test gained an assertion that no alert row exists, because
+`alert_raised: false` is only half a claim until something checks the other half.
+
+**No scoring stub can provoke an alert on its own**, which is the arithmetic below arriving as a
+practical obstacle in the first test that needed one. The fixture builds a history the ruleset reacts
+to: four transactions inside five minutes fire `VELOCITY_5M_HIGH` for 25, a fifth originating
+elsewhere adds `COUNTRY_CHANGE` for 15, and 40 against the stub's 92.5 combines to 71.5 — HIGH, at
+HIGH priority.
+
+**The instants are fixed rather than `now()`, and that is not fastidiousness.** Two of the seven
+rules read the clock: the velocity window is five minutes wide, and `OFF_HOURS` fires between 02:00
+and 04:59 UTC. A history built from `now()` would have scored 40 by day and 50 overnight, so a suite
+asserting 71.50 would have passed every run except the ones that started in the small hours — the
+worst possible failure shape, because it looks like flakiness and is arithmetic.
+`SchemaFixtures.insertTransactionFrom` takes the occurrence instant for that reason and now has its
+first caller.
+
+One merchant across the whole history, deliberately: a fresh merchant per row would fire
+`DISTINCT_MERCHANTS_1H_HIGH` too, and the test states its arithmetic exactly rather than asserting a
+band and hoping.
+
+### "The model alone cannot raise an alert" is now ADR-0011 §4
+
+The previous session found it and deliberately left it undecided. It is now a stated policy: with a
+rule score of zero the combination caps at `modelWeight x 100 = 60` and `HIGH` starts at 70, so a
+transaction that trips no transparent indicator cannot open an alert however confident the model is.
+
+**Stated rather than dissolved.** The console is explainability-first, so every alert it raises can
+be opened on an indicator an analyst can check and dispute; an alert justified only by "the model was
+confident" is the one they learn to clear without reading. The cost is written into the same section
+rather than left out of it — a shape the model recognises and the ruleset misses is scored, banded,
+persisted and visible, and opens nothing. That is real, and it is accepted rather than overlooked.
+
+Lowering `alertFromBand`, raising `modelWeight` or removing the floor would each make it go away, and
+each would be re-deciding a section of that ADR without the measured alert volume the ADR already
+says those numbers should be revisited against. `sentinelflow.alerts.raised` is tagged by band and
+priority so the evidence can exist. The "revisit if" gained the condition that would reopen it, and
+the route back is named: a new rule that makes the shape transparent, or a superseding ADR that says
+plainly that alerts may rest on the model alone.
+
+Two tests in `RiskPolicyPropertiesTests` pin both halves — a maximal model over a silent ruleset
+bands MEDIUM, and 25 is where the combination first clears 70 — so moving either number cannot alter
+the implication silently. The same reasoning sits in `application.yaml` beside `alert-from-band`,
+which is where an operator changing that number will actually look.
+
+### Tests and results — every figure from a run on 2026-08-28
+
+Recorded in `PROJECT_STATE.md`. 156 unit tests, 181 integration tests, every coverage check met, and
+line coverage back to 87.0% from the 83.4% the previous session recorded as the honest cost of an
+untested `AlertRaiser`. Nothing was written to move a coverage number; the figures moved because the
+class is now executed by tests that assert what it wrote.
+
+Still not demonstrated on the compose stack, and that is stated rather than glossed: the previous
+session found three defects that every suite was green through.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: merge the pull request, then the alert state machine with optimistic
+concurrency on `alerts.version` beside it, then assignment, notes, feedback and role authorization.
