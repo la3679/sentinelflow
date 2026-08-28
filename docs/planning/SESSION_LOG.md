@@ -1983,9 +1983,9 @@ every cell is neutralised against formula injection.
 
 ### Tests and results
 
-Every suite, at `e7cc4ba`, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`:
+Every suite, at `68e019f`, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`:
 
-api **203 unit** and **248 integration** passed, 0 failures · JaCoCo gate met (line 0.8972,
+api **203 unit** and **250 integration** passed, 0 failures · JaCoCo gate met (line 0.8972,
 branch 0.7945, instruction 0.9080) · web Vitest **24/24** · scoring pytest **169 passed** ·
 `ruff check` clean · `mypy` no issues in 42 files · `spotless:check` 221 files clean ·
 `eslint` 0 errors, 23 pre-existing warnings · `check-contracts.mjs` all passed ·
@@ -2005,6 +2005,34 @@ test moves is not the cap that ships.
 - **The build's own `Tests run:` line and the per-class report files disagree**, because a
   `@TestFactory` container counts as one in the `.txt` summary and as its children on the console.
   The figures above are parsed from the JUnit XML, which counts each test once.
+
+### CI found a defect two green local runs could not
+
+**#52's first run failed one test, and it was not a reporting test.**
+`TransactionIngestionIT.retryReturnsTheOriginalResult` answered 500 rather than 202, on a duplicate
+key for `TXN-000005`. The same commit was green locally, twice.
+
+**Two allocators owned one namespace.** `SchemaFixtures` built `TXN-` and `ALT-` from an in-JVM
+`AtomicInteger` starting at 1, while the application read `transaction_reference_seq` and
+`alert_reference_seq`, which also start at 1. One container serves the whole fork, so the two met as
+soon as the application had ingested as many transactions as the fixtures had written — a point that
+depends on the order the suites happen to run in, and therefore on the machine. The class comment
+asserted the counter "starts high enough that a value never collides"; it started at 1.
+
+**Fixed by deleting the second allocator, not by moving it out of the way.** Offsetting the counter
+would have made the collision unlikely, and unlikely is exactly what it already was. The fixtures now
+draw both references from the same sequences the application reads, which makes it impossible.
+
+**The regression test asserts the strong property.** `ReferenceAllocationIT` draws alternately from
+the fixture and from the application and asserts every reference is exactly one more than the one
+before it — only a single shared sequence produces that. Distinctness alone would pass with two
+counters standing far apart, which is the state the old code was usually in. Confirmed it can fail by
+reinstating the defect: `expected: 2L` on the first pair.
+
+**What it cost, and what it is worth:** one CI round trip, and the lesson that a green local suite is
+evidence about one interleaving of the tests. This is the second time in this project a defect has
+been invisible until it ran somewhere else; the first was the three the compose stack found in
+Phase 4.
 
 ### Blockers
 

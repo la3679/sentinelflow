@@ -14,7 +14,7 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T13:55Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T14:40Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 5; reporting green and documented, open as a pull request                                                                         |
 | Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
@@ -1122,7 +1122,7 @@ Every suite, on `feat/alert-reporting` at `e7cc4ba`, under `JAVA_HOME=~/.jdks/jd
 | Command                                         | Result                                                   |
 | ----------------------------------------------- | -------------------------------------------------------- |
 | `mvnw -B verify` (api, unit)                    | **203 passed**, 0 failures, 0 errors, 0 skipped          |
-| `mvnw -B verify` (api, Testcontainers)          | **248 passed**, 0 failures, 0 errors, 0 skipped          |
+| `mvnw -B verify` (api, Testcontainers)          | **250 passed**, 0 failures, 0 errors, 0 skipped          |
 | JaCoCo gate (LINE 0.80, BRANCH 0.70)            | **met** — line 0.8972, branch 0.7945, instruction 0.9080 |
 | `bun run test` (web)                            | **24 passed**, 5 files                                   |
 | `uv run pytest` (scoring)                       | **169 passed** in 164s                                   |
@@ -1132,7 +1132,7 @@ Every suite, on `feat/alert-reporting` at `e7cc4ba`, under `JAVA_HOME=~/.jdks/jd
 | `bun scripts/dev/check-contracts.mjs`           | all contract checks passed                               |
 | `bun run format:check` · `check-docs.mjs`       | clean · 160 links, no placeholders                       |
 
-**`AlertReportIT` is 10 of the 248 and all 10 pass.** The four that were red were red because of the
+**`AlertReportIT` is 10 of the 250 and all 10 pass.** The four that were red were red because of the
 fixture, not the endpoints; the diff that fixed them touches only the test class.
 
 **Coverage on the reporting code specifically:** `ReportController` and `CsvWriter` at 1.0000
@@ -1140,8 +1140,37 @@ instruction coverage, `AlertReportService` at 0.9589. The uncovered part of the 
 export cap's refusal branch, which needs 10,001 alerts in one window to reach — noted rather than
 faked with a lowered constant, since a cap the test moves is not the cap that ships.
 
+**The 250 was 248 before CI found a defect the local run could not.** See below; the two extra
+tests are `ReferenceAllocationIT`.
+
 **Not run this session:** `make smoke`, `make test-e2e`, and the compose stack. The standing note
 below about the actuator's 401 still applies.
+
+### CI found a reference collision that a green local run had hidden
+
+**#52's first run failed one test**, and it was not a reporting test:
+`TransactionIngestionIT.retryReturnsTheOriginalResult` answered 500 rather than 202, on a duplicate
+key for `TXN-000005`. The same commit was green locally, twice.
+
+**Two allocators owned one namespace.** `SchemaFixtures` built `TXN-` and `ALT-` from an in-JVM
+`AtomicInteger` starting at 1, while the application read `transaction_reference_seq` and
+`alert_reference_seq`, which also start at 1. One container serves the whole fork, so the two met as
+soon as the application had ingested as many transactions as the fixtures had written — a point that
+depends on the order the suites happen to run in, and so on the machine. The class comment asserted
+the counter "starts high enough that a value never collides"; it started at 1.
+
+**Fixed by deleting the second allocator rather than by moving it out of the way.** The fixtures draw
+both references from the same sequences the application does, which makes a collision impossible
+instead of unlikely — and unlikely is exactly what the old counter already was.
+
+**`ReferenceAllocationIT` asserts the strong property.** Drawn alternately from the fixture and from
+the application, every reference is exactly one more than the one before it, which only a single
+shared sequence can produce. Asserting mere distinctness would pass with two counters standing far
+apart, which is the state the old code was usually in. Verified to fail by reinstating the defect.
+
+**The generalisable part:** a green local suite is evidence about one interleaving of the tests. This
+is the second time in this project that a defect was invisible until it ran somewhere else — the
+first was the three the compose stack found, recorded below.
 
 ### 2026-08-28 — Phase 5, reporting (an emergency checkpoint, not a finish)
 
