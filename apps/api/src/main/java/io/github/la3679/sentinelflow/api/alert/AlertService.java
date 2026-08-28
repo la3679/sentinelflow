@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.github.la3679.sentinelflow.api.domain.Actor;
+import io.github.la3679.sentinelflow.api.domain.ActorRole;
 import io.github.la3679.sentinelflow.api.domain.AlertChangeType;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 import io.github.la3679.sentinelflow.api.domain.EventType;
@@ -24,6 +25,7 @@ import io.github.la3679.sentinelflow.api.persistence.repository.OutboxEventRepos
 import io.github.la3679.sentinelflow.api.service.exception.AlertNotFoundException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertVersionConflictException;
 import io.github.la3679.sentinelflow.api.service.exception.IllegalAlertTransitionException;
+import io.github.la3679.sentinelflow.api.service.exception.InsufficientRoleException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import tools.jackson.core.JacksonException;
@@ -63,10 +65,11 @@ import tools.jackson.databind.ObjectMapper;
  * would be a second answer to that question, and the graph is a definition rather than a rule this
  * class gets to have an opinion about.
  *
- * <p><strong>Who may make a move is not answered here yet.</strong> The actor is a parameter, and
- * the role on it is recorded rather than consulted. Role authorization arrives with authentication,
- * at the boundary where the actor comes from a token rather than from a caller who could assert
- * anything.
+ * <p><strong>Who may make a move is answered in two places, deliberately.</strong> The endpoint
+ * refuses an auditor outright, which is coarse and stops a request before it costs a query.
+ * {@link AlertTransitions#requiresAdministrator} answers the per-move question, and this class
+ * applies it — so a caller reaching the service by any route gets the same answer, and the rule sits
+ * beside the graph it qualifies.
  */
 @Service
 public class AlertService {
@@ -123,6 +126,18 @@ public class AlertService {
         if (!AlertTransitions.isLegal(previousStatus, target)) {
             throw new IllegalAlertTransitionException(
                     alertId, previousStatus, target, AlertTransitions.legalTargetsFrom(previousStatus));
+        }
+
+        // The authority check is here rather than only on the endpoint, and
+        // both are wanted. The endpoint's role check is coarse - an auditor
+        // cannot mutate an alert at all - and it is what stops a request before
+        // it costs a query. This one is per-move, so a caller reaching the
+        // service by any route gets the same answer, and the rule lives beside
+        // the graph it qualifies rather than in an annotation a reader has to
+        // go and find.
+        if (AlertTransitions.requiresAdministrator(target) && actor.role() != ActorRole.ADMINISTRATOR) {
+            throw new InsufficientRoleException(
+                    actor.role(), ActorRole.ADMINISTRATOR, "Closing an alert without a disposition");
         }
 
         // One instant for all three rows. The history says when the analyst

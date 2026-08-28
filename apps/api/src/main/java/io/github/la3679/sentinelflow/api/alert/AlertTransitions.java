@@ -80,6 +80,24 @@ public final class AlertTransitions {
         return LEGAL.get(from);
     }
 
+    /**
+     * Whether this move is an administrator's to make.
+     *
+     * <p>Only the administrative close. ADR-0012 §4 gives an analyst the whole of working an alert -
+     * picking it up, escalating it, and either disposition - and gives an administrator that plus
+     * this one move. The reason it is reserved is what {@code CLOSED} means: ending an investigation
+     * <em>without</em> a disposition, which is the only transition that removes work from a queue
+     * while recording nothing about the transaction. That is a supervisory decision, and one an
+     * analyst under queue pressure should not be able to take alone.
+     *
+     * <p>Stated here rather than in the service, beside the graph it qualifies. Which moves exist
+     * and who may make them are two halves of one description of the workflow, and a reader who has
+     * one needs the other.
+     */
+    public static boolean requiresAdministrator(AlertStatus target) {
+        return target == AlertStatus.CLOSED;
+    }
+
     private static Map<AlertStatus, Set<AlertStatus>> legalMoves() {
         Map<AlertStatus, Set<AlertStatus>> moves = new EnumMap<>(AlertStatus.class);
 

@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -56,6 +57,11 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+// Turns on @PreAuthorize. Without it the annotation is inert - every method
+// carrying one runs for anybody the chain let through, and nothing reports that
+// a role check is being ignored, which is the worst way for authorization to
+// fail.
+@EnableMethodSecurity
 public class WebSecurityConfiguration {
 
     private final ProblemAccessHandlers problems;

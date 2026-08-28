@@ -344,11 +344,20 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The transition is illegal from the current state, or `expectedVersion` is stale.
+          description: |
+            The transition is illegal from the current state, or
+            `expectedVersion` is stale.
+
+            An illegal move carries `currentStatus` and `legalTargets`, so a
+            client can say what is possible instead. A stale version carries
+            `expectedVersion` and `currentVersion`, so it can re-read and decide
+            again.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /alerts/{alertId}/history:
     get:
