@@ -1197,6 +1197,30 @@ components:
             version at 0 and the alternative was a translation layer whose only
             job would be to hide that from a client that cannot interpret it
             anyway. See `docs/adr/0007-*` and the `Alert` JPA mapping.
+        legalTargets:
+          type: array
+          description: |
+            The statuses **this caller** may move the alert to next, sorted by
+            name. Empty for a terminal alert, and empty for an `AUDITOR`
+            whatever the alert's status.
+
+            **A property of the alert and the reader together**, unlike every
+            other field here. `CLOSED` is legal from every live status and is an
+            administrator's alone, so an analyst reading the same alert is
+            offered one fewer target. Answering "legal from this status" and
+            leaving a client to subtract the administrative close would put a
+            second copy of that rule in every client, and the copy is what goes
+            stale.
+
+            **Render controls from this and nothing else.** A client that
+            derives the moves from its own copy of the state machine will offer
+            buttons this service answers `409` or `403` to.
+
+            The same list, produced by the same code, appears as `legalTargets`
+            on the problem body of a refused transition — so what a client was
+            offered and what a refusal names cannot disagree.
+          items:
+            $ref: "#/components/schemas/AlertStatus"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         closedAt: { type: [string, "null"], format: date-time }
@@ -1212,6 +1236,7 @@ components:
           riskBand,
           finalScore,
           version,
+          legalTargets,
           createdAt,
           updatedAt,
         ]

@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.github.la3679.sentinelflow.api.alert.AlertService;
 import io.github.la3679.sentinelflow.api.domain.Actor;
+import io.github.la3679.sentinelflow.api.domain.ActorRole;
 import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
@@ -100,16 +101,23 @@ public class AlertController {
             @RequestParam(required = false) AlertPriority priority,
             @RequestParam(required = false) UUID assigneeId,
             @RequestParam(defaultValue = "0") @PositiveOrZero int page,
-            @RequestParam(defaultValue = "20") @Positive @Max(MAX_PAGE_SIZE) int size) {
+            @RequestParam(defaultValue = "20") @Positive @Max(MAX_PAGE_SIZE) int size,
+            @AuthenticationPrincipal Jwt token) {
+
+        // The reader's capacity, because legalTargets is a property of the
+        // alert and the caller together - see AlertResponse.
+        ActorRole role = AuthenticatedOperator.from(token).role();
 
         return PageResponse.of(
-                alerts.queue(status, priority, assigneeId, PageRequest.of(page, size)), AlertResponse::of);
+                alerts.queue(status, priority, assigneeId, PageRequest.of(page, size)),
+                alert -> AlertResponse.of(alert, role));
     }
 
     /** One alert, for the page an analyst opens. */
     @GetMapping("/{alertId}")
-    AlertResponse get(@PathVariable UUID alertId) {
-        return AlertResponse.of(alerts.get(alertId));
+    AlertResponse get(@PathVariable UUID alertId, @AuthenticationPrincipal Jwt token) {
+        return AlertResponse.of(
+                alerts.get(alertId), AuthenticatedOperator.from(token).role());
     }
 
     /**
@@ -133,7 +141,7 @@ public class AlertController {
         Alert moved = alerts.transition(
                 alertId, request.targetStatus(), request.expectedVersion(), request.note(), actor, correlationId);
 
-        return AlertResponse.of(moved);
+        return AlertResponse.of(moved, actor.role());
     }
 
     /**
@@ -152,15 +160,17 @@ public class AlertController {
             @AuthenticationPrincipal Jwt token,
             HttpServletRequest httpRequest) {
 
+        Actor actor = AuthenticatedOperator.from(token);
+
         Alert assigned = alerts.assign(
                 alertId,
                 request.assigneeId(),
                 request.expectedVersion(),
                 request.note(),
-                AuthenticatedOperator.from(token),
+                actor,
                 CorrelationIdFilter.currentOrNew(httpRequest));
 
-        return AlertResponse.of(assigned);
+        return AlertResponse.of(assigned, actor.role());
     }
 
     /**

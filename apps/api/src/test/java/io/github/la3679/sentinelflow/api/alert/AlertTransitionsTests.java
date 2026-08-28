@@ -7,10 +7,12 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import io.github.la3679.sentinelflow.api.domain.ActorRole;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 
 /**
@@ -155,6 +157,84 @@ class AlertTransitionsTests {
                     .as("%s has no entry", status)
                     .isNotNull();
         }
+    }
+
+    // ----------------------------------------------------------------------- //
+    // What a caller may actually do, which is not the same question
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("an analyst is never offered the administrative close")
+    void ananalystNeverSeesTheAdministrativeClose() {
+        for (AlertStatus status : AlertStatus.values()) {
+            assertThat(AlertTransitions.legalTargetsFor(status, ActorRole.ANALYST))
+                    .as("%s", status)
+                    .doesNotContain(AlertStatus.CLOSED);
+        }
+    }
+
+    @Test
+    @DisplayName("an analyst is offered every other legal move, so nothing legal is hidden")
+    void ananalystSeesEverythingElse() {
+        for (AlertStatus status : AlertStatus.values()) {
+            Set<AlertStatus> expected = AlertTransitions.legalTargetsFrom(status).stream()
+                    .filter(target -> target != AlertStatus.CLOSED)
+                    .collect(Collectors.toUnmodifiableSet());
+
+            // The failure this guards against is the opposite of a dead
+            // control and just as bad: a move an analyst is entitled to make
+            // and no button for it.
+            assertThat(AlertTransitions.legalTargetsFor(status, ActorRole.ANALYST))
+                    .as("%s", status)
+                    .isEqualTo(expected);
+        }
+    }
+
+    @Test
+    @DisplayName("an administrator is offered exactly what the state machine allows")
+    void anAdministratorSeesTheWholeMap() {
+        for (AlertStatus status : AlertStatus.values()) {
+            assertThat(AlertTransitions.legalTargetsFor(status, ActorRole.ADMINISTRATOR))
+                    .as("%s", status)
+                    .isEqualTo(AlertTransitions.legalTargetsFrom(status));
+        }
+    }
+
+    @Test
+    @DisplayName("an auditor is offered nothing, from any status")
+    void anAuditorIsOfferedNothing() {
+        // ADR-0012 section 4. Read-only is not "read-only except the moves the
+        // state machine happens to allow", and an empty list is the correct
+        // answer rather than a missing one.
+        for (AlertStatus status : AlertStatus.values()) {
+            assertThat(AlertTransitions.legalTargetsFor(status, ActorRole.AUDITOR))
+                    .as("%s", status)
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("the system principal is offered nothing either")
+    void theSystemPrincipalIsOfferedNothing() {
+        // It raises alerts and never works them, and it cannot hold a token in
+        // any case - but a switch that fell through for it would be a runtime
+        // failure on a path nobody exercises.
+        for (AlertStatus status : AlertStatus.values()) {
+            assertThat(AlertTransitions.legalTargetsFor(status, ActorRole.SYSTEM))
+                    .as("%s", status)
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("the names are sorted, so two readings of one answer cannot differ")
+    void namesAreSorted() {
+        // The alert's legalTargets field and the 409's legalTargets property
+        // both come from here. A client comparing them must not be shown two
+        // orderings of the same set.
+        assertThat(AlertTransitions.namesOf(AlertTransitions.legalTargetsFrom(AlertStatus.IN_REVIEW)))
+                .containsExactly("CLOSED", "CONFIRMED_SUSPICIOUS", "DISMISSED_FALSE_POSITIVE", "ESCALATED", "NEW");
+        assertThat(AlertTransitions.namesOf(Set.of())).isEmpty();
     }
 
     private static boolean canReachTerminal(AlertStatus from) {

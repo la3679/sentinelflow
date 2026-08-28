@@ -227,6 +227,89 @@ class AlertTransitionIT extends AbstractPostgresTest {
         return tokens.issue(userId, List.of(role), java.time.Instant.now()).value();
     }
 
+    // ----------------------------------------------------------------------- //
+    // What the alert offers its reader
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("the alert names the moves its reader may make, and they differ by role")
+    void legalTargetsAreWhatTheReaderMayDo() {
+        UUID alertId = newAlert();
+
+        // The same alert, in the same status, read three times. CLOSED is legal
+        // from NEW and is an administrator's alone, so the analyst is offered
+        // one fewer target than the administrator - and the auditor none.
+        assertThat(legalTargets(alertId, analystToken)).containsExactly("IN_REVIEW");
+        assertThat(legalTargets(alertId, administratorToken)).containsExactly("CLOSED", "IN_REVIEW");
+        assertThat(legalTargets(alertId, auditorToken))
+                .as("read-only means no move, not the moves the state machine happens to allow")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("what the alert offered and what a refusal names are the same list")
+    void theOfferAndTheRefusalAgree() {
+        UUID alertId = newAlert();
+
+        // The point of the whole field. A client that renders controls from the
+        // alert and then reads legalTargets off a 409 must not be shown two
+        // different answers, or two orderings of one.
+        JsonNode problem = MAPPER.readTree(
+                transition(alertId, administratorToken, AlertStatus.CONFIRMED_SUSPICIOUS, 0, null, 409));
+
+        List<String> fromTheRefusal = new java.util.ArrayList<>();
+        problem.get("legalTargets").forEach(node -> fromTheRefusal.add(node.asString()));
+
+        assertThat(fromTheRefusal).isEqualTo(legalTargets(alertId, administratorToken));
+    }
+
+    @Test
+    @DisplayName("a terminal alert offers nothing, to anybody")
+    void aTerminalAlertOffersNothing() {
+        UUID alertId = newAlert();
+        transition(alertId, administratorToken, AlertStatus.CLOSED, 0, "Duplicate", 200);
+
+        // An empty list is the honest answer and the one that draws no buttons.
+        assertThat(legalTargets(alertId, administratorToken)).isEmpty();
+        assertThat(legalTargets(alertId, analystToken)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the queue carries the same field, so a row can offer an action without a second read")
+    void theQueueCarriesLegalTargetsToo() {
+        newAlert();
+
+        JsonNode page = MAPPER.readTree(client.get()
+                .uri("/api/v1/alerts?size=1")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + analystToken)
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody());
+
+        // One schema, one shape. A list whose elements were a different type
+        // from the single read would be a special case every client has to know.
+        assertThat(page.get("content").get(0).get("legalTargets").isArray()).isTrue();
+    }
+
+    private List<String> legalTargets(UUID alertId, String token) {
+        JsonNode alert = MAPPER.readTree(client.get()
+                .uri("/api/v1/alerts/" + alertId)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody());
+
+        List<String> targets = new java.util.ArrayList<>();
+        alert.get("legalTargets").forEach(node -> targets.add(node.asString()));
+        return targets;
+    }
+
     private UUID newAlert() {
         UUID transactionId = fixtures.insertTransaction();
         return fixtures.insertAlert(transactionId, fixtures.insertAssessment(transactionId));
