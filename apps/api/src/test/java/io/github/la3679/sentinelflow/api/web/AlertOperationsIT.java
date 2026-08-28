@@ -247,6 +247,21 @@ class AlertOperationsIT extends AbstractPostgresTest {
         assertThat(actionCount(alertId, "NOTE_ADDED")).isZero();
     }
 
+    @Test
+    @DisplayName("an auditor cannot annotate an alert")
+    void auditorsCannotAnnotate() {
+        UUID alertId = newAlert();
+
+        // The read-only role is read-only on every mutation, not only on the
+        // ones that move an alert. A note is the quietest thing an auditor
+        // could add and the easiest guard to leave off by accident, which is
+        // why it has a test of its own rather than an inference from the
+        // annotation being present.
+        note(alertId, auditorToken, "Observed during the review", 403);
+
+        assertThat(actionCount(alertId, "NOTE_ADDED")).isZero();
+    }
+
     // ----------------------------------------------------------------------- //
     // History
     // ----------------------------------------------------------------------- //
