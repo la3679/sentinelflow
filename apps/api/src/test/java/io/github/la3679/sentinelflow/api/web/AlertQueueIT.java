@@ -270,7 +270,7 @@ class AlertQueueIT extends AbstractPostgresTest {
                     summary, risk_band, final_score)
                 VALUES (?, ?, ?, 'NEW', ?, 'Synthetic alert for a queue test', 'HIGH', 71.50)
                 RETURNING id
-                """, UUID.class, "ALT-" + SchemaFixtures.next4(), transactionId, assessmentId, priority);
+                """, UUID.class, SchemaFixtures.nextAlertReference(jdbc), transactionId, assessmentId, priority);
         // Distinct creation instants, because the queue's third ordering term is
         // oldest first and rows written in one millisecond cannot demonstrate it.
         jdbc.update(

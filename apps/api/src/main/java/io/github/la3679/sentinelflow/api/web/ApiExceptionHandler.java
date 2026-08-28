@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import io.github.la3679.sentinelflow.api.report.AlertReportService.ExportTooLargeException;
 import io.github.la3679.sentinelflow.api.security.OperatorLoginService.InvalidCredentialsException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertClosedException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertNotFoundException;
@@ -31,6 +32,7 @@ import io.github.la3679.sentinelflow.api.service.exception.IdempotencyConflictEx
 import io.github.la3679.sentinelflow.api.service.exception.IllegalAlertTransitionException;
 import io.github.la3679.sentinelflow.api.service.exception.InsufficientRoleException;
 import io.github.la3679.sentinelflow.api.service.exception.InvalidAssigneeException;
+import io.github.la3679.sentinelflow.api.service.exception.InvalidWindowException;
 import io.github.la3679.sentinelflow.api.service.exception.UnknownReferenceException;
 
 /**
@@ -276,6 +278,37 @@ public class ApiExceptionHandler {
                 "That user cannot be given an alert to work.",
                 request);
         problem.setProperty("errors", List.of(new FieldProblem("assigneeId", "Cannot be assigned an alert")));
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidWindowException.class)
+    ProblemDetail onInvalidWindow(InvalidWindowException exception, HttpServletRequest request) {
+        // The message is generated here and names no data, so echoing it is
+        // safe and is the whole value: "to must be after from" is actionable
+        // where "invalid request" is not.
+        return problem(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "invalid-window",
+                "Invalid reporting window",
+                exception.getMessage(),
+                request);
+    }
+
+    @ExceptionHandler(ExportTooLargeException.class)
+    ProblemDetail onExportTooLarge(ExportTooLargeException exception, HttpServletRequest request) {
+        // 413 rather than 422: the request is entirely valid and the *response*
+        // is what cannot be produced. A client should narrow the window rather
+        // than look for a mistake in what it sent.
+        ProblemDetail problem = problem(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "export-too-large",
+                "Too many rows to export",
+                "That window holds more alerts than one export carries. Narrow it and try again.",
+                request);
+        // Both numbers, so a client can narrow the window arithmetically rather
+        // than by halving it until it works.
+        problem.setProperty("rows", exception.rows());
+        problem.setProperty("limit", exception.limit());
         return problem;
     }
 

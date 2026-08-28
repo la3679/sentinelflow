@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T06:30Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T15:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5; everything but the reporting endpoints is merged or open as a pull request                                                     |
+| Overall status       | active — Phase 5; reporting green and documented, open as a pull request                                                                         |
 | Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
-| Current task         | the reporting endpoints and the CSV export, the last of Phase 5                                                                                  |
+| Current task         | land the reporting pull request, then close Phase 5 against its gate                                                                             |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/alert-assignment-and-notes` — pushed, pull request [#51](https://github.com/la3679/sentinelflow/pull/51) open                              |
+| Working branch       | `feat/alert-reporting` — pushed and open as [#52](https://github.com/la3679/sentinelflow/pull/52); every suite green                             |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#51](https://github.com/la3679/sentinelflow/pull/51) — assignment, notes, feedback and the queue reads                                          |
+| Open PRs             | [#52](https://github.com/la3679/sentinelflow/pull/52) — the reporting endpoints                                                                  |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -741,11 +741,14 @@ one is still handled.
 
 ## In progress — Phase 5
 
-**Alert creation** merged as [#49](https://github.com/la3679/sentinelflow/pull/49), and **the
-investigation state machine with ADR-0012's authentication** as
-[#50](https://github.com/la3679/sentinelflow/pull/50). **Assignment, notes, analyst feedback and the
-queue reads** are open as [#51](https://github.com/la3679/sentinelflow/pull/51). What remains of
-Phase 5 is the reporting endpoints and the CSV export.
+**Three pull requests merged**: alert creation as
+[#49](https://github.com/la3679/sentinelflow/pull/49), the investigation state machine with
+ADR-0012's authentication as [#50](https://github.com/la3679/sentinelflow/pull/50), and assignment,
+notes, feedback and the queue reads as [#51](https://github.com/la3679/sentinelflow/pull/51).
+
+**The reporting endpoints are green and documented**, open as
+[#52](https://github.com/la3679/sentinelflow/pull/52) — see the section below for what the four red
+tests turned out to be. Everything else in Phase 5 is on `main`.
 
 **The alerting rule joined the policy object** rather than starting a second one. ADR-0008 §4 gives
 this service "the alerting policy applied to a final score at runtime", and deciding which bands are
@@ -816,7 +819,41 @@ route back is a new rule that makes the shape transparent rather than an alert n
 | The transition endpoint and role authorization | **done** — 9 cases, including both role refusals                 |
 | Assignment, notes, analyst feedback            | **done** — 16 and 11 cases over real HTTP                        |
 | The queue and one-alert reads                  | **done** — the ordering asserted term by term                    |
-| Reporting endpoints and the CSV export         | not started — the last of Phase 5                                |
+| The CSV escaping (`CsvWriter`)                 | **done** — 17 unit tests, every formula-leading character        |
+| Reporting endpoints                            | **done** — 10 cases over real HTTP, both reports                 |
+| The reports in `contracts/openapi/`            | **done** — two paths, the summary schema, the export's 413       |
+| Phase 5 closed against its gate                | not started                                                      |
+
+### The reporting branch, and what the four red tests actually were
+
+**`feat/alert-reporting` is open as [#52](https://github.com/la3679/sentinelflow/pull/52).** What is
+on it:
+
+- **`CsvWriter` is the part that matters** — 17 unit tests covering every character a spreadsheet
+  treats as a formula (`=`, `+`, `-`, `@`, tab, carriage return), the apostrophe prefix going
+  _inside_ the RFC 4180 quoting rather than outside it, and the deliberate cost that a negative
+  number reads as text. Not theoretical: the alert summary is generated text built from a transaction
+  reference that arrived through the ingestion endpoint ADR-0012 §5 leaves open until Phase 8.
+- **`GET /reports/alert-summary`** — counts by status, priority and band over a half-open window,
+  every key present including the zeroes. Not paged, because its size does not depend on the data.
+- **`GET /reports/alerts.csv`** — capped at 10,000 rows and refused with `413` above it, rather than
+  paged: a report somebody opens in a spreadsheet is a file rather than a cursor.
+- **Both paths in `contracts/openapi/sentinelflow-api.yaml`** — the shared window parameters, the
+  `AlertSummary` schema, and `ExportTooLargeProblem`, which carries both `rows` and `limit` so a
+  client can narrow the window arithmetically rather than by halving it until it works.
+
+**The failure was in the test fixture, and the diagnosis held.** `AlertReportIT` derived its window
+from a class constant, so every test in the class wrote into the same hour and the four that assert
+an exact total counted rows the tests before them had left. The two that assert no total — the
+zero-key case and the formula-escaping case — passed throughout, which was the evidence that the
+endpoints themselves behaved. They did: **no production code changed to make the four pass.**
+
+**The fix is a window per test**, drawn from a per-run epoch by an `AtomicInteger` in `@BeforeEach`.
+The one thing worth keeping from doing it: **the windows are two hours apart rather than adjacent.**
+`theWindowIsHalfOpen` deliberately reads the window immediately after its own, to prove a row on the
+boundary is counted once rather than twice or never — with a one-hour stride that read would have
+landed in the next test's window, and the fix for a fixture that leaks between tests would have
+leaked between tests.
 
 ### Three decisions in the alert operations worth keeping
 
@@ -1077,6 +1114,83 @@ available.
 ## Test and verification evidence
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-28 — Phase 5, reporting made green and put under contract
+
+Every suite, on `feat/alert-reporting` at `e7cc4ba`, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`.
+
+| Command                                         | Result                                                   |
+| ----------------------------------------------- | -------------------------------------------------------- |
+| `mvnw -B verify` (api, unit)                    | **189 passed**, 0 failures, 0 errors, 0 skipped          |
+| `mvnw -B verify` (api, Testcontainers)          | **250 passed**, 0 failures, 0 errors, 0 skipped          |
+| JaCoCo gate (LINE 0.80, BRANCH 0.70)            | **met** — line 0.8972, branch 0.7945, instruction 0.9080 |
+| `bun run test` (web)                            | **24 passed**, 5 files                                   |
+| `uv run pytest` (scoring)                       | **169 passed** in 164s                                   |
+| `bun run lint` (web)                            | 0 errors, 23 pre-existing `react-refresh` warnings       |
+| `uv run ruff check .` · `uv run mypy` (scoring) | clean · no issues in 42 source files                     |
+| `mvnw spotless:check` (api)                     | 221 files clean                                          |
+| `bun scripts/dev/check-contracts.mjs`           | all contract checks passed                               |
+| `bun run format:check` · `check-docs.mjs`       | clean · 160 links, no placeholders                       |
+
+**`AlertReportIT` is 10 of the 250 and all 10 pass.** The four that were red were red because of the
+fixture, not the endpoints; the diff that fixed them touches only the test class.
+
+**Coverage on the reporting code specifically:** `ReportController` and `CsvWriter` at 1.0000
+instruction coverage, `AlertReportService` at 0.9589. The uncovered part of the service is the
+export cap's refusal branch, which needs 10,001 alerts in one window to reach — noted rather than
+faked with a lowered constant, since a cap the test moves is not the cap that ships.
+
+**The 250 was 248 before CI found a defect the local run could not.** See below; the two extra
+tests are `ReferenceAllocationIT`.
+
+**Both figures are the build's own `Results:` line**, and the runner printed the same two — 189 and 250. An earlier draft of this section said 203 unit tests, summed from the JUnit XML files, which
+counts a `@Nested` class's cases in both the container's file and its own. The console figure is the
+one to quote, because it is the one CI reports and the one a reader reproduces by running the
+command.
+
+**Not run this session:** `make smoke`, `make test-e2e`, and the compose stack. The standing note
+below about the actuator's 401 still applies.
+
+### CI found a reference collision that a green local run had hidden
+
+**#52's first run failed one test**, and it was not a reporting test:
+`TransactionIngestionIT.retryReturnsTheOriginalResult` answered 500 rather than 202, on a duplicate
+key for `TXN-000005`. The same commit was green locally, twice.
+
+**Two allocators owned one namespace.** `SchemaFixtures` built `TXN-` and `ALT-` from an in-JVM
+`AtomicInteger` starting at 1, while the application read `transaction_reference_seq` and
+`alert_reference_seq`, which also start at 1. One container serves the whole fork, so the two met as
+soon as the application had ingested as many transactions as the fixtures had written — a point that
+depends on the order the suites happen to run in, and so on the machine. The class comment asserted
+the counter "starts high enough that a value never collides"; it started at 1.
+
+**Fixed by deleting the second allocator rather than by moving it out of the way.** The fixtures draw
+both references from the same sequences the application does, which makes a collision impossible
+instead of unlikely — and unlikely is exactly what the old counter already was.
+
+**`ReferenceAllocationIT` asserts the strong property.** Drawn alternately from the fixture and from
+the application, every reference is exactly one more than the one before it, which only a single
+shared sequence can produce. Asserting mere distinctness would pass with two counters standing far
+apart, which is the state the old code was usually in. Verified to fail by reinstating the defect.
+
+**The generalisable part:** a green local suite is evidence about one interleaving of the tests. This
+is the second time in this project that a defect was invisible until it ran somewhere else — the
+first was the three the compose stack found, recorded below.
+
+### 2026-08-28 — Phase 5, reporting (an emergency checkpoint, not a finish)
+
+| Command                                         | Result                                        |
+| ----------------------------------------------- | --------------------------------------------- |
+| `./mvnw verify -DskipITs -Dtest=CsvWriterTests` | **PASS** — 17 of 17                           |
+| `./mvnw verify -Dit.test=AlertReportIT`         | **FAIL** — 6 of 10; the four count assertions |
+| `./mvnw -DskipTests test-compile`               | **PASS**                                      |
+
+**Stopped at 90% of the five-hour usage window, on the user's instruction.** The checkpoint policy in
+`CLAUDE.md` applies: no further implementation, commit what is safe, push, record state. The failing
+suite is committed with its diagnosis rather than deleted or disabled, because a test that was
+removed to go green is worse than one that is red for a reason somebody wrote down.
+
+Nothing else was re-run at this checkpoint, so the last full-suite figures are the entry below.
 
 ### 2026-08-28 — Phase 5, assignment, notes, feedback and the queue reads
 
@@ -1473,25 +1587,19 @@ None.
 
 ## Next three actions
 
-Alert creation merged as [#49](https://github.com/la3679/sentinelflow/pull/49). The investigation
-state machine, ADR-0012's authentication and the transition endpoint are open as
-[#50](https://github.com/la3679/sentinelflow/pull/50). Nothing is blocked.
+The reporting endpoints are green, documented in `contracts/openapi/`, and open as
+[#52](https://github.com/la3679/sentinelflow/pull/52). Nothing is blocked.
 
-1. **Merge [#51](https://github.com/la3679/sentinelflow/pull/51) once CI is green.**
-2. **The reporting endpoints and the CSV export**, the last of Phase 5's deliverables. Paged and
-   bounded like every other list here, and **formula-injection-safe**: a cell beginning `=`, `+`,
-   `-`, `@`, a tab or a carriage return is executed by a spreadsheet that opens it, and an analyst's
-   note is free text an attacker can reach through the ingestion API. The implementation plan names
-   this explicitly and Phase 8's threat model will come back to it.
-3. **Then close Phase 5 against its gate** — every state change audited, invalid and concurrent
-   changes handled, auditor mutations failing as expected, API documented — and record the evidence
-   for each rather than asserting it.
-
-**Still to do on a machine with the stack up.** `make smoke` has not been run since the actuator's
-closed endpoints started answering 401 rather than 404. The script and its
-PowerShell equivalent were updated to expect it and neither has been executed, and the previous
-session's three defects are the standing reminder that the Testcontainers suites and the compose
-stack are not the same system.
+1. **Land [#52](https://github.com/la3679/sentinelflow/pull/52)** — watch the ten required checks,
+   confirm the api job ran the Testcontainers suites on the runner rather than merely compiling them,
+   and merge. A green local run is evidence about this machine.
+2. **Then close Phase 5 against its gate** — every state change audited, invalid and concurrent
+   changes handled, auditor mutations failing as expected, API documented — recording the evidence
+   for each criterion rather than asserting it, the way the Phase 4 gate section does.
+3. **Then run `make smoke` against the compose stack**, which has not been run since the actuator's
+   closed endpoints started answering 401 rather than 404. The script and its PowerShell equivalent
+   were updated to expect it and neither has been executed. The three defects below are the standing
+   reminder that the Testcontainers suites and the compose stack are not the same system.
 
 ### What an earlier session found by running the stack rather than the suites
 

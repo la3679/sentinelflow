@@ -187,7 +187,7 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                             VALUES (?, ?, ?, ?, 'PURCHASE', 'CARD_NOT_PRESENT', 0, 'GBP', 'GB',
                                     now(), 'API', 'PENDING', gen_random_uuid())
                             """,
-                            "TXN-" + SchemaFixtures.next6(),
+                            SchemaFixtures.nextTransactionReference(jdbc),
                             "zero-" + SchemaFixtures.next6(),
                             accountId,
                             merchantId));
@@ -210,7 +210,7 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                             VALUES (?, ?, ?, ?, 'PURCHASE', 'CARD_PRESENT', 10, 'GBP', 'GB', 'DEV-XYZ',
                                     now(), 'API', 'PENDING', gen_random_uuid())
                             """,
-                            "TXN-" + SchemaFixtures.next6(),
+                            SchemaFixtures.nextTransactionReference(jdbc),
                             "dev-" + SchemaFixtures.next6(),
                             accountId,
                             merchantId));
@@ -314,7 +314,7 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                                 alert_reference, transaction_id, assessment_id, status, priority,
                                 summary, risk_band, final_score, closed_at)
                             VALUES (?, ?, ?, 'NEW', 'HIGH', 'Still open', 'HIGH', 55.00, now())
-                            """, "ALT-" + SchemaFixtures.next4(), transactionId, assessmentId));
+                            """, SchemaFixtures.nextAlertReference(jdbc), transactionId, assessmentId));
         }
 
         @Test
@@ -330,7 +330,7 @@ class SchemaConstraintIT extends AbstractPostgresTest {
                                 alert_reference, transaction_id, assessment_id, status, priority,
                                 summary, risk_band, final_score)
                             VALUES (?, ?, ?, 'CONFIRMED_SUSPICIOUS', 'HIGH', 'Closed', 'HIGH', 55.00)
-                            """, "ALT-" + SchemaFixtures.next4(), transactionId, assessmentId));
+                            """, SchemaFixtures.nextAlertReference(jdbc), transactionId, assessmentId));
         }
 
         @Test

@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.persistence.repository;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +15,7 @@ import org.springframework.data.repository.query.Param;
 
 import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
+import io.github.la3679.sentinelflow.api.domain.RiskBand;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
 
 /** Alerts. */
@@ -82,4 +86,80 @@ public interface AlertRepository extends JpaRepository<Alert, UUID> {
             @Param("priority") AlertPriority priority,
             @Param("assigneeId") UUID assigneeId,
             Pageable pageable);
+
+    // ----------------------------------------------------------------------- //
+    // Reporting
+    //
+    // Half-open windows throughout: created_at >= :from AND < :to, so two
+    // adjacent windows neither overlap nor drop the row that falls exactly on
+    // the boundary. A closed range would double-count it and an open one would
+    // lose it, and both mistakes are invisible in a report.
+    //
+    // Grouped in the database rather than counted in Java. Reading the window
+    // to count it would pull every row into memory to produce nine numbers.
+    // ----------------------------------------------------------------------- //
+
+    @Query("""
+            SELECT new io.github.la3679.sentinelflow.api.persistence.repository.AlertRepository$StatusCount(
+                       a.status, count(a))
+              FROM Alert a
+             WHERE a.createdAt >= :from AND a.createdAt < :to
+             GROUP BY a.status
+            """)
+    List<StatusCount> countByStatus(@Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("""
+            SELECT new io.github.la3679.sentinelflow.api.persistence.repository.AlertRepository$PriorityCount(
+                       a.priority, count(a))
+              FROM Alert a
+             WHERE a.createdAt >= :from AND a.createdAt < :to
+             GROUP BY a.priority
+            """)
+    List<PriorityCount> countByPriority(@Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("""
+            SELECT new io.github.la3679.sentinelflow.api.persistence.repository.AlertRepository$BandCount(
+                       a.riskBand, count(a))
+              FROM Alert a
+             WHERE a.createdAt >= :from AND a.createdAt < :to
+             GROUP BY a.riskBand
+            """)
+    List<BandCount> countByBand(@Param("from") Instant from, @Param("to") Instant to);
+
+    /**
+     * How many alerts in the window are still open.
+     *
+     * <p>From {@code closedAt} rather than from a list of statuses. Which statuses mean open is a
+     * fact about the state machine, and a second copy of it here would be a second place to change
+     * when a status is added — and the copy that was forgotten would produce a report that is wrong
+     * rather than one that fails.
+     */
+    @Query("SELECT count(a) FROM Alert a WHERE a.createdAt >= :from AND a.createdAt < :to AND a.closedAt IS NULL")
+    long countOpen(@Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("SELECT count(a) FROM Alert a WHERE a.createdAt >= :from AND a.createdAt < :to")
+    long countInWindow(@Param("from") Instant from, @Param("to") Instant to);
+
+    /**
+     * The window itself, oldest first, bounded by the caller's limit.
+     *
+     * <p>Oldest first because an export is read as a chronology rather than as a queue. The limit is
+     * not a paging cursor: the caller has already refused a window larger than it, so this reads a
+     * window it knows fits.
+     */
+    @Query("""
+            SELECT a FROM Alert a
+             WHERE a.createdAt >= :from AND a.createdAt < :to
+             ORDER BY a.createdAt ASC, a.id ASC
+            """)
+    List<Alert> findWindow(@Param("from") Instant from, @Param("to") Instant to, Limit limit);
+
+    /** One status and how many alerts in the window hold it. */
+    record StatusCount(AlertStatus status, long total) {}
+
+    /** One priority and how many alerts in the window hold it. */
+    record PriorityCount(AlertPriority priority, long total) {}
+
+    /** One band and how many alerts in the window carry it. */
+    record BandCount(RiskBand band, long total) {}
 }

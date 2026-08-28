@@ -18,8 +18,24 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * entity class.
  *
  * <p>Every reference is unique per call, because one container serves the whole fork and the rows
- * one test writes are still there for the next. The counter starts high enough that a value never
- * collides with the reference data V1 inserts.
+ * one test writes are still there for the next.
+ *
+ * <h2>Two of these references have an allocator already, and it is not this class</h2>
+ *
+ * {@code transaction_reference} and {@code alert_reference} are handed out by
+ * {@code transaction_reference_seq} and {@code alert_reference_seq}, which the application reads on
+ * every ingestion and every raised alert. A counter here that also starts at 1 is a <em>second</em>
+ * allocator into a namespace with a unique constraint over it, and the two meet as soon as the
+ * application has ingested as many transactions as the fixtures have written. That is exactly what
+ * happened: {@code TransactionIngestionIT} failed with a duplicate on {@code TXN-000005} on a runner
+ * where the suite order put five fixture rows in front of it, and passed on a machine where it did
+ * not.
+ *
+ * <p><strong>So the fixtures allocate those two from the same sequences.</strong> One allocator per
+ * namespace makes a collision impossible rather than unlikely, which a shared counter and a large
+ * enough starting offset could only ever be. {@link #next6()} and {@link #next4()} remain for the
+ * references nothing else allocates — {@code CUS-}, {@code ACC-}, {@code MER-}, idempotency keys —
+ * and must not be used for a transaction or an alert.
  */
 public final class SchemaFixtures {
 
@@ -31,14 +47,39 @@ public final class SchemaFixtures {
         this.jdbc = jdbc;
     }
 
-    /** A six-digit suffix for CUS-, ACC- and TXN- references. */
+    /**
+     * A six-digit suffix for CUS- and ACC- references.
+     *
+     * <p><strong>Not for TXN-.</strong> See {@link #nextTransactionReference(JdbcTemplate)}.
+     */
     public static String next6() {
         return "%06d".formatted(SEQUENCE.getAndIncrement());
     }
 
-    /** A four-digit suffix for MER- and ALT- references. */
+    /**
+     * A four-digit suffix for MER- references.
+     *
+     * <p><strong>Not for ALT-.</strong> See {@link #nextAlertReference(JdbcTemplate)}.
+     */
     public static String next4() {
         return "%04d".formatted(SEQUENCE.getAndIncrement());
+    }
+
+    /**
+     * The next transaction reference, from the sequence the application itself reads.
+     *
+     * <p>Static and taking the template, so a suite that holds a {@code JdbcTemplate} but no
+     * {@code SchemaFixtures} can still allocate correctly — the wrong call is the easy one to make
+     * here, and the right one should not require restructuring a test class to reach.
+     */
+    public static String nextTransactionReference(JdbcTemplate jdbc) {
+        return jdbc.queryForObject(
+                "SELECT 'TXN-' || lpad(nextval('transaction_reference_seq')::text, 6, '0')", String.class);
+    }
+
+    /** The next alert reference, from the sequence {@code AlertRaiser} reads. */
+    public static String nextAlertReference(JdbcTemplate jdbc) {
+        return jdbc.queryForObject("SELECT 'ALT-' || lpad(nextval('alert_reference_seq')::text, 4, '0')", String.class);
     }
 
     public UUID systemUserId() {
@@ -75,7 +116,8 @@ public final class SchemaFixtures {
     }
 
     public UUID insertTransaction(UUID accountId, UUID merchantId, String idempotencyKey) {
-        return jdbc.queryForObject("""
+        return jdbc.queryForObject(
+                """
                 INSERT INTO transactions (
                     transaction_reference, idempotency_key, account_id, merchant_id,
                     type, channel, amount, currency, origin_country,
@@ -83,7 +125,7 @@ public final class SchemaFixtures {
                 VALUES (?, ?, ?, ?, 'PURCHASE', 'CARD_NOT_PRESENT', 42.5000, 'GBP', 'GB',
                         now(), 'API', 'PENDING', gen_random_uuid())
                 RETURNING id
-                """, UUID.class, "TXN-" + next6(), idempotencyKey, accountId, merchantId);
+                """, UUID.class, nextTransactionReference(jdbc), idempotencyKey, accountId, merchantId);
     }
 
     /**
@@ -113,7 +155,7 @@ public final class SchemaFixtures {
                 RETURNING id
                 """,
                 UUID.class,
-                "TXN-" + next6(),
+                nextTransactionReference(jdbc),
                 idempotencyKey,
                 accountId,
                 merchantId,
@@ -145,7 +187,7 @@ public final class SchemaFixtures {
                     summary, risk_band, final_score)
                 VALUES (?, ?, ?, 'NEW', 'HIGH', 'Synthetic alert for a schema test', 'HIGH', 55.00)
                 RETURNING id
-                """, UUID.class, "ALT-" + next4(), transactionId, assessmentId);
+                """, UUID.class, nextAlertReference(jdbc), transactionId, assessmentId);
     }
 
     public JdbcTemplate jdbc() {

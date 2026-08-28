@@ -1906,3 +1906,144 @@ None.
 
 Recorded in `PROJECT_STATE.md`: merge #51, then the reporting endpoints and the formula-injection-safe
 CSV export, then close Phase 5 against its gate with the evidence for each criterion.
+
+---
+
+## Session 16, closed — 2026-08-28 — an emergency checkpoint on the reporting branch
+
+**Stopped at 90% of the five-hour usage window, on the user's instruction**, part-way through
+Phase 5's last deliverable. `CLAUDE.md`'s checkpoint policy applies at that point: no further
+implementation, commit what is safe, push, record state.
+
+### What the session landed
+
+Three pull requests merged, each with all ten checks green:
+[#49](https://github.com/la3679/sentinelflow/pull/49) alert creation and ADR-0011 §4,
+[#50](https://github.com/la3679/sentinelflow/pull/50) the investigation state machine and ADR-0012's
+authentication, and [#51](https://github.com/la3679/sentinelflow/pull/51) assignment, notes,
+feedback and the queue reads. Phase 5 is one deliverable from its gate.
+
+### What is on `feat/alert-reporting`, and what is wrong with it
+
+The alert summary, the CSV export, and `CsvWriter` — which is the part that matters and is green,
+with 17 unit tests covering every character a spreadsheet treats as a formula and the apostrophe
+prefix going inside the quoting rather than outside it.
+
+**Four of `AlertReportIT`'s ten cases fail, and the fault is in the fixture rather than the
+endpoints.** The window is a class constant, so every test in the class writes into the same hour and
+the four that assert an exact total count rows another test left behind. The two that assert no total
+— the zero-key case and the formula-escaping case — pass, which is what says the production code
+behaves.
+
+**The failing suite is committed rather than deleted or disabled.** A test removed to go green is
+worse than one that is red for a reason somebody wrote down, and the commit message carries the
+diagnosis. The branch has no pull request, deliberately.
+
+### Blockers
+
+None. The fix is a window per test rather than per class.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: fix the fixture, document the two reporting paths in the OpenAPI
+contract, run the full suite, open the pull request, then close Phase 5 against its gate with the
+evidence for each criterion.
+
+---
+
+## Session 17 — 2026-08-28 — the reporting endpoints made green and put under contract
+
+Resumed from Session 16's emergency checkpoint. `feat/alert-reporting` was pushed with four red
+tests and no pull request; this session closed all three of the actions that state left.
+
+### The four red tests were the fixture, and the previous session's diagnosis held
+
+`AlertReportIT` derived its window from a class constant, so every test in the class wrote alerts
+into the same hour and the four that assert an exact total counted whatever the tests before them had
+left behind. Each test now draws its own hour from a per-run epoch through an `AtomicInteger` in
+`@BeforeEach`. **No production code changed** — which is what the two tests that assert no total,
+green throughout, had already predicted.
+
+**The windows are two hours apart rather than adjacent, and that is not arbitrary.**
+`theWindowIsHalfOpen` deliberately reads the window immediately after its own, to prove a row sitting
+on the boundary is counted once rather than twice or never. With a one-hour stride that read would
+have landed in the next test's window — and the fix for a fixture that leaks between tests would
+itself have leaked between tests.
+
+### The two reports are now in the contract they should have been written against
+
+`contracts/openapi/sentinelflow-api.yaml` gained both paths, the shared `from`/`to` window
+parameters, the `AlertSummary` schema, and `ExportTooLargeProblem` for the `413` the export answers.
+The branch had built the endpoints without them, which left the authoritative contract saying the
+reports did not exist.
+
+Recorded rather than asserted: the window is half-open and both ends are required, the summary is
+unpaged because its size does not depend on the data, the export is capped rather than paged, and
+every cell is neutralised against formula injection.
+
+### Tests and results
+
+Every suite, at `68e019f`, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`:
+
+api **189 unit** and **250 integration** passed, 0 failures · JaCoCo gate met (line 0.8972,
+branch 0.7945, instruction 0.9080) · web Vitest **24/24** · scoring pytest **169 passed** ·
+`ruff check` clean · `mypy` no issues in 42 files · `spotless:check` 221 files clean ·
+`eslint` 0 errors, 23 pre-existing warnings · `check-contracts.mjs` all passed ·
+`prettier --check` clean · `check-docs.mjs` 160 links, no placeholders.
+
+`ReportController` and `CsvWriter` are at 1.0000 instruction coverage, `AlertReportService` at
+0.9589. The uncovered part is the export cap's refusal branch, which needs 10,001 alerts in one
+window to reach. Left uncovered and said so, rather than lowered so a test could reach it: a cap the
+test moves is not the cap that ships.
+
+### Things worth keeping
+
+- **The default `JAVA_HOME` on this machine still points at JDK 17**, and Maven's failure for it is
+  `release version 25 not supported` from the compiler plugin rather than anything naming a JDK.
+  Already recorded in ADR-0003 and in `PROJECT_STATE.md`'s known issues; recorded again here because
+  it costs a build every session that forgets it.
+- **The build's own `Results:` line and the JUnit XML files disagree**, and the console is the one
+  to quote. Summing the XML gives 203 unit tests where the console says 189, because a `@Nested`
+  class's cases appear in the container's file as well as its own. This was caught by comparing the
+  local figure against the runner's: CI printed 189, which is also what
+  `mvnw verify -DskipITs` prints locally. A number nobody else can reproduce by running the command
+  is not evidence, whatever it was derived from.
+
+### CI found a defect two green local runs could not
+
+**#52's first run failed one test, and it was not a reporting test.**
+`TransactionIngestionIT.retryReturnsTheOriginalResult` answered 500 rather than 202, on a duplicate
+key for `TXN-000005`. The same commit was green locally, twice.
+
+**Two allocators owned one namespace.** `SchemaFixtures` built `TXN-` and `ALT-` from an in-JVM
+`AtomicInteger` starting at 1, while the application read `transaction_reference_seq` and
+`alert_reference_seq`, which also start at 1. One container serves the whole fork, so the two met as
+soon as the application had ingested as many transactions as the fixtures had written — a point that
+depends on the order the suites happen to run in, and therefore on the machine. The class comment
+asserted the counter "starts high enough that a value never collides"; it started at 1.
+
+**Fixed by deleting the second allocator, not by moving it out of the way.** Offsetting the counter
+would have made the collision unlikely, and unlikely is exactly what it already was. The fixtures now
+draw both references from the same sequences the application reads, which makes it impossible.
+
+**The regression test asserts the strong property.** `ReferenceAllocationIT` draws alternately from
+the fixture and from the application and asserts every reference is exactly one more than the one
+before it — only a single shared sequence produces that. Distinctness alone would pass with two
+counters standing far apart, which is the state the old code was usually in. Confirmed it can fail by
+reinstating the defect: `expected: 2L` on the first pair.
+
+**What it cost, and what it is worth:** one CI round trip, and the lesson that a green local suite is
+evidence about one interleaving of the tests. This is the second time in this project a defect has
+been invisible until it ran somewhere else; the first was the three the compose stack found in
+Phase 4.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: land the reporting pull request with the ten required checks green,
+then close Phase 5 against its gate with the evidence for each criterion, then run `make smoke`
+against the compose stack, which has not been run since the actuator's closed endpoints started
+answering 401 rather than 404.

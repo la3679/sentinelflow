@@ -16,6 +16,7 @@ import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -58,6 +59,12 @@ class EntityMappingIT extends AbstractPostgresTest {
     @Autowired
     private TransactionTemplate transactions;
 
+    // Only ever used to draw a reference from the sequence that owns it. Every
+    // row in this suite is still written through the EntityManager, which is
+    // what it is here to test.
+    @Autowired
+    private JdbcTemplate jdbc;
+
     private Account persistedAccount() {
         Customer customer =
                 new Customer("CUS-" + SchemaFixtures.next6(), "GB", RiskTier.STANDARD, CustomerStatus.ACTIVE);
@@ -89,7 +96,7 @@ class EntityMappingIT extends AbstractPostgresTest {
         // compares scale, so this is exactly the comparison that fails when
         // Money is written with equals instead of compareTo.
         TransactionRecord transaction = new TransactionRecord(
-                "TXN-" + SchemaFixtures.next6(),
+                SchemaFixtures.nextTransactionReference(jdbc),
                 "idem-" + SchemaFixtures.next6(),
                 account.getId(),
                 merchant.getId(),
@@ -129,7 +136,7 @@ class EntityMappingIT extends AbstractPostgresTest {
         Account account = persistedAccount();
         Merchant merchant = persistedMerchant();
         TransactionRecord transaction = new TransactionRecord(
-                "TXN-" + SchemaFixtures.next6(),
+                SchemaFixtures.nextTransactionReference(jdbc),
                 "idem-" + SchemaFixtures.next6(),
                 account.getId(),
                 merchant.getId(),
@@ -197,7 +204,7 @@ class EntityMappingIT extends AbstractPostgresTest {
         Account account = persistedAccount();
         Merchant merchant = persistedMerchant();
         TransactionRecord transaction = new TransactionRecord(
-                "TXN-" + SchemaFixtures.next6(),
+                SchemaFixtures.nextTransactionReference(jdbc),
                 "idem-" + SchemaFixtures.next6(),
                 account.getId(),
                 merchant.getId(),
@@ -248,7 +255,7 @@ class EntityMappingIT extends AbstractPostgresTest {
             Account account = persistedAccount();
             Merchant merchant = persistedMerchant();
             TransactionRecord transaction = new TransactionRecord(
-                    "TXN-" + SchemaFixtures.next6(),
+                    SchemaFixtures.nextTransactionReference(jdbc),
                     "idem-" + SchemaFixtures.next6(),
                     account.getId(),
                     merchant.getId(),
@@ -278,7 +285,7 @@ class EntityMappingIT extends AbstractPostgresTest {
                     Instant.now());
             entityManager.persist(assessment);
             Alert alert = new Alert(
-                    "ALT-" + SchemaFixtures.next4(),
+                    SchemaFixtures.nextAlertReference(jdbc),
                     transaction.getId(),
                     assessment.getId(),
                     AlertPriority.URGENT,
@@ -330,7 +337,7 @@ class EntityMappingIT extends AbstractPostgresTest {
     @DisplayName("a terminal transition stamps the close time the schema demands")
     void transitionSetsCloseTime() {
         Alert alert = new Alert(
-                "ALT-" + SchemaFixtures.next4(),
+                SchemaFixtures.nextAlertReference(jdbc),
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 AlertPriority.LOW,
