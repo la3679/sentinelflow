@@ -18,7 +18,7 @@
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 5 closed against its gate; Phase 6 not started                                                                                    |
 | Current phase        | between phases — Phase 5 complete, Phase 6 (operations frontend) next                                                                            |
-| Current task         | open the Phase 5 gate pull request, then run `make smoke` before starting Phase 6                                                                |
+| Current task         | land [#53](https://github.com/la3679/sentinelflow/pull/53), then run `make smoke` before Phase 6                                                 |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -26,7 +26,7 @@
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none — [#52](https://github.com/la3679/sentinelflow/pull/52) merged                                                                              |
+| Open PRs             | [#53](https://github.com/la3679/sentinelflow/pull/53) — the Phase 5 gate                                                                         |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -1698,7 +1698,7 @@ None.
 Phase 5 is complete and closed against its gate. [#52](https://github.com/la3679/sentinelflow/pull/52)
 merged with all ten checks green. Nothing is blocked.
 
-1. **Land the Phase 5 gate pull request** from `docs/phase-5-gate`, which carries the gate section,
+1. **Land [#53](https://github.com/la3679/sentinelflow/pull/53)** from `docs/phase-5-gate`, which carries the gate section,
    the auditor-note refusal that closes its third criterion, and this file. Documentation only, plus
    one test.
 2. **Then run `make smoke` against the compose stack**, which has not been run since the actuator's
