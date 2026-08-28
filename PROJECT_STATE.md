@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T17:20Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T18:00Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5 closed and smoke-tested; one defect the smoke test found is open as a fix                                                       |
+| Overall status       | active — Phase 5 complete, closed against its gate and smoke-tested; Phase 6 not started                                                         |
 | Current phase        | between phases — Phase 5 complete, Phase 6 (operations frontend) next                                                                            |
-| Current task         | land the operator-credential fix, then begin Phase 6                                                                                             |
+| Current task         | awaiting a decision on `make reset-demo`; Phase 6 can start without it                                                                           |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `fix/operator-credential-backfill`                                                                                                               |
+| Working branch       | `docs/state-after-phase-5`                                                                                                                       |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#54](https://github.com/la3679/sentinelflow/pull/54) — the operator-credential fix                                                              |
+| Open PRs             | none — [#54](https://github.com/la3679/sentinelflow/pull/54) merged                                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -1757,16 +1757,17 @@ None.
 
 Phase 5 is complete, closed against its gate and merged. `make smoke` has now been run — 23 of 23 on
 both the bash and PowerShell paths — which discharges the item that had been standing since the
-actuator's endpoints started answering 401. Nothing is blocked.
+actuator's endpoints started answering 401. **One decision is the user's**, and it blocks nothing
+else.
 
-1. **Land [#54](https://github.com/la3679/sentinelflow/pull/54)**, the operator-credential repair the
-   smoke test found. It is the last thing between this repository and a demo somebody can actually log
-   into.
-2. **Then rebuild the demo database.** `make reset-demo` then `make seed`, because the current one
-   predates alert creation and carries the scars of the h2c defect — 7,260 `FAILED` transactions,
-   13,455 degraded assessments and zero alerts. Read the profile note below first. A reporting
-   endpoint returning zero over a window is right for this database and tells nobody anything.
-3. **Then begin Phase 6 — the operations frontend.** Its first decision is ADR-0015 (SSE versus
+1. **Rebuild the demo database — this one needs the user.** `make reset-demo` then `make seed`. The
+   current database predates alert creation and carries the scars of the h2c defect: 7,260 `FAILED`
+   transactions, 13,455 degraded assessments and **zero alerts**, so every reporting endpoint honestly
+   returns nothing and tells nobody anything. But `make reset-demo` deletes the Prometheus and Grafana
+   volumes as well as PostgreSQL, and the target gates itself behind an interactive
+   `Type 'reset' to confirm` prompt — a control an agent should not route around. Read the profile
+   note below first: the stack is on the LOCAL profile.
+2. **Begin Phase 6 — the operations frontend**, which does not depend on step 1. Its first decision is ADR-0015 (SSE versus
    WebSockets), and its gate is "no dead controls · keyboard and accessibility checks pass · the core
    end-to-end journey passes · Lovable diffs reviewed and merged safely". The typed RTK Query layer
    replacing `src/mocks/` is the first deliverable, and `.claude/rules/frontend.md` says exactly how
