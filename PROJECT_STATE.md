@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T19:30Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T16:35Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 6 started; the API migration audited and the first API change merged                                                              |
+| Overall status       | active — Phase 6; the transport and the real sign-in are done, and the console now calls the API                                                 |
 | Current phase        | Phase 6 — operations frontend (in progress)                                                                                                      |
-| Current task         | the typed transport and the real authentication flow                                                                                             |
+| Current task         | the types, and deleting `ALLOWED_TRANSITIONS`                                                                                                    |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `main`                                                                                                                                           |
+| Working branch       | `feat/web-transport-and-auth`                                                                                                                    |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none — [#57](https://github.com/la3679/sentinelflow/pull/57) merged                                                                              |
+| Open PRs             | [#59](https://github.com/la3679/sentinelflow/pull/59) — transport and authentication                                                             |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -971,9 +971,67 @@ The schema's description of that field was corrected instead, for a different re
 
 ## In progress — Phase 6
 
-**Two pull requests merged**: the API migration audit as
-[#56](https://github.com/la3679/sentinelflow/pull/56), and the alert's legal targets as
-[#57](https://github.com/la3679/sentinelflow/pull/57).
+**Three pull requests merged and one open**: the API migration audit as
+[#56](https://github.com/la3679/sentinelflow/pull/56), the alert's legal targets as
+[#57](https://github.com/la3679/sentinelflow/pull/57), a state checkpoint as
+[#58](https://github.com/la3679/sentinelflow/pull/58), and the transport and authentication as
+[#59](https://github.com/la3679/sentinelflow/pull/59).
+
+### The console calls the API, and signs in to do it
+
+The first of the audit's four pieces. `src/api/transport.ts` is `fetchBaseQuery` against
+`API_BASE_URL` with the bearer token attached from the store, and a mapping that turns the API's
+RFC 9457 problem documents into one `SentinelError` — keeping `detail`, `correlationId`, and the
+extension properties (`legalTargets`, `currentVersion`) that make a `409` answerable rather than
+merely reportable. `demoOperatorSlice` and the role selector are gone; `sessionSlice` holds a real
+token, in memory and nowhere else.
+
+**Endpoints are migrated one at a time, and say which they are.** `transport: "mock"` marks an
+endpoint with no server counterpart. Only `POST /auth/login` is real today. A single global flag
+would have to claim the console is entirely real or entirely fake, and it is neither for as long as
+the migration takes.
+
+**`expired` is a distinct session state from `anonymous`.** A token that ran out mid-review and a
+browser that never had one need different sentences on the sign-in screen; collapsing them tells an
+analyst who just lost a note that nothing happened. The `401` is handled once, in the base query,
+so no screen can hold a credential it has been told is dead — and excluded for the login request
+itself, where a `401` is a wrong password, and for anonymous requests, which must not turn "never
+signed in" into "your session ended".
+
+**A reload signs the operator out.** That is the honest consequence of ADR-0012 §3 and of the rule
+against session state in browser storage, so the sign-in screen says so rather than letting it be a
+surprise.
+
+### Two things the transport work found that the audit had not
+
+- **The API had no CORS configuration at all.** The console has never made a request, so nothing had
+  ever had to answer how a browser is allowed to make one across the origin boundary ADR-0002
+  created. [ADR-0013](docs/adr/0013-console-to-api-cross-origin-access.md) decides it: an explicit
+  allow-list from `SENTINELFLOW_CORS_ALLOWED_ORIGINS`, registered for `/api/v1/**` only, no
+  wildcard, no credentials. Proxying through the console's nginx was rejected — it needs no CORS at
+  all and quietly removes the premise ADR-0012 §1 rests on when it rejects cookie sessions.
+- **`TokenResponse` grew `roles`.** The audit said "roles read from the token"; the contract says a
+  client that parsed the token would be reading a structure the service is free to change. Sending
+  them beside it, from the same call that puts them in the claim, is the honest form. A test asserts
+  the response and the claim are equal — if they could disagree, an operator would be offered a
+  control under one capacity and audited under another.
+
+### Three smaller things, recorded because each was a defect rather than a preference
+
+- **The Vite dev server defaulted to port 8080**, which is the API's published port. Harmless while
+  the console called nothing; now it is `make up && bun run dev` fighting over one port, with Vite
+  silently taking another and changing the origin the API was told to expect. Pinned to 5174.
+- **`API_BASE_URL` defaulted to the relative `/api/v1`**, which against the console's own nginx
+  returns the SPA shell with a `200` the client would then parse as JSON — a worse failure than a 404. It is absolute now, and a build argument, because Vite inlines `VITE_*`.
+- **The `/forbidden` screen told operators to "switch the simulated role in the header".** That
+  control no longer exists. Dead copy, and Phase 6's gate is "no dead controls".
+
+### Four e2e tests had been passing by accident
+
+The suite now stubs the API at the network boundary, which is what lets the real transport, the real
+bearer header and the real `401` be exercised in CI with no backend anywhere. Four keyboard and
+timing tests had depended on a full page load — the tab order started wherever the last click left
+it, and a reload drops the token by design. They say what they mean now.
 
 ### The migration is four pieces of work, not the one `AGENTS.md` describes
 
@@ -987,8 +1045,8 @@ The audit is the authoritative list. The four pieces it identifies:
 
 | Piece                        | State                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------- |
-| Transport and authentication | not started — the prerequisite for everything else                         |
-| Types and mapping            | not started                                                                |
+| Transport and authentication | **done** — [#59](https://github.com/la3679/sentinelflow/pull/59)           |
+| Types and mapping            | not started — next                                                         |
 | Two small API additions      | **one of two done** — legal targets merged; the assignee name is undecided |
 | The four invented endpoints  | not started — each needs a decision, and the overview matters most         |
 
@@ -1274,6 +1332,23 @@ available.
 | `main` protected                    | **pass** | Ruleset `21493410`, verified through the rules API                              |
 
 ## Test and verification evidence
+
+### 2026-08-28 — Phase 6, the transport and the real sign-in
+
+| Check                                              | Result                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `bun run verify` (apps/web)                        | **PASS** — lint clean, typecheck clean, 38 unit tests in 6 files, build built |
+| `bun run test:e2e` (apps/web)                      | **PASS** — 68 tests, desktop and tablet, axe clean on all eight routes        |
+| `./mvnw verify -Dit.test=OperatorAuthenticationIT` | **PASS** — 12 integration tests, JDK 25.0.4.1+1                               |
+| `./mvnw test -Dtest=CorsPropertiesTests`           | **PASS** — 9 unit tests                                                       |
+
+Three commits on `feat/web-transport-and-auth`: the roles on the token response, the CORS allow-list
+and ADR-0013, and the console's transport with its session. **CI has not run yet** — the branch is
+pushed and [#59](https://github.com/la3679/sentinelflow/pull/59) is open.
+
+**Unit and integration test counts for `apps/api` as a whole were not re-run in this session.** Only
+the two suites this change touches were. The last full number is the one recorded against `9580a96`
+below.
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
 
@@ -1809,17 +1884,21 @@ None.
 
 ## Next three actions
 
-Phase 6 is under way. The audit and the first of its two API additions are merged; nothing is open.
+Phase 6 is under way. The audit, the first of its two API additions, and the transport with real
+authentication are done. [#59](https://github.com/la3679/sentinelflow/pull/59) is open and awaiting
+CI.
 
-1. **The transport and the real authentication flow.** `fetchBaseQuery({ baseUrl: API_BASE_URL })`,
-   `POST /auth/login`, the bearer header on every request, roles read from the token rather than
-   chosen from a menu, and the `401` that arrives mid-session because there is no refresh token by
-   design. It is the prerequisite for every other screen, and it retires `demoOperatorSlice` and the
-   role selector — choosing your own role is the interface equivalent of naming your own actor.
-2. **Then the types, and deleting `ALLOWED_TRANSITIONS`.** `domain/types.ts` rewritten against the
-   contract: the real enums, the reference/identifier pair (ADR-0007 — a queue row showing a UUID is
-   unreadable), `version`, `SYSTEM` as a fourth role, and the removal of the client-supplied `actor`
-   from three mutation bodies. The transition controls then render from `legalTargets`.
+1. **Merge [#59](https://github.com/la3679/sentinelflow/pull/59)** once its five checks pass, then
+   confirm the merge commit is green on `main`.
+2. **The types, and deleting `ALLOWED_TRANSITIONS`.** `domain/types.ts` rewritten against the
+   contract: the real enums (`AlertPriority` is `LOW | MEDIUM | HIGH | URGENT`, not `P1–P4`;
+   `TransactionStatus` describes a payment switch this system is not), the reference/identifier pair
+   (ADR-0007 — a queue row showing a UUID is unreadable), `version` for the optimistic concurrency
+   that currently has no client at all, `SYSTEM` as a fourth role, and the removal of the
+   client-supplied `actor` from three mutation bodies. The transition controls then render from
+   `legalTargets`, and `/alerts` and `/transactions` lose their `transport: "mock"`.
+   **The `409` is the real work here**, and it is not plumbing: re-read the alert, show what changed,
+   ask again. `SentinelError.extensions` already carries `currentVersion` and `legalTargets`.
 3. **Then decide the four invented endpoints**, starting with the overview, and record each decision
    where somebody will find it. The audit sets out what each one wants and what exists.
 
