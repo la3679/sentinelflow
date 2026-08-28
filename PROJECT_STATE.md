@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T04:10Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T06:30Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5; alert creation merged, the state machine and authentication open as a pull request                                             |
+| Overall status       | active — Phase 5; everything but the reporting endpoints is merged or open as a pull request                                                     |
 | Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
-| Current task         | assignment, notes and analyst feedback, once the state-machine pull request has merged                                                           |
+| Current task         | the reporting endpoints and the CSV export, the last of Phase 5                                                                                  |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/alert-state-machine` — pushed, pull request [#50](https://github.com/la3679/sentinelflow/pull/50) open                                     |
+| Working branch       | `feat/alert-assignment-and-notes` — pushed, pull request [#51](https://github.com/la3679/sentinelflow/pull/51) open                              |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#50](https://github.com/la3679/sentinelflow/pull/50) — the investigation state machine and ADR-0012                                             |
+| Open PRs             | [#51](https://github.com/la3679/sentinelflow/pull/51) — assignment, notes, feedback and the queue reads                                          |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -741,10 +741,11 @@ one is still handled.
 
 ## In progress — Phase 5
 
-**Alert creation is merged** as [#49](https://github.com/la3679/sentinelflow/pull/49). **The
-investigation state machine and the authentication it needed** are written, covered, and open as
-[#50](https://github.com/la3679/sentinelflow/pull/50). What remains of Phase 5 is assignment, notes,
-analyst feedback, and the reporting endpoints.
+**Alert creation** merged as [#49](https://github.com/la3679/sentinelflow/pull/49), and **the
+investigation state machine with ADR-0012's authentication** as
+[#50](https://github.com/la3679/sentinelflow/pull/50). **Assignment, notes, analyst feedback and the
+queue reads** are open as [#51](https://github.com/la3679/sentinelflow/pull/51). What remains of
+Phase 5 is the reporting endpoints and the CSV export.
 
 **The alerting rule joined the policy object** rather than starting a second one. ADR-0008 §4 gives
 this service "the alerting policy applied to a final score at runtime", and deciding which bands are
@@ -813,8 +814,28 @@ route back is a new rule that makes the shape transparent rather than an alert n
 | Transitions, audited and version-checked       | **done** — 8 cases against PostgreSQL                            |
 | Operator authentication (ADR-0012, V10)        | **done** — 7 unit, 7 integration over real HTTP                  |
 | The transition endpoint and role authorization | **done** — 9 cases, including both role refusals                 |
-| Assignment, notes, analyst feedback            | not started                                                      |
-| Reporting endpoints                            | not started                                                      |
+| Assignment, notes, analyst feedback            | **done** — 16 and 11 cases over real HTTP                        |
+| The queue and one-alert reads                  | **done** — the ordering asserted term by term                    |
+| Reporting endpoints and the CSV export         | not started — the last of Phase 5                                |
+
+### Three decisions in the alert operations worth keeping
+
+**A note takes no version and publishes no event.** It is appended rather than replacing anything,
+so two analysts writing one at the same time both succeed — demanding `expectedVersion` would refuse
+the second for no reason a user could act on. And `alert.updated` has no field for the text, so an
+event could only announce that a note exists; an analyst's own words about a transaction belong on a
+detail page somebody opened rather than on a topic that leaves this service. The same rule
+`AlertRaiser` follows when it builds a summary from a reason code rather than a description.
+
+**Feedback is recorded against the assessment and cites the alert.** Rescoring writes a new
+assessment rather than editing one, so a label attached to the alert would silently follow a
+decision it was never given about. One analyst has one verdict per assessment and revising it
+replaces the label, because two opposite labels from one person about one decision cannot both be
+training data.
+
+**The queue's ordering is not the caller's to choose.** Open work before closed, then priority, then
+oldest first. A `sort` parameter would let a console quietly change which alerts an analyst sees
+first, which is an operational decision rather than a display one.
 
 ### The state machine, and the three things it is worth knowing about
 
@@ -1056,6 +1077,26 @@ available.
 ## Test and verification evidence
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-28 — Phase 5, assignment, notes, feedback and the queue reads
+
+| Command                                    | Result                                            |
+| ------------------------------------------ | ------------------------------------------------- |
+| `./mvnw verify -DskipITs` (JDK 25.0.4.1+1) | **PASS** — 172 unit tests                         |
+| `./mvnw verify` (both suites)              | **PASS** — 238 integration tests, coverage met    |
+| JaCoCo, both suites                        | 89.8% lines (2365/2634), 78.6% branches (460/585) |
+| `bun run format:check`                     | **PASS** — repository-wide                        |
+| `bun scripts/dev/check-docs.mjs`           | **PASS** — 160 links across 42 files              |
+| `bun scripts/dev/check-contracts.mjs`      | **PASS** — every schema, example and API document |
+
+**One defect found by running it.** An oversize page size answered 500. `@Validated` puts a
+controller behind a proxy and routes parameter constraints through Hibernate Validator's
+`ConstraintViolationException`, while Spring MVC's built-in method validation — which needs no
+annotation when a parameter carries a constraint — raises `HandlerMethodValidationException`. The
+annotation was removed so there is one mechanism, and that exception now maps to the same 422 a body
+validation failure produces.
+
+Still nothing run against the compose stack.
 
 ### 2026-08-28 — Phase 5, the investigation state machine and ADR-0012
 
@@ -1436,19 +1477,18 @@ Alert creation merged as [#49](https://github.com/la3679/sentinelflow/pull/49). 
 state machine, ADR-0012's authentication and the transition endpoint are open as
 [#50](https://github.com/la3679/sentinelflow/pull/50). Nothing is blocked.
 
-1. **Merge [#50](https://github.com/la3679/sentinelflow/pull/50) once CI is green**, then branch for
-   the next piece rather than stacking on it.
-2. **Assignment, notes and analyst feedback.** `alert_actions` already has `ASSIGNED`,
-   `UNASSIGNED` and `NOTE_ADDED`, `alerts.assignee_id` already has its foreign key and its partial
-   index, and `analyst_feedback` already exists with a unique constraint per assessment and actor.
-   None of it is written. `AlertUpdatedPayload` already carries `changeType` and both assignees, so
-   an assignment publishes through the path a transition already uses.
-3. **Then the reporting endpoints and the CSV export** — paged, bounded, and formula-injection-safe,
-   which the implementation plan names explicitly and which is the last of Phase 5's deliverables
-   before its gate.
+1. **Merge [#51](https://github.com/la3679/sentinelflow/pull/51) once CI is green.**
+2. **The reporting endpoints and the CSV export**, the last of Phase 5's deliverables. Paged and
+   bounded like every other list here, and **formula-injection-safe**: a cell beginning `=`, `+`,
+   `-`, `@`, a tab or a carriage return is executed by a spreadsheet that opens it, and an analyst's
+   note is free text an attacker can reach through the ingestion API. The implementation plan names
+   this explicitly and Phase 8's threat model will come back to it.
+3. **Then close Phase 5 against its gate** — every state change audited, invalid and concurrent
+   changes handled, auditor mutations failing as expected, API documented — and record the evidence
+   for each rather than asserting it.
 
-**One thing to do on a machine with the stack up, before the next piece.** `make smoke` has not been
-run since the actuator's closed endpoints started answering 401 rather than 404. The script and its
+**Still to do on a machine with the stack up.** `make smoke` has not been run since the actuator's
+closed endpoints started answering 401 rather than 404. The script and its
 PowerShell equivalent were updated to expect it and neither has been executed, and the previous
 session's three defects are the standing reminder that the Testcontainers suites and the compose
 stack are not the same system.
