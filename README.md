@@ -28,7 +28,7 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phases 0 to 4 complete, Phase 5 in progress
+## Current status — Phases 0 to 5 complete, Phase 6 in progress
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
@@ -40,8 +40,8 @@ finished system as though it were running.
 | 2     | Contracts, domain model, PostgreSQL migrations     | **complete** |
 | 3     | Transaction ingestion, transactional outbox, Kafka | **complete** |
 | 4     | Synthetic data generation and risk scoring         | **complete** |
-| 5     | Alert lifecycle, investigations, audit             | in progress  |
-| 6     | Operations console wired to the real API           | not started  |
+| 5     | Alert lifecycle, investigations, audit             | **complete** |
+| 6     | Operations console wired to the real API           | in progress  |
 | 7     | Observability and resilience                       | not started  |
 | 8     | Security and release-quality hardening             | not started  |
 | 9     | Performance, documentation, clean-clone check      | not started  |
@@ -91,9 +91,22 @@ confident the model is. That is a stated policy rather than an accident —
 [ADR-0011 §4](docs/adr/0011-risk-banding-and-the-final-score.md) writes out the arithmetic, why it is
 wanted, and what it costs.
 
-**What does not run yet:** the reporting endpoints and the CSV export, which are the last of
-Phase 5. The console still renders from a mock fixture layer rather than from these endpoints; that
-is Phase 6.
+**Reporting answers too.** `GET /reports/alert-summary` counts alerts by status, priority and band
+over a half-open window with every key present including the zeroes, and `GET /reports/alerts.csv`
+exports the same window as a file — capped at 10,000 rows and refused with a `413` naming both the
+row count and the limit, because a report somebody opens in a spreadsheet is a file rather than a
+cursor. Every field a spreadsheet would treat as a formula is escaped, which matters because an
+alert summary is generated text built from a reference that arrived through an open ingestion
+endpoint. Both were exercised over HTTP against the running stack on 2026-08-28, not only in
+Testcontainers.
+
+**What does not run yet: the console against that API.** Phase 6 is migrating it endpoint by
+endpoint, and today **only sign-in is real** — the remaining screens still render from a mock
+fixture layer, and each endpoint says in code which of the two it is rather than the whole console
+claiming to be one or the other. Four of the endpoints the console calls have no server counterpart
+at all and five server endpoints have no client;
+[`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md) is the authoritative
+list of what each one needs.
 
 Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 
@@ -161,7 +174,9 @@ an assessment to the rules rather than losing it
 
 The API is the only backend the console talks to; scoring is reached through the API and never
 directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See
-[ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md).
+[ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md). The console-to-API link is drawn
+solid because it carries real traffic — sign-in — but it is the newest and the least complete: the
+other screens are still on fixtures, as the status section above says.
 
 ### Local deployment
 
@@ -365,6 +380,34 @@ Every figure below came from a run that actually happened, and each block says w
 is estimated, and a figure that has not been re-measured keeps the date it was measured on rather
 than being quietly refreshed.
 
+**2026-08-28**, on the commit that closed Phase 5 by putting the reporting endpoints under contract:
+
+| Suite                             | Command                     | Result                                                        |
+| --------------------------------- | --------------------------- | ------------------------------------------------------------- |
+| API — full verify                 | `./mvnw -B verify`          | **189 unit + 250 integration passed**, 0 failures             |
+| API — coverage                    | JaCoCo, both suites         | 89.7% lines, 79.5% branches — gate is 80% and 70%             |
+| Scoring — unit                    | `uv run pytest`             | **169 passed**                                                |
+| Console — unit                    | `bun run test` (`apps/web`) | **38 passed / 38**, 6 files                                   |
+| Contracts                         | `make contracts-check`      | **PASS** — every schema, example and API document             |
+| Documentation links, placeholders | `make docs-check`           | **PASS** — 160 links, 0 broken, no placeholders               |
+| Running stack                     | `make smoke`                | **23 passed / 0 failed**, both the shell and PowerShell       |
+| Reporting, over HTTP              | `curl` against `make up`    | summary and CSV both 200; `from` after `to` 422; no token 401 |
+
+The console figure is this session's own run; the rest are the run recorded against the Phase 5
+merge in [`PROJECT_STATE.md`](PROJECT_STATE.md).
+
+**2026-08-28**, later, on the commit that gave the console its real transport and sign-in:
+
+| Suite                    | Command                                            | Result                                                             |
+| ------------------------ | -------------------------------------------------- | ------------------------------------------------------------------ |
+| Console — verify         | `bun run verify` (`apps/web`)                      | **PASS** — lint clean, typecheck clean, 38 unit tests, build built |
+| Console — browser + a11y | `bun run test:e2e` (`apps/web`)                    | **68 passed**, desktop and tablet, axe clean on all eight routes   |
+| API — authentication     | `./mvnw verify -Dit.test=OperatorAuthenticationIT` | **12 integration tests passed**                                    |
+| API — CORS properties    | `./mvnw test -Dtest=CorsPropertiesTests`           | **9 unit tests passed**                                            |
+
+Only the two API suites that the change touched were re-run in that session; the full API numbers
+are in the block above.
+
 **2026-08-27**, on the commit that joined the ruleset, the model and the policy into a persisted
 assessment:
 
@@ -409,17 +452,16 @@ applied and the same test counts. H2 is never accepted as evidence, and neither 
 
 **2026-08-25**, and not re-measured since:
 
-| Suite                    | Command                 | Result                                      |
-| ------------------------ | ----------------------- | ------------------------------------------- |
-| Console — coverage       | `bun run test:coverage` | 40.4% lines                                 |
-| Console — browser + a11y | `make test-e2e`         | **58 passed / 58** (29 desktop + 29 tablet) |
-| axe, WCAG 2.1 A/AA       | in the above            | **0 violations**, 8 routes, 2 viewports     |
-| Running stack            | `make smoke`            | **23 passed / 0 failed**                    |
-| Secrets, full history    | `make security`         | **0 leaks**                                 |
-| Container scan           | Trivy in CI             | **0 fixable HIGH or CRITICAL**              |
+| Suite                 | Command                 | Result                         |
+| --------------------- | ----------------------- | ------------------------------ |
+| Console — coverage    | `bun run test:coverage` | 40.4% lines                    |
+| Secrets, full history | `make security`         | **0 leaks**                    |
+| Container scan        | Trivy in CI             | **0 fixable HIGH or CRITICAL** |
 
-The console's 40.4% line coverage is honest rather than flattering: its routes are covered by the
-Playwright suite instead, and writing unit tests purely to move that number would be
+The console's 40.4% line coverage was measured when its unit suite was 24 tests rather than the
+current 38, and it keeps that date rather than being refreshed by assumption. It is honest rather
+than flattering either way: the routes are covered by the Playwright suite instead, and writing
+unit tests purely to move that number would be
 [exactly the shortcut this project refuses](CONTRIBUTING.md).
 
 Both coverage gates are ratchets — measured, then set below the measurement, raised only when a
@@ -478,8 +520,14 @@ Controls that exist today, not aspirations:
   and payload bounds that belong beside it. [ADR-0012 §5](docs/adr/0012-operator-authentication.md).
 - **A token cannot be revoked before it expires.** Thirty minutes is the whole of how long a
   withdrawn role keeps working. That is the cost of a stateless token and it is deliberate.
-- **The console is not wired to authentication yet.** Its sign-in screen is presentational and says
-  so; connecting it is Phase 6.
+- **A reload signs the console out.** It signs in against the real API, and holds the token in the
+  tab's memory and nowhere else — never in browser storage. Refreshing therefore loses it. That is
+  the honest consequence of a stateless token with no refresh token
+  ([ADR-0012 §3](docs/adr/0012-operator-authentication.md)), and the sign-in screen says so rather
+  than letting an analyst discover it mid-review.
+- **Most console screens still render fixtures.** Sign-in is the only endpoint migrated so far; the
+  rest of Phase 6 is tracked endpoint by endpoint in
+  [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md).
 - **Role handling in the console is a UX affordance, never a security boundary.** Disabling a
   control authorizes nothing.
 - **The local stack is not a deployment target.** It binds to your machine, holds only synthetic
@@ -532,6 +580,7 @@ repository provisions a billable resource.
 | Planning        | [`docs/planning/`](docs/planning/)                                                       |
 | Operations      | [`docs/operations/`](docs/operations/)                                                   |
 | Frontend audit  | [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md)                 |
+| API migration   | [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)           |
 | Development     | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md)         |
 | Contributing    | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                     |
 | Security        | [`SECURITY.md`](SECURITY.md)                                                             |
