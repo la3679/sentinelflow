@@ -3,9 +3,12 @@ package io.github.la3679.sentinelflow.api.alert;
 
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import io.github.la3679.sentinelflow.api.domain.ActorRole;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 
 /**
@@ -78,6 +81,47 @@ public final class AlertTransitions {
     /** Every status an alert in this one may move to, which is empty for a terminal state. */
     public static Set<AlertStatus> legalTargetsFrom(AlertStatus from) {
         return LEGAL.get(from);
+    }
+
+    /**
+     * The moves this actor may actually make, which is what a console needs to render a control.
+     *
+     * <h2>Legal from the status is not the same as available to the caller</h2>
+     *
+     * {@code CLOSED} is legal from every live status and is an administrator's alone
+     * ({@link #requiresAdministrator}), so an analyst offered it gets a {@code 403} for a button the
+     * interface drew. {@code .claude/rules/frontend.md} calls that a dead control and Phase 6's gate
+     * forbids one. Answering "legal from here" and leaving the caller to subtract the
+     * administrator's move would put a second copy of that rule in the console, which is the thing
+     * this method exists to prevent.
+     *
+     * <p><strong>An auditor gets an empty list</strong>, which is the correct answer rather than an
+     * omission: ADR-0012 §4 makes the role read-only, so there is no move it may make.
+     *
+     * <p>{@code SYSTEM} likewise gets nothing. It raises alerts and never works them, and it cannot
+     * hold a token in any case.
+     */
+    public static Set<AlertStatus> legalTargetsFor(AlertStatus from, ActorRole role) {
+        return switch (role) {
+            case AUDITOR, SYSTEM -> Set.of();
+            case ADMINISTRATOR -> legalTargetsFrom(from);
+            case ANALYST ->
+                legalTargetsFrom(from).stream()
+                        .filter(target -> !requiresAdministrator(target))
+                        .collect(Collectors.toUnmodifiableSet());
+        };
+    }
+
+    /**
+     * The same set as a stable, sorted list of names.
+     *
+     * <p>Used by both the {@code legalTargets} field on an alert and the {@code legalTargets}
+     * property on the {@code 409} a refused move answers with. One producer, so a client that
+     * compares what it was offered against what a refusal names cannot be shown two orderings of the
+     * same answer — or, worse, two different answers.
+     */
+    public static List<String> namesOf(Set<AlertStatus> targets) {
+        return targets.stream().map(Enum::name).sorted().toList();
     }
 
     /**

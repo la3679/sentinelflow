@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import io.github.la3679.sentinelflow.api.alert.AlertTransitions;
 import io.github.la3679.sentinelflow.api.report.AlertReportService.ExportTooLargeException;
 import io.github.la3679.sentinelflow.api.security.OperatorLoginService.InvalidCredentialsException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertClosedException;
@@ -162,9 +163,11 @@ public class ApiExceptionHandler {
         problem.setProperty("currentStatus", exception.from().name());
         // What the caller may do instead. A property of the state machine
         // rather than of this alert, so naming it discloses nothing.
-        problem.setProperty(
-                "legalTargets",
-                exception.legalTargets().stream().map(Enum::name).sorted().toList());
+        //
+        // Produced by the same helper the legalTargets field on an alert uses,
+        // so a client comparing what it was offered against what a refusal
+        // names cannot be shown two orderings of one answer.
+        problem.setProperty("legalTargets", AlertTransitions.namesOf(exception.legalTargets()));
         return problem;
     }
 
