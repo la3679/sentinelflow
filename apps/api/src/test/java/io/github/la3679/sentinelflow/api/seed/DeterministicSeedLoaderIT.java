@@ -29,6 +29,15 @@ class DeterministicSeedLoaderIT extends AbstractPostgresTest {
 
     private static final long SEED = 20_260_826L;
 
+    /**
+     * Any value: this suite asserts what the seed writes, not what a password is.
+     *
+     * <p>It is required rather than optional because {@code SeedProperties} refuses to be
+     * constructed with a blank one when seeding is enabled - which is the point of that validation,
+     * and is why it is stated here rather than defaulted away.
+     */
+    private static final String OPERATOR_PASSWORD = "a-password-for-a-test-only";
+
     @Autowired
     private DeterministicSeedLoader loader;
 
@@ -57,7 +66,8 @@ class DeterministicSeedLoaderIT extends AbstractPostgresTest {
         // Parties only. This suite is about the party loader, and generating
         // traffic here would put thousands of transactions behind every
         // assertion for nothing - ScenarioLoaderIT covers that half.
-        return transactions.execute(status -> loader.load(new SeedProperties(true, seed, profile, false)));
+        return transactions.execute(
+                status -> loader.load(new SeedProperties(true, seed, profile, OPERATOR_PASSWORD, false)));
     }
 
     private List<Map<String, Object>> customerRows() {
@@ -150,6 +160,32 @@ class DeterministicSeedLoaderIT extends AbstractPostgresTest {
                 "SELECT count(*) FROM user_roles ur JOIN users u ON u.id = ur.user_id WHERE u.username <> 'system'",
                 Integer.class);
         assertThat(grants).isEqualTo(usernames.size());
+    }
+
+    @Test
+    @DisplayName("every seeded operator gets one credential, and the system principal gets none")
+    void seededOperatorsCanLogInAndTheSystemPrincipalCannot() {
+        seed(SEED, SeedProfile.CI);
+
+        List<String> withCredentials = jdbc.queryForList("""
+                SELECT u.username FROM users u
+                  JOIN user_credentials c ON c.user_id = u.id
+                 ORDER BY u.username
+                """, String.class);
+        assertThat(withCredentials).containsExactly("administrator.one", "analyst.one", "analyst.two", "auditor.one");
+
+        // ADR-0012 section 2. The principal that attributes automated actions
+        // must never be able to authenticate, and the absence of a row is what
+        // makes that structural rather than a rule somebody remembers.
+        assertThat(withCredentials).doesNotContain("system");
+
+        List<String> hashes = jdbc.queryForList("SELECT password_hash FROM user_credentials", String.class);
+        assertThat(hashes)
+                .as("an algorithm-identified hash, never the password. The column's CHECK refuses "
+                        + "anything without the {algorithm} prefix, and this asserts the encoder "
+                        + "produces one rather than that the constraint exists.")
+                .allMatch(hash -> hash.startsWith("{bcrypt}"))
+                .doesNotContain(OPERATOR_PASSWORD);
     }
 
     @Test

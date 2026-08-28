@@ -373,6 +373,29 @@ sentinelflow:
     # customers and accounts with no transactions are not a demo. Turned off by
     # a test that wants the parties and nothing else.
     scenarios: ${SENTINELFLOW_SEED_SCENARIOS:true}
+    # The password every seeded operator is given. NO USABLE DEFAULT, and
+    # required whenever seeding is enabled (ADR-0012 section 6): a value written
+    # here would be the same password on every machine that ever ran the seed,
+    # and a hash committed to a migration would be worse. An application that is
+    # not seeding needs none, which is why this is checked against `enabled`
+    # rather than on its own. `make bootstrap` generates one into .env.
+    operator-password: ${SENTINELFLOW_DEMO_OPERATOR_PASSWORD:}
+
+  security:
+    jwt:
+      # NO USABLE DEFAULT: a default secret is a secret everybody has, and this
+      # one signs operator tokens. The empty placeholder resolves to nothing and
+      # JwtProperties then refuses to start, which fails as loudly as an
+      # unresolved placeholder would and says what to set instead of which
+      # property could not be bound. `make bootstrap` generates one into .env.
+      secret: ${SENTINELFLOW_JWT_SECRET:}
+      # Short, because a stateless token cannot be revoked before it expires -
+      # so this is the whole of how long a withdrawn role keeps working
+      # (ADR-0012 section 3). Refused above twelve hours.
+      expiry: ${SENTINELFLOW_JWT_EXPIRY:30m}
+      # The iss claim, checked on the way back in. Without it a token signed for
+      # another environment with the same secret would verify here.
+      issuer: ${SENTINELFLOW_JWT_ISSUER:sentinelflow-api}
 
 server:
   port: ${SENTINELFLOW_API_PORT:8080}

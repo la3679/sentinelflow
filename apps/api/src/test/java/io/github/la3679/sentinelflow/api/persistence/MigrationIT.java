@@ -33,7 +33,7 @@ class MigrationIT extends AbstractPostgresTest {
         // Every migration this module ships, in order. Adding one without
         // adding it here fails, which is the point: a migration that ran but
         // that nothing expected is exactly what an accidental commit looks like.
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
 
         Integer failures =
                 jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -41,7 +41,7 @@ class MigrationIT extends AbstractPostgresTest {
     }
 
     @Test
-    @DisplayName("all fifteen domain tables exist")
+    @DisplayName("all sixteen domain tables exist")
     void everyDomainTableExists() {
         List<String> tables = jdbc.queryForList("""
                 SELECT table_name FROM information_schema.tables
@@ -65,6 +65,7 @@ class MigrationIT extends AbstractPostgresTest {
                         "risk_assessments",
                         "roles",
                         "transactions",
+                        "user_credentials",
                         "user_roles",
                         "users");
     }

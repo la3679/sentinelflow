@@ -29,6 +29,13 @@ import org.springframework.test.context.TestPropertySource;
 @TestPropertySource(
         properties = {
             "POSTGRES_PASSWORD=overridden-by-the-container-service-connection",
+            // The signing key has no usable default in application.yaml, for
+            // the reason ADR-0012 section 6 gives, and JwtProperties refuses a
+            // blank one - so every context needs a value. This one is a
+            // throwaway of the right length and is not a secret in any sense
+            // that matters: it signs tokens for a container that is destroyed
+            // when the fork ends.
+            "sentinelflow.security.jwt.secret=a-test-signing-key-of-sufficient-length-for-hs256",
             // No broker here, and a listener container whose bootstrap address
             // does not resolve fails the application context at startup rather
             // than retrying - so every schema test would fail on a Kafka error.

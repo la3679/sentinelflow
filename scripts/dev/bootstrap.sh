@@ -111,7 +111,7 @@ fi
 
 if [ -f .env ]; then
     missing=""
-    for key in POSTGRES_PASSWORD GRAFANA_ADMIN_PASSWORD; do
+    for key in POSTGRES_PASSWORD GRAFANA_ADMIN_PASSWORD SENTINELFLOW_JWT_SECRET \n               SENTINELFLOW_DEMO_OPERATOR_PASSWORD; do
         if ! grep -qE "^${key}=.+" .env; then
             missing="${missing} ${key}"
         fi
@@ -120,7 +120,7 @@ if [ -f .env ]; then
         fail ".env exists but these required secrets are empty:${missing}"
         echo "        Fill them in, or delete .env and rerun to regenerate."
     else
-        ok ".env exists with both required secrets set - left untouched"
+        ok ".env exists with every required secret set - left untouched"
     fi
 elif [ "$CHECK_ONLY" -eq 1 ]; then
     warn ".env does not exist. Run without --check to generate it."
@@ -132,19 +132,27 @@ else
     # openssl is present in Git Bash, WSL, macOS and every Linux image. Fall
     # back to /dev/urandom rather than to a weak or predictable value.
     gen_secret() {
+        bytes="${1:-24}"
         if command -v openssl >/dev/null 2>&1; then
-            openssl rand -base64 24
+            openssl rand -base64 "$bytes"
         else
-            head -c 24 /dev/urandom | base64
+            head -c "$bytes" /dev/urandom | base64
         fi
     }
 
     pg_secret="$(gen_secret)"
     gf_secret="$(gen_secret)"
+    # 48 bytes, because the API refuses a signing key under 32 characters and
+    # base64 of 24 bytes is exactly 32 - too close to a limit to be generated
+    # near it.
+    jwt_secret="$(gen_secret 48)"
+    op_secret="$(gen_secret)"
 
     # A '|' cannot appear in base64 output, so it is a safe sed delimiter here.
     sed -i.bak "s|^POSTGRES_PASSWORD=$|POSTGRES_PASSWORD=${pg_secret}|" .env
     sed -i.bak "s|^GRAFANA_ADMIN_PASSWORD=$|GRAFANA_ADMIN_PASSWORD=${gf_secret}|" .env
+    sed -i.bak "s|^SENTINELFLOW_JWT_SECRET=$|SENTINELFLOW_JWT_SECRET=${jwt_secret}|" .env
+    sed -i.bak         "s|^SENTINELFLOW_DEMO_OPERATOR_PASSWORD=$|SENTINELFLOW_DEMO_OPERATOR_PASSWORD=${op_secret}|" .env
     rm -f .env.bak
 
     ok ".env generated from .env.example with fresh local secrets"

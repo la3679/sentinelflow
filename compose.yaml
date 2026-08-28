@@ -204,6 +204,15 @@ services:
       SENTINELFLOW_SEED: ${SENTINELFLOW_SEED:-20260826}
       SENTINELFLOW_SEED_PROFILE: ${SENTINELFLOW_SEED_PROFILE:-DEMO}
       SENTINELFLOW_SEED_SCENARIOS: ${SENTINELFLOW_SEED_SCENARIOS:-true}
+      # The password every seeded operator gets (ADR-0012 section 6). Passed
+      # through unset when there is nothing to seed, so a stack started without
+      # `make bootstrap` fails on the JWT secret below - which is required
+      # always - rather than on this one, which is required only sometimes.
+      SENTINELFLOW_DEMO_OPERATOR_PASSWORD: ${SENTINELFLOW_DEMO_OPERATOR_PASSWORD:-}
+      # Signs and verifies operator tokens. Required with no default, exactly as
+      # POSTGRES_PASSWORD is: a default here would sign valid tokens on every
+      # deployment that forgot to override it.
+      SENTINELFLOW_JWT_SECRET: ${SENTINELFLOW_JWT_SECRET:?run make bootstrap to generate local secrets}
       # The labelled training export (ADR-0010 section 1). Off unless set, for
       # the same reason as the seed. `make export-dataset` sets it for one
       # recreate of this service and then puts it back.

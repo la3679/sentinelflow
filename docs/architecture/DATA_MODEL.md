@@ -1,6 +1,6 @@
 # Data model
 
-The fifteen tables in `apps/api/src/main/resources/db/migration/`, how they relate, and why the
+The sixteen tables in `apps/api/src/main/resources/db/migration/`, how they relate, and why the
 relationships are shaped the way they are.
 
 **The migrations are authoritative.** Column lists are not repeated here, because a duplicated
@@ -36,6 +36,7 @@ erDiagram
     users ||--o{ analyst_feedback : "gives"
     users ||--o{ audit_log        : "causes"
     users ||--o| alerts           : "is assigned"
+    users ||--o| user_credentials : "logs in with"
 
     customers {
         uuid    id PK
@@ -153,6 +154,11 @@ erDiagram
         uuid    role_id PK,FK
         timestamptz granted_at
     }
+    user_credentials {
+        uuid    user_id PK,FK
+        varchar password_hash
+        timestamptz updated_at
+    }
 ```
 
 ---
@@ -170,13 +176,25 @@ about the consumer, not a reference to a row that necessarily still exists local
 `audit_log.resource_id` is untyped for the same reason: it points at whatever `resource_type` names,
 across tables, and outlives all of them.
 
-### Fifteen foreign keys, fourteen of them `RESTRICT`
+### Sixteen foreign keys, fourteen of them `RESTRICT`
 
-The exception is `user_roles.user_id`, which cascades. A role grant is not a record of anything that
-happened; it is a statement about a user, and it means nothing once the user is gone. Every other
-foreign key in this schema points at history. Deleting a customer that still has accounts, or an
+The two exceptions are `user_roles.user_id` and `user_credentials.user_id`, which cascade. Neither a
+role grant nor a password is a record of anything that happened; both are statements about a user,
+and both mean nothing once the user is gone. Every other foreign key in this schema points at
+history. Deleting a customer that still has accounts, or an
 alert that still has actions, is either a mistake or a retention operation that has to deal with
 what is underneath — and neither should happen as a side effect of a `DELETE`.
+
+### A user without a credential is an ordinary user, and one of them matters
+
+`user_credentials` is a table rather than a column on `users` because a credential has its own
+lifecycle — rotated, revoked, absent — and because the system principal must never be able to log in
+(ADR-0012 §2). With a nullable column that would be a rule somebody has to remember; as the absence
+of a row it is structural, and the login path cannot find what does not exist.
+
+No migration ever writes a row here. The demo operators are created by the application seed from a
+password supplied through configuration, because a hash committed to a migration would be a
+credential in the repository and the same one on every machine that ran it.
 
 ### One alert per assessment, many assessments per transaction
 

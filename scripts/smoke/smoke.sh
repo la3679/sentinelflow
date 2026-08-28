@@ -125,8 +125,13 @@ check_http "grafana"                "http://127.0.0.1:${GRAFANA_PORT}/api/health
 # ---------------------------------------------------------------------------
 echo
 echo "Closed by design:"
-check_http "api /actuator/env is closed"   "http://127.0.0.1:${API_PORT}/actuator/env"   404
-check_http "api /actuator/beans is closed" "http://127.0.0.1:${API_PORT}/actuator/beans" 404
+# 401 rather than 404 since ADR-0012. The filter chain refuses an
+# unauthenticated request before the actuator decides whether the endpoint
+# exists, so the answer no longer distinguishes "not exposed" from "exposed and
+# not yours" - which is the better of the two to give a caller who has not
+# authenticated. What matters is that neither serves.
+check_http "api /actuator/env is closed"   "http://127.0.0.1:${API_PORT}/actuator/env"   401
+check_http "api /actuator/beans is closed" "http://127.0.0.1:${API_PORT}/actuator/beans" 401
 
 # ---------------------------------------------------------------------------
 # The pieces are actually wired to each other
