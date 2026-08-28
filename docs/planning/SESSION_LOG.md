@@ -1948,3 +1948,71 @@ None. The fix is a window per test rather than per class.
 Recorded in `PROJECT_STATE.md`: fix the fixture, document the two reporting paths in the OpenAPI
 contract, run the full suite, open the pull request, then close Phase 5 against its gate with the
 evidence for each criterion.
+
+---
+
+## Session 17 — 2026-08-28 — the reporting endpoints made green and put under contract
+
+Resumed from Session 16's emergency checkpoint. `feat/alert-reporting` was pushed with four red
+tests and no pull request; this session closed all three of the actions that state left.
+
+### The four red tests were the fixture, and the previous session's diagnosis held
+
+`AlertReportIT` derived its window from a class constant, so every test in the class wrote alerts
+into the same hour and the four that assert an exact total counted whatever the tests before them had
+left behind. Each test now draws its own hour from a per-run epoch through an `AtomicInteger` in
+`@BeforeEach`. **No production code changed** — which is what the two tests that assert no total,
+green throughout, had already predicted.
+
+**The windows are two hours apart rather than adjacent, and that is not arbitrary.**
+`theWindowIsHalfOpen` deliberately reads the window immediately after its own, to prove a row sitting
+on the boundary is counted once rather than twice or never. With a one-hour stride that read would
+have landed in the next test's window — and the fix for a fixture that leaks between tests would
+itself have leaked between tests.
+
+### The two reports are now in the contract they should have been written against
+
+`contracts/openapi/sentinelflow-api.yaml` gained both paths, the shared `from`/`to` window
+parameters, the `AlertSummary` schema, and `ExportTooLargeProblem` for the `413` the export answers.
+The branch had built the endpoints without them, which left the authoritative contract saying the
+reports did not exist.
+
+Recorded rather than asserted: the window is half-open and both ends are required, the summary is
+unpaged because its size does not depend on the data, the export is capped rather than paged, and
+every cell is neutralised against formula injection.
+
+### Tests and results
+
+Every suite, at `e7cc4ba`, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`:
+
+api **203 unit** and **248 integration** passed, 0 failures · JaCoCo gate met (line 0.8972,
+branch 0.7945, instruction 0.9080) · web Vitest **24/24** · scoring pytest **169 passed** ·
+`ruff check` clean · `mypy` no issues in 42 files · `spotless:check` 221 files clean ·
+`eslint` 0 errors, 23 pre-existing warnings · `check-contracts.mjs` all passed ·
+`prettier --check` clean · `check-docs.mjs` 160 links, no placeholders.
+
+`ReportController` and `CsvWriter` are at 1.0000 instruction coverage, `AlertReportService` at
+0.9589. The uncovered part is the export cap's refusal branch, which needs 10,001 alerts in one
+window to reach. Left uncovered and said so, rather than lowered so a test could reach it: a cap the
+test moves is not the cap that ships.
+
+### Things worth keeping
+
+- **The default `JAVA_HOME` on this machine still points at JDK 17**, and Maven's failure for it is
+  `release version 25 not supported` from the compiler plugin rather than anything naming a JDK.
+  Already recorded in ADR-0003 and in `PROJECT_STATE.md`'s known issues; recorded again here because
+  it costs a build every session that forgets it.
+- **The build's own `Tests run:` line and the per-class report files disagree**, because a
+  `@TestFactory` container counts as one in the `.txt` summary and as its children on the console.
+  The figures above are parsed from the JUnit XML, which counts each test once.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: land the reporting pull request with the ten required checks green,
+then close Phase 5 against its gate with the evidence for each criterion, then run `make smoke`
+against the compose stack, which has not been run since the actuator's closed endpoints started
+answering 401 rather than 404.
