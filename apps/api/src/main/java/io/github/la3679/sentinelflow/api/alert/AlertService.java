@@ -2,30 +2,41 @@
 package io.github.la3679.sentinelflow.api.alert;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.github.la3679.sentinelflow.api.domain.Actor;
 import io.github.la3679.sentinelflow.api.domain.ActorRole;
+import io.github.la3679.sentinelflow.api.domain.AlertActionType;
 import io.github.la3679.sentinelflow.api.domain.AlertChangeType;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 import io.github.la3679.sentinelflow.api.domain.EventType;
+import io.github.la3679.sentinelflow.api.domain.RoleCode;
+import io.github.la3679.sentinelflow.api.domain.UserStatus;
 import io.github.la3679.sentinelflow.api.messaging.payload.AlertUpdatedPayload;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
 import io.github.la3679.sentinelflow.api.persistence.entity.AlertAction;
 import io.github.la3679.sentinelflow.api.persistence.entity.OutboxEvent;
+import io.github.la3679.sentinelflow.api.persistence.entity.User;
 import io.github.la3679.sentinelflow.api.persistence.repository.AlertActionRepository;
 import io.github.la3679.sentinelflow.api.persistence.repository.AlertRepository;
 import io.github.la3679.sentinelflow.api.persistence.repository.OutboxEventRepository;
+import io.github.la3679.sentinelflow.api.persistence.repository.UserRepository;
+import io.github.la3679.sentinelflow.api.service.exception.AlertClosedException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertNotFoundException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertVersionConflictException;
 import io.github.la3679.sentinelflow.api.service.exception.IllegalAlertTransitionException;
 import io.github.la3679.sentinelflow.api.service.exception.InsufficientRoleException;
+import io.github.la3679.sentinelflow.api.service.exception.InvalidAssigneeException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import tools.jackson.core.JacksonException;
@@ -79,9 +90,13 @@ public class AlertService {
     /** The schema version of the payload this publishes. Bumped only alongside a v2 payload schema. */
     private static final int ALERT_UPDATED_SCHEMA_VERSION = 1;
 
+    /** Roles that can be given an alert to work. An auditor is read-only, so assigning one is not work. */
+    private static final Set<RoleCode> CAN_BE_ASSIGNED = Set.of(RoleCode.ANALYST, RoleCode.ADMINISTRATOR);
+
     private final AlertRepository alerts;
     private final AlertActionRepository actions;
     private final OutboxEventRepository outbox;
+    private final UserRepository users;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meters;
 
@@ -89,11 +104,13 @@ public class AlertService {
             AlertRepository alerts,
             AlertActionRepository actions,
             OutboxEventRepository outbox,
+            UserRepository users,
             ObjectMapper objectMapper,
             MeterRegistry meters) {
         this.alerts = alerts;
         this.actions = actions;
         this.outbox = outbox;
+        this.users = users;
         this.objectMapper = objectMapper;
         this.meters = meters;
     }
@@ -116,11 +133,7 @@ public class AlertService {
     @Transactional
     public Alert transition(
             UUID alertId, AlertStatus target, long expectedVersion, String note, Actor actor, UUID correlationId) {
-        Alert alert = alerts.findById(alertId).orElseThrow(() -> new AlertNotFoundException(alertId));
-
-        if (alert.getVersion() != expectedVersion) {
-            throw new AlertVersionConflictException(alertId, expectedVersion, alert.getVersion());
-        }
+        Alert alert = load(alertId, expectedVersion);
 
         AlertStatus previousStatus = alert.getStatus();
         if (!AlertTransitions.isLegal(previousStatus, target)) {
@@ -151,20 +164,14 @@ public class AlertService {
         // Flushed rather than left to the end of the transaction, because the
         // payload below needs the version the provider assigns and that value
         // does not exist until the UPDATE is written. It is also where a losing
-        // race surfaces, which is why the conflict is translated here.
-        try {
-            alerts.saveAndFlush(alert);
-        } catch (OptimisticLockingFailureException racing) {
-            // Null rather than a re-read: the transaction is already marked for
-            // rollback, and the version this reported would be read in a
-            // connection that cannot commit. The caller has to re-read anyway.
-            throw new AlertVersionConflictException(alertId, expectedVersion, null);
-        }
+        // race surfaces, which is why flush() translates the conflict.
+        flush(alert, alertId, expectedVersion);
 
         actions.save(AlertAction.transition(
                 alertId, actor.userId(), actor.role(), previousStatus, target, note, correlationId));
 
-        outbox.save(outboxEventFor(alert, previousStatus, previousAssignee, actor, correlationId, at));
+        outbox.save(outboxEventFor(
+                alert, AlertChangeType.STATUS_TRANSITION, previousStatus, previousAssignee, actor, correlationId, at));
 
         count(previousStatus, target);
         log.debug(
@@ -177,8 +184,165 @@ public class AlertService {
         return alert;
     }
 
+    /**
+     * Give the alert to somebody, or take it back.
+     *
+     * <p>One method for both, because they are one decision with two outcomes and the alert holds
+     * one assignee either way. {@code alert_actions} still distinguishes {@code ASSIGNED} from
+     * {@code UNASSIGNED}, because an audit reader asks which happened; the event calls both
+     * {@code ASSIGNMENT} and carries both assignees, because a consumer routing on it does not.
+     *
+     * <p><strong>Assignment does not move the alert.</strong> Picking work up and starting it are
+     * two decisions — an alert can be given to somebody who has not looked at it yet, and an analyst
+     * can be reviewing one that is formally unassigned. Coupling them would make the queue lie about
+     * one of the two.
+     *
+     * @param assigneeId who to give it to, or null to release it back to the queue
+     * @throws InvalidAssigneeException if the user does not exist, cannot log in, or holds no role
+     *     that can work an alert
+     * @throws AlertClosedException if the investigation is already over
+     */
+    @Transactional
+    public Alert assign(
+            UUID alertId, UUID assigneeId, long expectedVersion, String note, Actor actor, UUID correlationId) {
+        Alert alert = load(alertId, expectedVersion);
+        if (alert.isTerminal()) {
+            throw new AlertClosedException(alertId, alert.getStatus(), "Assignment");
+        }
+        if (assigneeId != null) {
+            requireAssignable(assigneeId);
+        }
+
+        UUID previousAssignee = alert.getAssigneeId();
+        if (java.util.Objects.equals(previousAssignee, assigneeId)) {
+            // Nothing changed, so nothing is written. An audit row saying an
+            // alert was assigned to whoever already held it is noise in the one
+            // place noise is most expensive, and the event would announce a
+            // change that did not happen.
+            return alert;
+        }
+
+        Instant at = Instant.now();
+        alert.setAssigneeId(assigneeId);
+        flush(alert, alertId, expectedVersion);
+
+        actions.save(AlertAction.of(
+                alertId,
+                actor.userId(),
+                actor.role(),
+                assigneeId == null ? AlertActionType.UNASSIGNED : AlertActionType.ASSIGNED,
+                note,
+                correlationId));
+
+        outbox.save(outboxEventFor(
+                alert, AlertChangeType.ASSIGNMENT, alert.getStatus(), previousAssignee, actor, correlationId, at));
+
+        meters.counter("sentinelflow.alerts.assignments", "outcome", assigneeId == null ? "released" : "assigned")
+                .increment();
+        return alert;
+    }
+
+    /**
+     * Record something an analyst wants the next reader to know.
+     *
+     * <h2>No version, because there is nothing to conflict with</h2>
+     *
+     * Every other operation replaces something: a status, an assignee. A note is appended, so two
+     * analysts writing one at the same time both succeed and both notes are kept — which is the
+     * correct outcome, and demanding {@code expectedVersion} would refuse the second for no reason a
+     * user could act on. The alert row is not touched either, so its version does not move.
+     *
+     * <h2>No event, deliberately</h2>
+     *
+     * {@code alert.updated} describes a change to the alert, and a note is not one — its
+     * {@code version} field would repeat the previous event's, which is exactly what a consumer uses
+     * to detect a gap. And the payload has no field for the text, so the event could only announce
+     * that a note exists.
+     *
+     * <p>That second point is the more important one. A note is an analyst's own words about a
+     * transaction, which is the narrowest audience in this system: it belongs on a detail page
+     * somebody has opened, and not on a topic that leaves this service. It is the same rule
+     * {@code AlertRaiser} follows when it builds a summary from a reason <em>code</em> rather than a
+     * reason's description.
+     *
+     * @throws AlertClosedException if the investigation is over. A note added after a disposition
+     *     reads as though it informed one.
+     */
+    @Transactional
+    public AlertAction addNote(UUID alertId, String note, Actor actor, UUID correlationId) {
+        Alert alert = alerts.findById(alertId).orElseThrow(() -> new AlertNotFoundException(alertId));
+        if (alert.isTerminal()) {
+            throw new AlertClosedException(alertId, alert.getStatus(), "Adding a note");
+        }
+        return actions.save(
+                AlertAction.of(alertId, actor.userId(), actor.role(), AlertActionType.NOTE_ADDED, note, correlationId));
+    }
+
+    /**
+     * One page of what has been done to an alert.
+     *
+     * <p>Read-only and transactional, so the count and the page it describes come from one snapshot.
+     * Without that, a row written between the two queries makes {@code totalElements} disagree with
+     * what the client can actually reach.
+     *
+     * @throws AlertNotFoundException if no alert has that identifier. Checked rather than returning
+     *     an empty page: an alert with no history does not exist — the raiser writes its first row —
+     *     so an empty page would be an answer that cannot be true.
+     */
+    @Transactional(readOnly = true)
+    public Page<AlertAction> history(UUID alertId, Pageable pageable) {
+        if (!alerts.existsById(alertId)) {
+            throw new AlertNotFoundException(alertId);
+        }
+        return actions.findByAlertIdOrderByOccurredAtDescIdDesc(alertId, pageable);
+    }
+
+    /** The alert, or the reason the caller may not act on it yet. */
+    private Alert load(UUID alertId, long expectedVersion) {
+        Alert alert = alerts.findById(alertId).orElseThrow(() -> new AlertNotFoundException(alertId));
+        if (alert.getVersion() != expectedVersion) {
+            throw new AlertVersionConflictException(alertId, expectedVersion, alert.getVersion());
+        }
+        return alert;
+    }
+
+    /**
+     * The write, with the losing side of a race translated into the conflict the caller understands.
+     *
+     * <p>Null rather than a re-read for the current version: the transaction is already marked for
+     * rollback, so anything this read would come from a connection that cannot commit. The caller
+     * has to re-read either way.
+     */
+    private void flush(Alert alert, UUID alertId, long expectedVersion) {
+        try {
+            alerts.saveAndFlush(alert);
+        } catch (OptimisticLockingFailureException racing) {
+            throw new AlertVersionConflictException(alertId, expectedVersion, null);
+        }
+    }
+
+    /**
+     * Whether this user can be given work.
+     *
+     * <p>The foreign key already refuses an identifier that names nobody, but it refuses it at
+     * commit with a constraint name — and the other two conditions it cannot see at all. A disabled
+     * account and an auditor are both real rows, and neither can work an alert.
+     */
+    private void requireAssignable(UUID assigneeId) {
+        User assignee =
+                users.findById(assigneeId).orElseThrow(() -> new InvalidAssigneeException(assigneeId, "no such user"));
+        if (assignee.getStatus() != UserStatus.ACTIVE) {
+            throw new InvalidAssigneeException(assigneeId, "the account is " + assignee.getStatus());
+        }
+        List<RoleCode> roles = users.findRoleCodes(assigneeId);
+        if (roles.stream().noneMatch(CAN_BE_ASSIGNED::contains)) {
+            throw new InvalidAssigneeException(assigneeId, "no role that can work an alert; an auditor is read-only");
+        }
+    }
+
     private OutboxEvent outboxEventFor(
             Alert alert,
+            AlertChangeType changeType,
             AlertStatus previousStatus,
             UUID previousAssignee,
             Actor actor,
@@ -192,8 +356,7 @@ public class AlertService {
                 // are ordered against each other and have no ordering
                 // relationship with any other alert (ADR-0006 section 3).
                 alert.getId().toString(),
-                serialise(AlertUpdatedPayload.of(
-                        alert, AlertChangeType.STATUS_TRANSITION, previousStatus, previousAssignee, actor, at)),
+                serialise(AlertUpdatedPayload.of(alert, changeType, previousStatus, previousAssignee, actor, at)),
                 correlationId,
                 // Trace context arrives with OpenTelemetry in Phase 7.
                 null,
