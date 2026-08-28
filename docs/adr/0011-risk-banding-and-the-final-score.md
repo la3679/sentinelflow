@@ -106,7 +106,46 @@ saturated score distribution rather than of the bands, it is recorded in the eva
 limitations, and it is a reason to revisit the thresholds against measured alert volume in Phase 5 —
 not a reason to pick different arbitrary numbers now.
 
-### 4. `policyVersion` moves whenever any of this does
+### 4. A transaction that trips no rule cannot open an alert, and that is the intended reading
+
+This follows from §1 and the alerting threshold together, and it was not visible until they met. It
+is written down here because it is a policy, and a policy nobody stated is an accident.
+
+The floor caps what the model alone can reach. With a rule score of zero:
+
+```text
+final = max(0, 0.6 x model + 0.4 x 0) = 0.6 x model
+```
+
+so a model at its ceiling of 100 produces **60**, and `HIGH` starts at 70. **No transaction that
+trips no transparent indicator can open an alert, however confident the model is.** With the model
+at its ceiling the rule score has to reach 25 before the combination clears 70, and 25 is the weight
+of the single strongest indicator in today's ruleset — so in practice at least one rule an analyst
+can read has to have fired, and the weakest ones have to have fired alongside something else.
+
+**This is the intended behaviour, not a defect to route around.** SentinelFlow's console is
+explainability-first: an alert is a claim on a person's time, and every alert it raises can be opened
+on a reason an analyst can check and disagree with. An alert whose entire justification is "the model
+was confident" is the one an analyst cannot review, cannot dispute, and learns to clear without
+reading. Requiring a transparent indicator to have fired is what §1's floor buys, and this is where
+it is spent.
+
+**What it costs, stated plainly.** The model's whole value under ADR-0010 §5 is the shapes the rules
+miss, and this bounds that value: a transaction the model recognises and the ruleset does not is
+scored, banded, persisted, visible in the console and searchable — and it opens nothing. That is a
+real cost and it is accepted with the reasoning above, not overlooked.
+
+**Deliberately not resolved by moving a number.** Lowering `alertFromBand` to `MEDIUM`, raising
+`modelWeight`, or removing the floor would each dissolve it, and each would be re-deciding §1 or §3
+without the evidence those sections already say they should be revisited against — measured alert
+volume against a stated review capacity. `sentinelflow.alerts.raised` is tagged by band and priority
+so that evidence can exist. Until it does, the arithmetic stays as it is.
+
+`RiskPolicyPropertiesTests` asserts both halves — that a maximal model over a silent ruleset bands
+below the alerting threshold, and that 25 is where the combination first clears it — so a later
+change to the weight or the threshold cannot alter this implication silently.
+
+### 5. `policyVersion` moves whenever any of this does
 
 The weight, the thresholds, and the band mapping are one versioned object. It is persisted on every
 assessment beside `modelVersion` and `featureVersion`, because "which policy produced this alert" has
@@ -121,10 +160,16 @@ be defended months later.
   paths is one term in one expression.
 - Alert creation in Phase 5 attaches to a band that already exists and is already persisted; it does
   not have to reopen any of this.
+- Alerting is gated on the rules, by arithmetic rather than by a condition anybody wrote: the model
+  escalates a transaction the rules already noticed, and never opens an alert on its own (§4). The
+  ceiling that produces it is `modelWeight x 100`, so it moves whenever the weight does.
 - The default thresholds will almost certainly move once alert volume is measured against a review
   capacity. That is what `policyVersion` is for, and every assessment written under the old numbers
   keeps saying so.
 
 **Revisit if:** measured alert volume at these bands does not match a stated review capacity; the
-score distribution stops being saturated (a recalibrated or differently-shaped model would do it); or
-a second consumer of `finalScore` appears whose needs differ from alerting's.
+score distribution stops being saturated (a recalibrated or differently-shaped model would do it); a
+second consumer of `finalScore` appears whose needs differ from alerting's; or the model is shown to
+find fraud the ruleset misses often enough that §4's cost outweighs what the floor buys — in which
+case the answer is a new rule that makes the shape transparent, or a superseding ADR that says
+plainly that alerts may rest on the model alone.

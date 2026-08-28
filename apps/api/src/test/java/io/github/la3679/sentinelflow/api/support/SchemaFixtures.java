@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.support;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -81,6 +84,44 @@ public final class SchemaFixtures {
                         now(), 'API', 'PENDING', gen_random_uuid())
                 RETURNING id
                 """, UUID.class, "TXN-" + next6(), idempotencyKey, accountId, merchantId);
+    }
+
+    /**
+     * A pending transaction that originates somewhere specific, at an instant the caller chooses.
+     *
+     * <p>Exists so a suite can build an account history the rule engine actually reacts to. Every
+     * other fixture here originates in GB and occurs at {@code now()}, which is correct for a schema
+     * test and useless for one that needs {@code COUNTRY_CHANGE} and {@code VELOCITY_5M_HIGH} to
+     * fire.
+     *
+     * <p><strong>The instant is a parameter because the ruleset reads the clock through it.</strong>
+     * {@code OFF_HOURS} fires between 02:00 and 04:59 UTC and the velocity window is five minutes
+     * wide, so a history built from {@code now()} would score differently on a build that ran
+     * overnight than on one that ran at noon — a rule score that depends on when the suite happened
+     * to start is one no assertion can state.
+     */
+    public UUID insertTransactionFrom(
+            UUID accountId, UUID merchantId, String idempotencyKey, String originCountry, Instant occurredAt) {
+        return jdbc.queryForObject(
+                """
+                INSERT INTO transactions (
+                    transaction_reference, idempotency_key, account_id, merchant_id,
+                    type, channel, amount, currency, origin_country,
+                    occurred_at, ingestion_source, processing_status, correlation_id)
+                VALUES (?, ?, ?, ?, 'PURCHASE', 'CARD_NOT_PRESENT', 42.5000, 'GBP', ?,
+                        ?, 'API', 'PENDING', gen_random_uuid())
+                RETURNING id
+                """,
+                UUID.class,
+                "TXN-" + next6(),
+                idempotencyKey,
+                accountId,
+                merchantId,
+                originCountry,
+                // OffsetDateTime rather than java.sql.Timestamp: the column is
+                // timestamptz, and the driver maps this one without routing the
+                // value through the JVM's default zone on the way.
+                OffsetDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
     }
 
     /** A non-degraded assessment: every model-derived field present, as the CHECK requires. */

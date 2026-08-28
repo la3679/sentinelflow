@@ -11,6 +11,7 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.RiskBand;
 
 /**
@@ -131,7 +132,8 @@ class RiskPolicyPropertiesTests {
         Map<RiskBand, BigDecimal> inverted = bounds();
         inverted.put(RiskBand.HIGH, new BigDecimal("30"));
 
-        assertThatThrownBy(() -> new RiskPolicyProperties("1.0.0", new BigDecimal("0.6"), inverted))
+        assertThatThrownBy(() ->
+                        new RiskPolicyProperties("1.1.0", new BigDecimal("0.6"), inverted, RiskBand.HIGH, priorities()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("does not exceed the band below it");
     }
@@ -142,7 +144,8 @@ class RiskPolicyPropertiesTests {
         Map<RiskBand, BigDecimal> raised = bounds();
         raised.put(RiskBand.LOW, new BigDecimal("5"));
 
-        assertThatThrownBy(() -> new RiskPolicyProperties("1.0.0", new BigDecimal("0.6"), raised))
+        assertThatThrownBy(() ->
+                        new RiskPolicyProperties("1.1.0", new BigDecimal("0.6"), raised, RiskBand.HIGH, priorities()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("must start at 0");
     }
@@ -153,7 +156,8 @@ class RiskPolicyPropertiesTests {
         Map<RiskBand, BigDecimal> incomplete = bounds();
         incomplete.remove(RiskBand.CRITICAL);
 
-        assertThatThrownBy(() -> new RiskPolicyProperties("1.0.0", new BigDecimal("0.6"), incomplete))
+        assertThatThrownBy(() -> new RiskPolicyProperties(
+                        "1.1.0", new BigDecimal("0.6"), incomplete, RiskBand.HIGH, priorities()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("CRITICAL has no lower bound");
     }
@@ -161,7 +165,8 @@ class RiskPolicyPropertiesTests {
     @Test
     @DisplayName("a weight outside 0 to 1 is refused")
     void refusesAWeightOffTheScale() {
-        assertThatThrownBy(() -> new RiskPolicyProperties("1.0.0", new BigDecimal("1.5"), bounds()))
+        assertThatThrownBy(() ->
+                        new RiskPolicyProperties("1.1.0", new BigDecimal("1.5"), bounds(), RiskBand.HIGH, priorities()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("between 0 and 1");
     }
@@ -169,13 +174,130 @@ class RiskPolicyPropertiesTests {
     @Test
     @DisplayName("a blank version is refused, because an assessment must name what produced it")
     void refusesABlankVersion() {
-        assertThatThrownBy(() -> new RiskPolicyProperties(" ", new BigDecimal("0.6"), bounds()))
+        assertThatThrownBy(() ->
+                        new RiskPolicyProperties(" ", new BigDecimal("0.6"), bounds(), RiskBand.HIGH, priorities()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("version");
     }
 
+    // ----------------------------------------------------------------------- //
+    // Alerting
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("every band at or above the alerting band raises an alert, and none below it does")
+    void alertingIsMonotoneInSeverity() {
+        assertThat(policy.raisesAlert(RiskBand.LOW)).isFalse();
+        assertThat(policy.raisesAlert(RiskBand.MEDIUM)).isFalse();
+        assertThat(policy.raisesAlert(RiskBand.HIGH)).isTrue();
+        assertThat(policy.raisesAlert(RiskBand.CRITICAL))
+                .as("an alerting rule that skipped the most severe band would be one nobody could "
+                        + "hold in their head")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("a band that alerts has the priority configuration gave it")
+    void mapsEachAlertingBandToItsPriority() {
+        assertThat(policy.priorityFor(RiskBand.HIGH)).isEqualTo(AlertPriority.HIGH);
+        assertThat(policy.priorityFor(RiskBand.CRITICAL)).isEqualTo(AlertPriority.URGENT);
+    }
+
+    @Test
+    @DisplayName("asking for the priority of a band that does not alert is refused, not defaulted")
+    void refusesAPriorityForABandThatDoesNotAlert() {
+        // Answering LOW would open an alert that the policy says should not
+        // exist, which is a worse outcome than the caller defect it hides.
+        assertThatThrownBy(() -> policy.priorityFor(RiskBand.MEDIUM))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("does not raise an alert");
+    }
+
+    @Test
+    @DisplayName("an alerting band with no priority is refused at startup")
+    void refusesAnAlertingBandWithNoPriority() {
+        Map<RiskBand, AlertPriority> incomplete = new EnumMap<>(RiskBand.class);
+        incomplete.put(RiskBand.HIGH, AlertPriority.HIGH);
+
+        // Without this it surfaces as an exception on the first CRITICAL alert,
+        // which is the worst possible moment to find out.
+        assertThatThrownBy(() ->
+                        new RiskPolicyProperties("1.1.0", new BigDecimal("0.6"), bounds(), RiskBand.HIGH, incomplete))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("CRITICAL raises an alert and has no priority");
+    }
+
+    @Test
+    @DisplayName("a priority on a band that does not alert is refused as dead configuration")
+    void refusesAPriorityOnANonAlertingBand() {
+        Map<RiskBand, AlertPriority> extra = priorities();
+        extra.put(RiskBand.LOW, AlertPriority.LOW);
+
+        // It reads as though it does something. The likeliest reason for it to
+        // exist is that somebody moved alertFromBand and did not finish.
+        assertThatThrownBy(
+                        () -> new RiskPolicyProperties("1.1.0", new BigDecimal("0.6"), bounds(), RiskBand.HIGH, extra))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("LOW has a priority and does not raise an alert");
+    }
+
+    @Test
+    @DisplayName("a policy with no alerting band is refused, because it cannot raise a defensible alert")
+    void refusesAMissingAlertingBand() {
+        assertThatThrownBy(() -> new RiskPolicyProperties("1.1.0", new BigDecimal("0.6"), bounds(), null, priorities()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("alert-from-band is required");
+    }
+
+    // ----------------------------------------------------------------------- //
+    // Where the floor and the threshold meet
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("a maximal model over a silent ruleset does not reach the alerting band")
+    void theModelAloneCannotOpenAnAlert() {
+        // ADR-0011 section 4. This is an implication of two decisions that were
+        // each taken separately - the floor in section 1 and the alerting band
+        // in section 3 - and it is asserted here so that changing either one
+        // cannot alter it quietly. An alert whose entire justification is "the
+        // model was confident" is the one an analyst cannot review.
+        BigDecimal perfectModelNoRules = policy.combine(BigDecimal.ZERO, new BigDecimal("100"));
+
+        assertThat(perfectModelNoRules)
+                .as("the floor caps the model's own contribution at modelWeight x 100")
+                .isEqualByComparingTo("60.00");
+        assertThat(policy.raisesAlert(policy.bandFor(perfectModelNoRules)))
+                .as("60 bands MEDIUM, and alerting starts at HIGH")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("25 is the rule score at which a maximal model first clears the alerting band")
+    void aRuleScoreOfTwentyFiveIsWhereAlertingBegins() {
+        // 0.6 x 100 + 0.4 x 25 = 70 exactly, and 25 is the weight of the single
+        // strongest indicator in today's ruleset. So at least one rule an
+        // analyst can read has to have fired, and the weaker ones only alert
+        // alongside something else.
+        assertThat(policy.combine(new BigDecimal("24"), new BigDecimal("100"))).isEqualByComparingTo("69.60");
+        assertThat(policy.raisesAlert(policy.bandFor(policy.combine(new BigDecimal("24"), new BigDecimal("100")))))
+                .isFalse();
+
+        BigDecimal atTheBoundary = policy.combine(new BigDecimal("25"), new BigDecimal("100"));
+        assertThat(atTheBoundary).isEqualByComparingTo("70.00");
+        assertThat(policy.raisesAlert(policy.bandFor(atTheBoundary)))
+                .as("the band's lower bound is inclusive, so 70 alerts")
+                .isTrue();
+    }
+
     private static RiskPolicyProperties policy(BigDecimal modelWeight) {
-        return new RiskPolicyProperties("1.0.0", modelWeight, bounds());
+        return new RiskPolicyProperties("1.1.0", modelWeight, bounds(), RiskBand.HIGH, priorities());
+    }
+
+    private static Map<RiskBand, AlertPriority> priorities() {
+        Map<RiskBand, AlertPriority> priorities = new EnumMap<>(RiskBand.class);
+        priorities.put(RiskBand.HIGH, AlertPriority.HIGH);
+        priorities.put(RiskBand.CRITICAL, AlertPriority.URGENT);
+        return priorities;
     }
 
     private static Map<RiskBand, BigDecimal> bounds() {

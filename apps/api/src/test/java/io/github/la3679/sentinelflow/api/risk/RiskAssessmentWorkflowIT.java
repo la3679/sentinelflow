@@ -101,6 +101,16 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     private static final String TOPIC = "transaction.created.v1";
     private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
+    /**
+     * Noon UTC on a fixed day, for the tests that need the ruleset to fire.
+     *
+     * <p>Fixed because two of the seven rules read the clock: the velocity window is five minutes
+     * wide, and {@code OFF_HOURS} fires between 02:00 and 04:59 UTC. A history built from
+     * {@code now()} would score 40 by day and 50 overnight, and no assertion can state a number that
+     * depends on when the build started.
+     */
+    private static final Instant ALERTING_INSTANT = Instant.parse("2026-03-14T12:00:00Z");
+
     private static final String SCORED_BODY = """
             {
               "modelVersion": "1.0.0",
@@ -214,10 +224,16 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
         assertThat(assessment.get("model_version")).isEqualTo("1.0.0");
         assertThat(assessment.get("feature_version")).isEqualTo("1.0.0");
         assertThat(assessment.get("ruleset_version")).isEqualTo("1.0.0");
-        assertThat(assessment.get("policy_version")).isEqualTo("1.0.0");
+        // 1.1.0 since the alerting rule joined the policy object. The version
+        // moves when what it describes changes, which is the whole reason an
+        // assessment records it.
+        assertThat(assessment.get("policy_version")).isEqualTo("1.1.0");
         assertThat(assessment.get("alert_raised"))
-                .as("alert creation is Phase 5; true here would be a claim with nothing behind it")
+                .as("MEDIUM is below the policy's alerting band, so no alert is owed")
                 .isEqualTo(false);
+        assertThat(alertCount(transactionId))
+                .as("and none was opened, which is the half of that flag a row can be checked against")
+                .isZero();
 
         assertThat(processingStatusOf(transactionId))
                 .as("a console showing this as PENDING for ever would be lying about it")
@@ -360,6 +376,160 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     }
 
     // ----------------------------------------------------------------------- //
+    // Banded high enough for a person
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("an assessment in the alerting band opens an alert, priced by the policy")
+    void opensAnAlertWhenTheBandWarrantsOne() {
+        UUID transactionId = alertingTransaction();
+
+        publish(transactionId);
+
+        Map<String, Object> assessment = awaitAssessment(transactionId);
+        assertThat((java.math.BigDecimal) assessment.get("rule_score"))
+                .as("VELOCITY_5M_HIGH at 25 and COUNTRY_CHANGE at 15, and nothing else fires")
+                .isEqualByComparingTo("40.00");
+        assertThat((java.math.BigDecimal) assessment.get("final_score"))
+                .as("max(40, 0.6 x 92.5 + 0.4 x 40) = 71.5, which is the HIGH band")
+                .isEqualByComparingTo("71.50");
+        assertThat(assessment.get("risk_band")).isEqualTo("HIGH");
+        assertThat(assessment.get("alert_raised")).isEqualTo(true);
+
+        Map<String, Object> alert = awaitAlert(transactionId);
+        assertThat(alert.get("assessment_id"))
+                .as("the alert cites the decision that caused it, and no other")
+                .isEqualTo(assessment.get("id"));
+        assertThat((String) alert.get("alert_reference")).matches("ALT-[0-9]{4}");
+        assertThat(alert.get("status")).isEqualTo("NEW");
+        assertThat(alert.get("priority"))
+                .as("priorityByBand maps HIGH to HIGH: the band describes the score, the priority the queue")
+                .isEqualTo("HIGH");
+        assertThat(alert.get("risk_band")).isEqualTo(assessment.get("risk_band"));
+        assertThat((java.math.BigDecimal) alert.get("final_score"))
+                .isEqualByComparingTo((java.math.BigDecimal) assessment.get("final_score"));
+        assertThat(alert.get("closed_at"))
+                .as("a live alert has no close time, and the CHECK on the column says so")
+                .isNull();
+        assertThat(alert.get("assignee_id"))
+                .as("nothing has been assigned it; a queue with everything pre-assigned is not a queue")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("the summary carries the reason code and never a reason's description")
+    void summarisesTheAlertWithoutLeakingTheDetail() {
+        UUID transactionId = alertingTransaction();
+
+        publish(transactionId);
+        Map<String, Object> assessment = awaitAssessment(transactionId);
+        String summary = (String) awaitAlert(transactionId).get("summary");
+
+        assertThat(summary).contains(transactionReferenceOf(transactionId));
+        assertThat(summary).contains("VELOCITY_5M_HIGH", "RULE", "71.50", "HIGH");
+
+        // The rule's own sentence names how many transactions this account made
+        // in five minutes. That belongs on a detail page an analyst has opened,
+        // not on a queue row and not in an event that leaves this service.
+        JsonNode reasons = json(assessment.get("reason_codes"));
+        assertThat(summary)
+                .as("the leading reason's description is the one thing the queue row may not repeat")
+                .doesNotContain(reasons.get(0).get("description").asString());
+    }
+
+    @Test
+    @DisplayName("opening an alert is attributed to the system principal, in the same commit")
+    void recordsWhoOpenedTheAlert() {
+        UUID transactionId = alertingTransaction();
+        UUID correlationId = UUID.randomUUID();
+
+        publish(transactionId, UUID.randomUUID(), correlationId);
+        Map<String, Object> alert = awaitAlert(transactionId);
+
+        Map<String, Object> action =
+                jdbc.queryForMap("SELECT * FROM alert_actions WHERE alert_id = ?", alert.get("id"));
+        assertThat(action.get("action_type")).isEqualTo("CREATED");
+        assertThat(action.get("actor_role")).isEqualTo("SYSTEM");
+        assertThat(action.get("actor_id"))
+                .as("actor_id is NOT NULL so that an unattributable change to a reviewed decision "
+                        + "cannot exist; the pipeline raising it is an answer, and a null is not")
+                .isEqualTo(fixtures.systemUserId());
+        assertThat((String) action.get("note"))
+                .as("which policy decided this, since the threshold moves on its own schedule")
+                .contains("1.1.0");
+        assertThat(action.get("correlation_id"))
+                .as("the same correlation the transaction, the assessment and the scoring call carry")
+                .isEqualTo(correlationId);
+        assertThat(action.get("previous_status"))
+                .as("nothing transitioned: this row records the alert coming into existence")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("the alert and its alert.created event are written in one commit, keyed by the alert")
+    void writesTheAlertCreatedEventBesideTheAlert() {
+        UUID transactionId = alertingTransaction();
+
+        publish(transactionId);
+        Map<String, Object> assessment = awaitAssessment(transactionId);
+        Map<String, Object> alert = awaitAlert(transactionId);
+
+        Map<String, Object> event = jdbc.queryForMap(
+                "SELECT * FROM outbox_events WHERE event_type = 'alert.created' AND aggregate_id = ?", alert.get("id"));
+        assertThat(event.get("aggregate_type")).isEqualTo("alert");
+        assertThat(event.get("status")).isEqualTo("PENDING");
+        assertThat(event.get("partition_key"))
+                .as("keyed by the alert's identifier (ADR-0006 section 3): an alert's own transitions "
+                        + "are ordered against each other and against nothing else")
+                .isEqualTo(alert.get("id").toString());
+
+        JsonNode payload = json(event.get("payload"));
+        assertThat(payload.get("alertId").asString()).isEqualTo(alert.get("id").toString());
+        assertThat(payload.get("alertReference").asString()).isEqualTo(alert.get("alert_reference"));
+        assertThat(payload.get("assessmentId").asString())
+                .isEqualTo(assessment.get("id").toString());
+        assertThat(payload.get("transactionId").asString()).isEqualTo(transactionId.toString());
+        assertThat(payload.get("accountId").asString())
+                .isEqualTo(accountIdOf(transactionId).toString());
+        assertThat(payload.get("status").asString())
+                .as("the schema constrains this with const, so a created event cannot announce a " + "later state")
+                .isEqualTo("NEW");
+        assertThat(payload.get("priority").asString()).isEqualTo("HIGH");
+        assertThat(payload.get("riskBand").asString()).isEqualTo("HIGH");
+        assertThat(payload.get("finalScore").asDouble()).isEqualTo(71.5);
+        assertThat(payload.get("summary").asString()).isEqualTo(alert.get("summary"));
+
+        JsonNode topReason = payload.get("topReasonCode");
+        assertThat(topReason.get("code").asString())
+                .as("the first reason in the assessment's own rules-first ordering")
+                .isEqualTo("VELOCITY_5M_HIGH");
+        assertThat(topReason.get("source").asString()).isEqualTo("RULE");
+    }
+
+    @Test
+    @DisplayName("a redelivered event does not open a second alert")
+    void doesNotOpenASecondAlertUnderRedelivery() {
+        UUID transactionId = alertingTransaction();
+        UUID eventId = UUID.randomUUID();
+
+        publish(transactionId, eventId);
+        awaitAlert(transactionId);
+        publish(transactionId, eventId);
+
+        // Held long enough that "not yet" cannot pass for "never", as the
+        // assessment's own redelivery test is. A second alert would put one
+        // transaction in a review queue twice, with two references and two
+        // histories, and nothing to say which one an analyst had worked.
+        await().pollDelay(Duration.ofSeconds(2)).atMost(TIMEOUT).until(() -> alertCount(transactionId) == 1);
+        assertThat(alertActionCount(transactionId))
+                .as("and no second CREATED row, which an append-only history would keep for ever")
+                .isEqualTo(1);
+        assertThat(alertCreatedOutboxCount(transactionId))
+                .as("and no second announcement of it")
+                .isEqualTo(1);
+    }
+
+    // ----------------------------------------------------------------------- //
     // Delivered twice
     // ----------------------------------------------------------------------- //
 
@@ -391,6 +561,10 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     }
 
     private UUID publish(UUID transactionId, UUID eventId) {
+        return publish(transactionId, eventId, UUID.randomUUID());
+    }
+
+    private UUID publish(UUID transactionId, UUID eventId, UUID correlationId) {
         Map<String, Object> row = jdbc.queryForMap("""
                 SELECT t.transaction_reference, t.idempotency_key, t.origin_country, t.occurred_at,
                        a.id AS account_id, a.account_reference,
@@ -431,7 +605,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
         envelope.put("schemaVersion", 1);
         envelope.put("occurredAt", Instant.now().toString());
         envelope.put("producer", EventEnvelope.PRODUCER);
-        envelope.put("correlationId", UUID.randomUUID().toString());
+        envelope.put("correlationId", correlationId.toString());
         envelope.putNull("traceId");
         envelope.put("aggregateType", "transaction");
         envelope.put("aggregateId", transactionId.toString());
@@ -467,6 +641,73 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
                   JOIN risk_assessments r ON r.id = o.aggregate_id
                  WHERE o.event_type = 'risk.assessed' AND r.transaction_id = ?
                 """, Integer.class, transactionId);
+    }
+
+    /**
+     * A transaction the ruleset has something to say about.
+     *
+     * <p>The arithmetic is the point. With a rule score of zero the best a perfect model can reach
+     * through ADR-0011's combination is 60, and the alerting band starts at 70 - so an alert cannot
+     * be provoked by the scoring stub alone, however confident it is. Four transactions inside five
+     * minutes fire {@code VELOCITY_5M_HIGH} for 25, a fifth originating elsewhere adds
+     * {@code COUNTRY_CHANGE} for 15, and 40 against the stub's 92.5 combines to 71.5.
+     *
+     * <p>One merchant across the whole history, deliberately: a fresh merchant per row would fire
+     * {@code DISTINCT_MERCHANTS_1H_HIGH} as well and put ten more points on a score this test states
+     * exactly. Every amount is the fixture's own, so the ratio against the account's own mean is 1.
+     *
+     * <p>The instants are fixed rather than {@code now()} so the hour is not the machine's. The
+     * history window is relative to the scored transaction, so the date itself carries no meaning.
+     */
+    private UUID alertingTransaction() {
+        UUID accountId = fixtures.insertAccount(fixtures.insertCustomer());
+        UUID merchantId = fixtures.insertMerchant();
+
+        for (int minutesBefore = 4; minutesBefore >= 1; minutesBefore--) {
+            fixtures.insertTransactionFrom(
+                    accountId,
+                    merchantId,
+                    "idem-" + SchemaFixtures.next6(),
+                    "GB",
+                    ALERTING_INSTANT.minus(Duration.ofMinutes(minutesBefore)));
+        }
+        return fixtures.insertTransactionFrom(
+                accountId, merchantId, "idem-" + SchemaFixtures.next6(), "BR", ALERTING_INSTANT);
+    }
+
+    private Map<String, Object> awaitAlert(UUID transactionId) {
+        await().atMost(TIMEOUT).until(() -> alertCount(transactionId) == 1);
+        return jdbc.queryForMap("SELECT * FROM alerts WHERE transaction_id = ?", transactionId);
+    }
+
+    private int alertCount(UUID transactionId) {
+        return jdbc.queryForObject(
+                "SELECT count(*) FROM alerts WHERE transaction_id = ?", Integer.class, transactionId);
+    }
+
+    private int alertActionCount(UUID transactionId) {
+        return jdbc.queryForObject("""
+                SELECT count(*) FROM alert_actions h
+                  JOIN alerts a ON a.id = h.alert_id
+                 WHERE a.transaction_id = ?
+                """, Integer.class, transactionId);
+    }
+
+    private int alertCreatedOutboxCount(UUID transactionId) {
+        return jdbc.queryForObject("""
+                SELECT count(*) FROM outbox_events o
+                  JOIN alerts a ON a.id = o.aggregate_id
+                 WHERE o.event_type = 'alert.created' AND a.transaction_id = ?
+                """, Integer.class, transactionId);
+    }
+
+    private String transactionReferenceOf(UUID transactionId) {
+        return jdbc.queryForObject(
+                "SELECT transaction_reference FROM transactions WHERE id = ?", String.class, transactionId);
+    }
+
+    private UUID accountIdOf(UUID transactionId) {
+        return jdbc.queryForObject("SELECT account_id FROM transactions WHERE id = ?", UUID.class, transactionId);
     }
 
     private String processingStatusOf(UUID transactionId) {

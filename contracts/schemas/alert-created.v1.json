@@ -32,7 +32,7 @@
     },
     "topReasonCode": {
       "$ref": "common.v1.json#/$defs/reasonCode",
-      "description": "The single largest contributor, duplicated from the assessment so a queue view can render a row without joining."
+      "description": "The reason the alert leads with: the first in the assessment's own ordering, duplicated so a queue view can render a row without joining.\n\nNot \"the largest contributor\", which is not well defined across the two sources. An assessment orders its reasons rules-first, each group by descending contribution, because a rule's weight on the 0-to-100 scale and a model's log-odds decomposition are not comparable magnitudes - so this is the largest rule contributor when any rule fired, and the model's largest attribution otherwise.\n\nThe duplication is safe because an assessment is immutable: rescoring writes a new assessment rather than editing one, so this copy cannot drift from its source."
     },
 
     "createdAt": { "$ref": "common.v1.json#/$defs/timestamp" }

@@ -1605,3 +1605,163 @@ pipeline did with the client's three outcomes.
 
 Recorded in `PROJECT_STATE.md`. Phase 5 opens with alert creation attaching to a band that already
 exists and is already persisted, and settling `alerts.top_reason_code` in the same change.
+
+---
+
+## Session 15 — 2026-08-27 — Phase 4 closed, and Phase 5 opened as far as a checkpoint allowed
+
+Two merges and one branch left open. Phase 4's gate closed as [#48](https://github.com/la3679/sentinelflow/pull/48);
+Phase 5's first piece is written, unit-tested and pushed on `feat/alert-creation` with **no
+end-to-end coverage**, which is why there is no pull request for it.
+
+**This entry is written at a checkpoint rather than at a finish line.** The context budget reached
+its threshold mid-way through the alerting work, so the rule in `CLAUDE.md` applied: stop new
+feature work, save state, commit what is safe, push.
+
+### Phase 4's gate
+
+All five criteria met, with the evidence named: `make train` from a fingerprinted export at a
+recorded seed, a generated evaluation report and model card, an artifact checksum verified before
+every load, contracts tested in both directions, and failure behaviour covered by
+`RiskAssessmentWorkflowIT` against real PostgreSQL and Kafka. The last one is what needed the
+workflow — until it existed, `ScoringClientTests` covered the client's three outcomes and nothing
+covered what the pipeline did with them.
+
+The gate section also records what a gate does not cover. Three defects in that phase were invisible
+to every suite and were found by running the compose stack.
+
+### Phase 5, as far as it got
+
+**The alerting rule joined the policy object** rather than starting a second one, because ADR-0008
+§4 already calls it "the alerting policy applied to a final score at runtime". `alertFromBand` is
+monotone in severity by construction; `priorityByBand` is separate because the band describes the
+score and the priority describes the queue; both halves of its validation are refusals at startup.
+`policy.version` moved to 1.1.0 because what it describes changed.
+
+**V9 adds `alert_reference_seq`.** Four digits caps it at 9,999, and unlike the transaction
+reference that is a ceiling this project can plausibly reach. Left loud rather than widened: `NO
+CYCLE` turns exhaustion into a refused INSERT naming the sequence, which is a legible signal that
+the alerting policy is producing more alerts than any review capacity could absorb.
+
+**`AlertRaiser` writes three rows in the assessment's own transaction.** The summary is built from
+the leading reason **code** and never its generated description — a description legitimately names a
+device handle or an amount ratio, which is right on a detail page an analyst has opened and wrong on
+a queue row and in an event that leaves this service.
+
+### The model alone cannot raise an alert, and nobody had written that down
+
+ADR-0011's combination is `max(rule, 0.6 x model + 0.4 x rule)`. With a rule score of zero the best a
+perfect model can produce is 60, and the alerting band starts at 70 — so a transaction that trips no
+transparent indicator can never open an alert, however confident the model is. The smallest rule
+score that lets a maximal model reach the band is 25: exactly one rule firing.
+
+Two decisions that were each defensible alone produce it, and it was not visible until they met. It
+is not obviously wrong — "we only alert when at least one indicator an analyst can read has fired" is
+a defensible policy for an explainability-first console, and it is arguably the point of the floor.
+But it is currently an accident rather than a decision, and it is recorded in `PROJECT_STATE.md` as
+the second of the next three actions so it gets taken deliberately. Changing a number now would be
+re-deciding an ADR without the alert-volume evidence that ADR-0011 itself asks for.
+
+### A correction to `PROJECT_STATE.md`
+
+That file said `alerts.top_reason_code` was "a string on the entity while
+`contracts/schemas/alert-created.v1.json` describes an object", and listed settling it as Phase 5
+work. There is no such column and no such entity field: `topReasonCode` exists only on the event, and
+the schema has always described it as a `reasonCode` object. The payload derives it from the
+assessment at publication time. Corrected in that file, noted here, and the repository trusted over
+the state document as `CLAUDE.md` requires.
+
+The schema's description of that field was corrected for a different reason: it called it "the single
+largest contributor", which is not well defined across a rule's 0-to-100 weight and a model's
+log-odds decomposition.
+
+### Tests and results — every figure from a run on 2026-08-27
+
+Recorded in `PROJECT_STATE.md` under the Phase 4 gate and beside the in-progress section. The
+alerting work is covered by unit and contract tests only; the integration test is the next action and
+its absence is the reason no pull request was opened for it.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: the integration test for the alert path, then deciding the "model
+alone cannot alert" question deliberately, then the rest of Phase 5.
+
+---
+
+## Session 16 — 2026-08-28 — the alert path covered end to end, and an accident turned into a decision
+
+Resumed on `feat/alert-creation` with a clean tree in sync with the remote, and continued from the
+first incomplete item in `PROJECT_STATE.md` rather than restarting anything. Two commits, pushed, and
+the branch opened as a pull request.
+
+### The integration test the last session owed
+
+Five cases in `RiskAssessmentWorkflowIT`, against the same real broker and database the rest of that
+suite uses: the alert itself, its summary, its attribution, its `alert.created` event, and what a
+redelivery does. The existing scored-path test gained an assertion that no alert row exists, because
+`alert_raised: false` is only half a claim until something checks the other half.
+
+**No scoring stub can provoke an alert on its own**, which is the arithmetic below arriving as a
+practical obstacle in the first test that needed one. The fixture builds a history the ruleset reacts
+to: four transactions inside five minutes fire `VELOCITY_5M_HIGH` for 25, a fifth originating
+elsewhere adds `COUNTRY_CHANGE` for 15, and 40 against the stub's 92.5 combines to 71.5 — HIGH, at
+HIGH priority.
+
+**The instants are fixed rather than `now()`, and that is not fastidiousness.** Two of the seven
+rules read the clock: the velocity window is five minutes wide, and `OFF_HOURS` fires between 02:00
+and 04:59 UTC. A history built from `now()` would have scored 40 by day and 50 overnight, so a suite
+asserting 71.50 would have passed every run except the ones that started in the small hours — the
+worst possible failure shape, because it looks like flakiness and is arithmetic.
+`SchemaFixtures.insertTransactionFrom` takes the occurrence instant for that reason and now has its
+first caller.
+
+One merchant across the whole history, deliberately: a fresh merchant per row would fire
+`DISTINCT_MERCHANTS_1H_HIGH` too, and the test states its arithmetic exactly rather than asserting a
+band and hoping.
+
+### "The model alone cannot raise an alert" is now ADR-0011 §4
+
+The previous session found it and deliberately left it undecided. It is now a stated policy: with a
+rule score of zero the combination caps at `modelWeight x 100 = 60` and `HIGH` starts at 70, so a
+transaction that trips no transparent indicator cannot open an alert however confident the model is.
+
+**Stated rather than dissolved.** The console is explainability-first, so every alert it raises can
+be opened on an indicator an analyst can check and dispute; an alert justified only by "the model was
+confident" is the one they learn to clear without reading. The cost is written into the same section
+rather than left out of it — a shape the model recognises and the ruleset misses is scored, banded,
+persisted and visible, and opens nothing. That is real, and it is accepted rather than overlooked.
+
+Lowering `alertFromBand`, raising `modelWeight` or removing the floor would each make it go away, and
+each would be re-deciding a section of that ADR without the measured alert volume the ADR already
+says those numbers should be revisited against. `sentinelflow.alerts.raised` is tagged by band and
+priority so the evidence can exist. The "revisit if" gained the condition that would reopen it, and
+the route back is named: a new rule that makes the shape transparent, or a superseding ADR that says
+plainly that alerts may rest on the model alone.
+
+Two tests in `RiskPolicyPropertiesTests` pin both halves — a maximal model over a silent ruleset
+bands MEDIUM, and 25 is where the combination first clears 70 — so moving either number cannot alter
+the implication silently. The same reasoning sits in `application.yaml` beside `alert-from-band`,
+which is where an operator changing that number will actually look.
+
+### Tests and results — every figure from a run on 2026-08-28
+
+Recorded in `PROJECT_STATE.md`. 156 unit tests, 181 integration tests, every coverage check met, and
+line coverage back to 87.0% from the 83.4% the previous session recorded as the honest cost of an
+untested `AlertRaiser`. Nothing was written to move a coverage number; the figures moved because the
+class is now executed by tests that assert what it wrote.
+
+Still not demonstrated on the compose stack, and that is stated rather than glossed: the previous
+session found three defects that every suite was green through.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: merge the pull request, then the alert state machine with optimistic
+concurrency on `alerts.version` beside it, then assignment, notes, feedback and role authorization.

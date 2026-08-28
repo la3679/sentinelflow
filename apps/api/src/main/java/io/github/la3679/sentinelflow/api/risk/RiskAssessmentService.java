@@ -78,10 +78,12 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <h2>What this does not do</h2>
  *
- * <p><strong>It does not raise alerts.</strong> {@code alertRaised} is false on everything written
- * here, because alert creation is Phase 5 and writing {@code true} would be a claim with nothing
- * behind it. The band it persists is what Phase 5 will attach to, which is why ADR-0011 put banding
- * here rather than leaving it for the code that alerts.
+ * <p><strong>It raises alerts through {@link AlertRaiser}, and decides nothing about them.</strong>
+ * {@link RiskPolicyProperties} says which bands are worth a person's time (ADR-0008 §4), the two
+ * methods below record that answer on the assessment as {@code alertRaised} at the moment they
+ * compute the band, and the raiser acts on it in the same transaction. The flag and the alert come
+ * from one decision rather than two that agree: asking the policy again after the row was built
+ * would mean that the day they disagreed, an assessment would claim an alert nobody could find.
  *
  * <p><strong>It does not rescore.</strong> Every assessment is version 1. Rescoring under a new
  * policy is a deliberate, audited operation like the other recovery paths in this system (ADR-0005
@@ -131,6 +133,7 @@ public class RiskAssessmentService {
     private final ScoringClient scoring;
     private final RiskPolicyProperties policy;
     private final RiskAssessmentRepository assessments;
+    private final AlertRaiser alertRaiser;
     private final OutboxEventRepository outbox;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meters;
@@ -141,6 +144,7 @@ public class RiskAssessmentService {
             ScoringClient scoring,
             RiskPolicyProperties policy,
             RiskAssessmentRepository assessments,
+            AlertRaiser alertRaiser,
             OutboxEventRepository outbox,
             ObjectMapper objectMapper,
             MeterRegistry meters) {
@@ -149,6 +153,7 @@ public class RiskAssessmentService {
         this.scoring = scoring;
         this.policy = policy;
         this.assessments = assessments;
+        this.alertRaiser = alertRaiser;
         this.outbox = outbox;
         this.objectMapper = objectMapper;
         this.meters = meters;
@@ -193,6 +198,15 @@ public class RiskAssessmentService {
         transaction.setProcessingStatus(ProcessingStatus.ASSESSED);
         outbox.save(outboxEventFor(assessment, request, transaction.getAccountId(), correlationId));
 
+        // The flag and the alert come from one decision, taken inside the two
+        // methods above where the band is computed. Asking the policy a second
+        // time here would be two answers to one question, and the day they
+        // disagreed the row would say an alert was raised that nobody could
+        // find.
+        if (assessment.isAlertRaised()) {
+            alertRaiser.raise(assessment, transaction, correlationId, assessedAt);
+        }
+
         count(assessment);
         return assessment;
     }
@@ -210,6 +224,7 @@ public class RiskAssessmentService {
         ScoreResponse response = result.response();
         BigDecimal modelScore = policy.onContractScale(response.modelScore());
         BigDecimal finalScore = policy.combine(ruleOutcome.score(), modelScore);
+        RiskBand band = policy.bandFor(finalScore);
 
         return RiskAssessment.scored(
                 transactionId,
@@ -217,14 +232,14 @@ public class RiskAssessmentService {
                 ruleOutcome.score(),
                 modelScore,
                 finalScore,
-                policy.bandFor(finalScore),
+                band,
                 response.modelVersion(),
                 response.featureVersion(),
                 ruleOutcome.rulesetVersion(),
                 policy.version(),
                 reasonCodes(ruleOutcome, response),
                 latencyColumnValue(result.latencyMs()),
-                false,
+                policy.raisesAlert(band),
                 assessedAt);
     }
 
@@ -238,17 +253,18 @@ public class RiskAssessmentService {
      */
     RiskAssessment degradedAssessment(UUID transactionId, RuleOutcome ruleOutcome, Instant assessedAt) {
         BigDecimal finalScore = policy.combine(ruleOutcome.score());
+        RiskBand band = policy.bandFor(finalScore);
 
         return RiskAssessment.degraded(
                 transactionId,
                 FIRST_ASSESSMENT_VERSION,
                 ruleOutcome.score(),
                 finalScore,
-                policy.bandFor(finalScore),
+                band,
                 ruleOutcome.rulesetVersion(),
                 policy.version(),
                 reasonCodes(ruleOutcome, null),
-                false,
+                policy.raisesAlert(band),
                 assessedAt);
     }
 
