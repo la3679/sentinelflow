@@ -189,6 +189,72 @@ class DeterministicSeedLoaderIT extends AbstractPostgresTest {
     }
 
     @Test
+    @DisplayName("a database seeded before credentials existed gets them, rather than staying locked out")
+    void restoresACredentialTheSeedNeverWrote() {
+        seed(SEED, SeedProfile.CI);
+
+        // Exactly the state every database created before V10 was in: the
+        // parties are there, the operators are there, and nothing can log in.
+        // The seed will not fix it on its own, because it asks whether any
+        // customer exists and concludes everything it writes exists.
+        transactions.executeWithoutResult(status -> jdbc.update(
+                "DELETE FROM user_credentials WHERE user_id = (SELECT id FROM users WHERE username = 'analyst.one')"));
+        assertThat(credentialCount()).isEqualTo(3);
+
+        SeedManifest manifest = seed(SEED, SeedProfile.CI);
+
+        assertThat(manifest.skipped())
+                .as("the bulk data really was already there; the repair does not make this a full seed")
+                .isTrue();
+        assertThat(credentialCount()).isEqualTo(4);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM customers", Integer.class))
+                .as("nothing else was written")
+                .isEqualTo(SeedProfile.CI.customers());
+    }
+
+    @Test
+    @DisplayName("the repair never rotates a password somebody is already using")
+    void leavesAnExistingCredentialAlone() {
+        seed(SEED, SeedProfile.CI);
+
+        List<String> before =
+                jdbc.queryForList("SELECT password_hash FROM user_credentials ORDER BY user_id", String.class);
+
+        // Changing SENTINELFLOW_DEMO_OPERATOR_PASSWORD and restarting must not
+        // silently reset four passwords. A repair that overwrote what it found
+        // could not be run safely, and this is the assertion that keeps it a
+        // repair rather than a reset.
+        transactions.executeWithoutResult(
+                status -> loader.load(new SeedProperties(true, SEED, SeedProfile.CI, "a-different-password", false)));
+
+        assertThat(jdbc.queryForList("SELECT password_hash FROM user_credentials ORDER BY user_id", String.class))
+                .isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("the system principal is not reachable by the repair")
+    void neverGivesTheSystemPrincipalACredential() {
+        seed(SEED, SeedProfile.CI);
+        transactions.executeWithoutResult(status -> jdbc.update("DELETE FROM user_credentials"));
+
+        seed(SEED, SeedProfile.CI);
+
+        // The repair works from the four fixed operator usernames, so 'system'
+        // is not something it can reach rather than something it declines to
+        // touch. ADR-0012 section 2.
+        assertThat(jdbc.queryForList("""
+                SELECT u.username FROM users u
+                  JOIN user_credentials c ON c.user_id = u.id
+                 ORDER BY u.username
+                """, String.class))
+                .containsExactly("administrator.one", "analyst.one", "analyst.two", "auditor.one");
+    }
+
+    private Integer credentialCount() {
+        return jdbc.queryForObject("SELECT count(*) FROM user_credentials", Integer.class);
+    }
+
+    @Test
     @DisplayName("every generated value is synthetic and matches the documented reference patterns")
     void generatedDataIsSynthetic() {
         seed(SEED, SeedProfile.CI);

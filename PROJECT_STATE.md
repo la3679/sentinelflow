@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T15:45Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T17:20Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5 closed against its gate; Phase 6 not started                                                                                    |
+| Overall status       | active — Phase 5 closed and smoke-tested; one defect the smoke test found is open as a fix                                                       |
 | Current phase        | between phases — Phase 5 complete, Phase 6 (operations frontend) next                                                                            |
-| Current task         | land [#53](https://github.com/la3679/sentinelflow/pull/53), then run `make smoke` before Phase 6                                                 |
+| Current task         | land the operator-credential fix, then begin Phase 6                                                                                             |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `docs/phase-5-gate`                                                                                                                              |
+| Working branch       | `fix/operator-credential-backfill`                                                                                                               |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#53](https://github.com/la3679/sentinelflow/pull/53) — the Phase 5 gate                                                                         |
+| Open PRs             | [#54](https://github.com/la3679/sentinelflow/pull/54) — the operator-credential fix                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -1223,6 +1223,66 @@ available.
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
 
+### 2026-08-28 — `make smoke` run at last, and the defect it found
+
+**Both smoke paths, 23 passed and 0 failed.** `scripts/smoke/smoke.sh` and its PowerShell equivalent
+`scripts/dev/sf.ps1 smoke`, neither of which had ever been executed since they were updated to expect
+401 from the actuator's closed endpoints.
+
+**The first run failed two checks, and the script was right both times.** `/actuator/env` and
+`/actuator/beans` answered 404 rather than 401 because the running api image was **19 hours old** and
+predated ADR-0012's authentication. `docker compose up -d --build` and both went green. Worth keeping
+because the failure looked exactly like a wrong expectation and was a stale artefact — the smoke test
+asks the _running_ stack, and the running stack is only as current as the last build.
+
+**Then no operator could log in.** See the section below; it is the most consequential thing this
+session found and no suite could have found it.
+
+**The two reporting endpoints were exercised over HTTP against the live stack**, which is the check
+the Testcontainers suites cannot make:
+
+| Call                                       | Result                                                                                    |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `GET /reports/alert-summary` as an analyst | 200, every enum key present including the zeroes, exactly as the contract says            |
+| `GET /reports/alerts.csv` as an analyst    | 200, `text/csv;charset=UTF-8`, `attachment; filename="sentinelflow-alerts-…"`, header row |
+| the same summary with `from` after `to`    | 422                                                                                       |
+| the same summary with no token             | 401                                                                                       |
+
+The window held no alerts, and that is the database rather than the endpoint: this demo database was
+populated before alert creation existed and every assessment in it is degraded, so there is nothing
+for an alert to have been raised from. `make reset-demo` then `make seed` gives one with alerts.
+
+### The smoke test found a defect that made the whole console unusable
+
+**Every one of the four demo operators answered 401, on a stack reporting 23 of 23 smoke checks
+green.** `user_credentials` was empty. The four users were seeded on 2026-08-27 and V10, which
+created that table, arrived on 2026-08-28.
+
+**`alreadySeeded()` asks whether any customer exists** and takes that as meaning everything the seed
+loader writes exists. That proxy held until the seed learned to write a new kind of row, which it
+just had. Any database seeded before V10 therefore has four operators, no passwords, and a seed that
+will never repair them because it can see customers.
+
+**The symptom is silent by design, which is what makes it bad.** ADR-0012 §3 requires that a refusal
+never say why — distinguishing an unknown username from a wrong password would turn an endpoint that
+must be open into an oracle for which usernames exist. So the console simply stops working, nothing
+logs anything, and the only documented route out is `make reset-demo`, which destroys the data.
+
+**Fixed by repairing rather than by resetting.** `DeterministicSeedLoader` now creates a missing
+operator, their role and their credential even on the skipped path, and logs at WARN how many needed
+it. It **never rotates an existing credential** — changing `SENTINELFLOW_DEMO_OPERATOR_PASSWORD` and
+restarting must not silently reset four passwords, and a repair that overwrote what it found could not
+be run safely. It works from the four fixed usernames, so the `system` principal is not something it
+can reach rather than something it declines to touch.
+
+**Verified on the live stack**: the WARN fired naming four operators, and `analyst.one` then logged
+in against the running API. Three tests pin it, including the one that keeps it a repair rather than
+a reset.
+
+**The generalisable part:** an idempotency guard that tests a proxy for its work rather than the work
+itself is correct only until the work changes. This is the same shape as the reference collision
+earlier in the session — a check that was true when written and silently stopped being true.
+
 ### 2026-08-28 — Phase 5, reporting made green and put under contract
 
 Every suite, on `feat/alert-reporting` at `e7cc4ba`, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`.
@@ -1695,17 +1755,17 @@ None.
 
 ## Next three actions
 
-Phase 5 is complete and closed against its gate. [#52](https://github.com/la3679/sentinelflow/pull/52)
-merged with all ten checks green. Nothing is blocked.
+Phase 5 is complete, closed against its gate and merged. `make smoke` has now been run — 23 of 23 on
+both the bash and PowerShell paths — which discharges the item that had been standing since the
+actuator's endpoints started answering 401. Nothing is blocked.
 
-1. **Land [#53](https://github.com/la3679/sentinelflow/pull/53)** from `docs/phase-5-gate`, which carries the gate section,
-   the auditor-note refusal that closes its third criterion, and this file. Documentation only, plus
-   one test.
-2. **Then run `make smoke` against the compose stack**, which has not been run since the actuator's
-   closed endpoints started answering 401 rather than 404 — the script and its PowerShell equivalent
-   were updated to expect it and neither has been executed. Read the notes below first: the local
-   database is on the LOCAL profile and carries the scars of the h2c defect, so `make reset-demo`
-   then `make seed` before reading anything into what the stack shows.
+1. **Land [#54](https://github.com/la3679/sentinelflow/pull/54)**, the operator-credential repair the
+   smoke test found. It is the last thing between this repository and a demo somebody can actually log
+   into.
+2. **Then rebuild the demo database.** `make reset-demo` then `make seed`, because the current one
+   predates alert creation and carries the scars of the h2c defect — 7,260 `FAILED` transactions,
+   13,455 degraded assessments and zero alerts. Read the profile note below first. A reporting
+   endpoint returning zero over a window is right for this database and tells nobody anything.
 3. **Then begin Phase 6 — the operations frontend.** Its first decision is ADR-0015 (SSE versus
    WebSockets), and its gate is "no dead controls · keyboard and accessibility checks pass · the core
    end-to-end journey passes · Lovable diffs reviewed and merged safely". The typed RTK Query layer

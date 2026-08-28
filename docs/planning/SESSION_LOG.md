@@ -2065,8 +2065,43 @@ role authorization should say plainly.
 merged and immutable, so the constraint keeps a value the application cannot write; removing the enum
 constant would put the enum and the constraint out of step for somebody to rediscover later.
 
+### `make smoke` run at last, and the defect it found
+
+**23 passed and 0 failed on both paths** — `scripts/smoke/smoke.sh` and `scripts/dev/sf.ps1 smoke`,
+neither of which had been executed since they were updated to expect 401 from the actuator's closed
+endpoints. That item had been standing across three sessions.
+
+**The first run failed two checks and the script was right both times.** `/actuator/env` and
+`/actuator/beans` answered 404 rather than 401 because the running api image was 19 hours old and
+predated ADR-0012's authentication. A rebuild made both green. The failure looked exactly like a wrong
+expectation and was a stale artefact: a smoke test asks the _running_ stack, and the running stack is
+only as current as the last build.
+
+**Then no operator could log in — on a stack reporting 23 of 23 green.** `user_credentials` was
+empty. `alreadySeeded()` asks whether any customer exists and takes that as meaning everything the
+loader writes exists; `user_credentials` arrived with V10, after every existing database had been
+seeded, so those databases have four operators, no passwords, and a seed that will never repair them
+because they have customers.
+
+The symptom is silent by design, which is what makes it bad: ADR-0012 §3 requires a refusal that never
+says why, so the console simply stops working and the only documented route out is `make reset-demo`,
+which destroys the data.
+
+Fixed by repairing rather than resetting — a missing operator, role and credential are created even on
+the skipped path, logged at WARN, and an existing credential is **never** rotated. Verified on the
+live stack: the WARN fired naming four operators and `analyst.one` then logged in.
+
+**Both reporting endpoints were then exercised over HTTP against the live stack** — 200 with the
+attachment disposition and header row, 422 on an inverted window, 401 anonymous, and every enum key
+present in the summary including the zeroes.
+
+**The generalisable part, and it is the same shape as the morning's reference collision:** an
+idempotency guard that tests a proxy for its work rather than the work itself is correct only until
+the work changes. Both defects were checks that were true when written and silently stopped being
+true.
+
 ### Next actions
 
-Recorded in `PROJECT_STATE.md`: land the Phase 5 gate pull request, then run `make smoke` against the
-compose stack — which has not been run since the actuator's closed endpoints started answering 401
-rather than 404 — then begin Phase 6, whose first decision is ADR-0015, SSE versus WebSockets.
+Recorded in `PROJECT_STATE.md`: land the operator-credential fix, then rebuild the demo database with
+`make reset-demo` and `make seed` — the current one predates alert creation and holds zero alerts —
+then begin Phase 6, whose first decision is ADR-0015, SSE versus WebSockets.
