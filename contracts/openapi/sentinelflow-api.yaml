@@ -169,7 +169,23 @@ paths:
       tags: [transactions]
       operationId: listTransactions
       summary: List transactions (Phase 3)
-      description: Paged and filterable. Never unbounded.
+      description: |
+        Paged and filterable. Never unbounded.
+
+        **Newest first, and the ordering is not the caller's to choose** — the
+        same decision the alert queue's ordering rests on. A `sort` parameter
+        would let a client change which transactions an operator sees first,
+        which is an operational decision rather than a display one.
+
+        `riskBand` filters on the band of the transaction's **current**
+        assessment, which is its highest version. A rescoring writes a new
+        assessment rather than editing one, so a transaction rescored out of a
+        band leaves that band for this filter too.
+
+        Readable by any authenticated role, `AUDITOR` included. Unlike `POST`
+        on this path, it is authenticated: posting a transaction is a
+        machine-to-machine surface, and reading other people's activity is not
+        the same permission.
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
         - $ref: "#/components/parameters/Page"
@@ -203,6 +219,17 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: |
+            `occurredBefore` is not after `occurredAfter`, or `size` is above
+            the cap. An inverted window matches nothing, so the honest-looking
+            answer is an empty page — which reads as "there were no
+            transactions" and is the worst thing an empty page can say when it
+            is not true.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 
   /transactions/{transactionId}:
     get:

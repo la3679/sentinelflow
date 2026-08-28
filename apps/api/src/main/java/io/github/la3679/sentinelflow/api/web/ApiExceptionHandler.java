@@ -29,11 +29,13 @@ import io.github.la3679.sentinelflow.api.security.OperatorLoginService.InvalidCr
 import io.github.la3679.sentinelflow.api.service.exception.AlertClosedException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertNotFoundException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertVersionConflictException;
+import io.github.la3679.sentinelflow.api.service.exception.AssessmentNotFoundException;
 import io.github.la3679.sentinelflow.api.service.exception.IdempotencyConflictException;
 import io.github.la3679.sentinelflow.api.service.exception.IllegalAlertTransitionException;
 import io.github.la3679.sentinelflow.api.service.exception.InsufficientRoleException;
 import io.github.la3679.sentinelflow.api.service.exception.InvalidAssigneeException;
 import io.github.la3679.sentinelflow.api.service.exception.InvalidWindowException;
+import io.github.la3679.sentinelflow.api.service.exception.TransactionNotFoundException;
 import io.github.la3679.sentinelflow.api.service.exception.UnknownReferenceException;
 
 /**
@@ -145,6 +147,33 @@ public class ApiExceptionHandler {
         // is the accurate answer and the one a client's router expects.
         return problem(
                 HttpStatus.NOT_FOUND, "alert-not-found", "Alert not found", "No alert has that identifier.", request);
+    }
+
+    @ExceptionHandler(TransactionNotFoundException.class)
+    ProblemDetail onTransactionNotFound(TransactionNotFoundException exception, HttpServletRequest request) {
+        return problem(
+                HttpStatus.NOT_FOUND,
+                "transaction-not-found",
+                "Transaction not found",
+                "No transaction has that identifier.",
+                request);
+    }
+
+    @ExceptionHandler(AssessmentNotFoundException.class)
+    ProblemDetail onAssessmentNotFound(AssessmentNotFoundException exception, HttpServletRequest request) {
+        // 404, and the detail says which of the two 404s this is. Scoring
+        // happens after ingestion answers, so a client polling for an
+        // assessment needs to tell "you asked for a transaction that does not
+        // exist" from "it exists and has not been scored yet" - the first is
+        // their bug and the second is this system still working.
+        return problem(
+                HttpStatus.NOT_FOUND,
+                "assessment-not-found",
+                "Assessment not available",
+                "That transaction has not been assessed. Scoring happens after ingestion, so this may"
+                        + " resolve on its own; a transaction whose processingStatus is FAILED will never"
+                        + " have one.",
+                request);
     }
 
     @ExceptionHandler(IllegalAlertTransitionException.class)
