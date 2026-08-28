@@ -14,7 +14,7 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T21:30Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T22:10Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 6; every screen reads the API and `src/mocks/` is deleted                                                                         |
 | Current phase        | Phase 6 — operations frontend (in progress)                                                                                                      |
@@ -26,7 +26,7 @@
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#65](https://github.com/la3679/sentinelflow/pull/65) — the four remaining screens                                                               |
+| Open PRs             | none — [#65](https://github.com/la3679/sentinelflow/pull/65) merged                                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -982,7 +982,7 @@ transaction screens as [#63](https://github.com/la3679/sentinelflow/pull/63).
 ### The four screens the console invented are decided, and none went the same way
 
 [ADR-0014](docs/adr/0014-where-the-console-s-remaining-screens-get-their-data.md) decides all four
-and [#65](https://github.com/la3679/sentinelflow/pull/65) builds them. Deciding them one at a time
+and [#65](https://github.com/la3679/sentinelflow/pull/65) built them. Deciding them one at a time
 was the point: they went four different ways.
 
 - **`GET /models/active` is composed by the API** from the scoring service's `/v1/model` and its own
@@ -1140,12 +1140,12 @@ renamed, four have no server counterpart at all, and five server endpoints have 
 
 The audit is the authoritative list. The four pieces it identifies:
 
-| Piece                        | State                                                                         |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| Transport and authentication | **done** — [#59](https://github.com/la3679/sentinelflow/pull/59)              |
-| Types and mapping            | **done** — [#63](https://github.com/la3679/sentinelflow/pull/63)              |
-| Two small API additions      | **one of two done** — legal targets merged; the assignee name is undecided    |
-| The four invented endpoints  | **done** — ADR-0014 and [#65](https://github.com/la3679/sentinelflow/pull/65) |
+| Piece                        | State                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| Transport and authentication | **done** — [#59](https://github.com/la3679/sentinelflow/pull/59)                     |
+| Types and mapping            | **done** — [#63](https://github.com/la3679/sentinelflow/pull/63)                     |
+| Two small API additions      | **one of two done** — legal targets merged; the assignee name is undecided           |
+| The four invented endpoints  | **done** — ADR-0014, merged as [#65](https://github.com/la3679/sentinelflow/pull/65) |
 
 **The audit is closed.** `src/mocks/` is deleted, and `USING_MOCK_DATA` with it.
 
@@ -2035,9 +2035,8 @@ None.
 
 ## Next three actions
 
-Phase 6's migration is complete: all four pieces of the audit are merged or in
-[#65](https://github.com/la3679/sentinelflow/pull/65), every screen reads the API, and
-`src/mocks/` is deleted. What is left is the phase's own gate and its last deliverable.
+Phase 6's migration is complete: all four pieces of the audit are merged, every screen reads the
+API, and `src/mocks/` is deleted. Nothing is open and `main` is green. What is left is the phase's own gate and its last deliverable.
 
 1. **ADR-0015 — SSE versus WebSockets**, which the implementation plan lists as a Phase 6
    deliverable and nothing has yet decided. The transaction feed polls today; the ADR is where
