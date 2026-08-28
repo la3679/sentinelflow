@@ -14,7 +14,7 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T16:35Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T16:30Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 6; the transport and the real sign-in are done, and the console now calls the API                                                 |
 | Current phase        | Phase 6 — operations frontend (in progress)                                                                                                      |
@@ -22,11 +22,11 @@
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/web-transport-and-auth`                                                                                                                    |
+| Working branch       | `main`                                                                                                                                           |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#59](https://github.com/la3679/sentinelflow/pull/59) — transport and authentication                                                             |
+| Open PRs             | none — [#59](https://github.com/la3679/sentinelflow/pull/59) merged                                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -1342,9 +1342,10 @@ available.
 | `./mvnw verify -Dit.test=OperatorAuthenticationIT` | **PASS** — 12 integration tests, JDK 25.0.4.1+1                               |
 | `./mvnw test -Dtest=CorsPropertiesTests`           | **PASS** — 9 unit tests                                                       |
 
-Three commits on `feat/web-transport-and-auth`: the roles on the token response, the CORS allow-list
-and ADR-0013, and the console's transport with its session. **CI has not run yet** — the branch is
-pushed and [#59](https://github.com/la3679/sentinelflow/pull/59) is open.
+Four commits, merged as [#59](https://github.com/la3679/sentinelflow/pull/59): the roles on the
+token response, the CORS allow-list and ADR-0013, the console's transport with its session, and the
+documentation. **All ten required checks passed on the pull request**, and all six workflows passed
+on the merge commit `90497a6` on `main`.
 
 **Unit and integration test counts for `apps/api` as a whole were not re-run in this session.** Only
 the two suites this change touches were. The last full number is the one recorded against `9580a96`
@@ -1885,12 +1886,9 @@ None.
 ## Next three actions
 
 Phase 6 is under way. The audit, the first of its two API additions, and the transport with real
-authentication are done. [#59](https://github.com/la3679/sentinelflow/pull/59) is open and awaiting
-CI.
+authentication are merged; nothing is open and `main` is green.
 
-1. **Merge [#59](https://github.com/la3679/sentinelflow/pull/59)** once its five checks pass, then
-   confirm the merge commit is green on `main`.
-2. **The types, and deleting `ALLOWED_TRANSITIONS`.** `domain/types.ts` rewritten against the
+1. **The types, and deleting `ALLOWED_TRANSITIONS`.** `domain/types.ts` rewritten against the
    contract: the real enums (`AlertPriority` is `LOW | MEDIUM | HIGH | URGENT`, not `P1–P4`;
    `TransactionStatus` describes a payment switch this system is not), the reference/identifier pair
    (ADR-0007 — a queue row showing a UUID is unreadable), `version` for the optimistic concurrency
@@ -1899,8 +1897,11 @@ CI.
    `legalTargets`, and `/alerts` and `/transactions` lose their `transport: "mock"`.
    **The `409` is the real work here**, and it is not plumbing: re-read the alert, show what changed,
    ask again. `SentinelError.extensions` already carries `currentVersion` and `legalTargets`.
-3. **Then decide the four invented endpoints**, starting with the overview, and record each decision
+2. **Then decide the four invented endpoints**, starting with the overview, and record each decision
    where somebody will find it. The audit sets out what each one wants and what exists.
+3. **Then the screens themselves** — the remaining Phase 6 deliverables, against real data rather
+   than fixtures, and the gate: no dead controls, keyboard and accessibility checks, the core e2e
+   journey, and current screenshots.
 
 **One decision is the user's and blocks nothing.** `make reset-demo` then `make seed`, because the
 demo database predates alert creation and holds **zero alerts** — every reporting endpoint honestly
