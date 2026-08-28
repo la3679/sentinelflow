@@ -2100,8 +2100,48 @@ idempotency guard that tests a proxy for its work rather than the work itself is
 the work changes. Both defects were checks that were true when written and silently stopped being
 true.
 
+### Phase 6 opened by auditing the console against the contract, rather than by writing a client
+
+`AGENTS.md` says the mock-to-real migration is "limited to replacing `mockBaseQuery` with
+`fetchBaseQuery`". Checking that endpoint by endpoint before writing anything found it is not: of the
+console's eleven endpoints, two reach a real endpoint at the same verb and path and still need every
+field renamed, four have no server counterpart at all, and five server endpoints have no client.
+
+**The finding that mattered is a gate failure rather than a mapping detail.** `ALLOWED_TRANSITIONS`
+in `domain/types.ts` is a second copy of the alert state machine and it disagrees with
+`AlertTransitions.java` in both directions — the console offers two moves the server answers `409` to
+and hides four that are legal. Phase 6's gate is "no dead controls", and a button that always fails
+is one.
+
+**The fix is to delete the copy, not correct it**, because a corrected copy is still a copy and the
+next change to the state machine puts it out of step silently. That needed the server to publish the
+answer on the happy path, which is what `legalTargets` now does — and deliberately as a property of
+the alert _and the reader_, so an analyst is not offered the administrative close and an auditor is
+offered nothing. Answering "legal from this status" would have moved the rule into the client rather
+than removing it.
+
+`AlertTransitions.namesOf` produces both that field and the `legalTargets` on the `409`, so what a
+client was offered and what a refusal names cannot disagree. There is a test that asserts it.
+
+### Tests and results
+
+`mvnw -B verify` at `9580a96` → **195 unit and 258 integration tests**, 0 failures; JaCoCo gate met
+at line 0.8969, branch 0.7962 · `check-contracts.mjs` passed · `prettier --check` clean ·
+`check-docs.mjs` 160 links, no placeholders. All ten required checks green on #56 and #57.
+
+### Things worth keeping
+
+- **Auditing first was worth a full session's caution.** Every one of the four pieces the migration
+  actually needs would have been discovered halfway through writing a typed client against the wrong
+  shape, and two of them (the actor field, the missing `expectedVersion`) are the kind that produce a
+  working screen with a broken audit trail.
+- **Three console-side things are decisions rather than work**: what resolves an `assigneeId` to a
+  name, whether the API grows an overview aggregate or the console composes one, and what a
+  system-health screen may show. Each is recorded in the audit with what exists on both sides.
+
 ### Next actions
 
-Recorded in `PROJECT_STATE.md`: land the operator-credential fix, then rebuild the demo database with
-`make reset-demo` and `make seed` — the current one predates alert creation and holds zero alerts —
-then begin Phase 6, whose first decision is ADR-0015, SSE versus WebSockets.
+Recorded in `PROJECT_STATE.md`: the transport and the real authentication flow, then the types and
+the deletion of `ALLOWED_TRANSITIONS`, then a decision per invented endpoint starting with the
+overview. Separately and blocking nothing, `make reset-demo` then `make seed` is the user's to run —
+the demo database predates alert creation and holds zero alerts.

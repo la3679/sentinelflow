@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T18:00Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T19:30Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5 complete, closed against its gate and smoke-tested; Phase 6 not started                                                         |
-| Current phase        | between phases — Phase 5 complete, Phase 6 (operations frontend) next                                                                            |
-| Current task         | awaiting a decision on `make reset-demo`; Phase 6 can start without it                                                                           |
+| Overall status       | active — Phase 6 started; the API migration audited and the first API change merged                                                              |
+| Current phase        | Phase 6 — operations frontend (in progress)                                                                                                      |
+| Current task         | the typed transport and the real authentication flow                                                                                             |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `docs/state-after-phase-5`                                                                                                                       |
+| Working branch       | `main`                                                                                                                                           |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none — [#54](https://github.com/la3679/sentinelflow/pull/54) merged                                                                              |
+| Open PRs             | none — [#57](https://github.com/la3679/sentinelflow/pull/57) merged                                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -78,7 +78,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 3 — ingestion, outbox, and Kafka**
 - [x] **Phase 4 — synthetic data and scoring**
 - [x] **Phase 5 — alerts and investigations**
-- [ ] **Phase 6 — operations frontend** ← next
+- [ ] **Phase 6 — operations frontend** ← in progress
 - [ ] Phase 7 — observability and resilience
 - [ ] Phase 8 — security and quality hardening
 - [ ] Phase 9 — performance and documentation
@@ -969,6 +969,60 @@ does. Trusting the repository over this file, as `CLAUDE.md` says to.
 The schema's description of that field was corrected instead, for a different reason: it called it
 "the single largest contributor", which is not well defined across two incomparable scales.
 
+## In progress — Phase 6
+
+**Two pull requests merged**: the API migration audit as
+[#56](https://github.com/la3679/sentinelflow/pull/56), and the alert's legal targets as
+[#57](https://github.com/la3679/sentinelflow/pull/57).
+
+### The migration is four pieces of work, not the one `AGENTS.md` describes
+
+`AGENTS.md` says the mock-to-real migration is "limited to replacing `mockBaseQuery` with
+`fetchBaseQuery`". [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)
+checked that endpoint by endpoint against the contract and the handlers. It is not: of the console's
+eleven endpoints, two reach a real endpoint at the same verb and path and still need every field
+renamed, four have no server counterpart at all, and five server endpoints have no client.
+
+The audit is the authoritative list. The four pieces it identifies:
+
+| Piece                        | State                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| Transport and authentication | not started — the prerequisite for everything else                         |
+| Types and mapping            | not started                                                                |
+| Two small API additions      | **one of two done** — legal targets merged; the assignee name is undecided |
+| The four invented endpoints  | not started — each needs a decision, and the overview matters most         |
+
+### The console offers buttons the server refuses, which is a gate failure
+
+`ALLOWED_TRANSITIONS` in `domain/types.ts` is a second copy of the alert state machine and it
+disagrees with `AlertTransitions.java` **in both directions**: the console offers
+`NEW → DISMISSED_FALSE_POSITIVE` and `CONFIRMED_SUSPICIOUS → CLOSED`, both of which answer `409`, and
+hides four legal moves. Phase 6's gate is "no dead controls" and a button that always fails is one.
+
+**Resolved on the server side, which is what lets the copy be deleted rather than corrected.**
+`GET /alerts/{id}` and every queue row now carry `legalTargets` — the moves **this reader** may make,
+so an analyst is not offered the administrative close and an auditor is offered nothing. Answering
+"legal from this status" instead would have moved the rule into the client rather than removing it.
+
+`AlertTransitions.namesOf` produces both that field and the `legalTargets` on the `409`, so a client
+comparing what it was offered against what a refusal names cannot be shown two answers. A test
+asserts they are equal.
+
+**Deleting `ALLOWED_TRANSITIONS` is the console's half and has not been done yet.**
+
+### Three findings from the audit that are decisions rather than mapping
+
+- **`assigneeId` is a UUID and nothing resolves it to a name.** An assignee column can currently
+  render nothing a person recognises. Either the alert grows a display name or there is a small user
+  lookup; undecided, and it is a real decision rather than a detail.
+- **`GET /overview` has no counterpart and it is the landing page.** Every part exists — counts in
+  the alert summary, lag and latency in Prometheus — and no endpoint composes them. An aggregate
+  endpoint is a second place risk-band counting lives; a client-side composition is a screen that
+  fires five requests and can be half-loaded. Undecided.
+- **Two enums describe a product this is not.** `TransactionStatus: AUTHORIZED | DECLINED | …` says a
+  payment switch decided something; this system scores and never decides. `AlertPriority: P1–P4`
+  against the API's `LOW | MEDIUM | HIGH | URGENT`.
+
 ## Acceptance criteria status — Phase 5 gate
 
 The four criteria are `docs/planning/IMPLEMENTATION_PLAN.md`'s. Each row names the test that
@@ -1755,23 +1809,24 @@ None.
 
 ## Next three actions
 
-Phase 5 is complete, closed against its gate and merged. `make smoke` has now been run — 23 of 23 on
-both the bash and PowerShell paths — which discharges the item that had been standing since the
-actuator's endpoints started answering 401. **One decision is the user's**, and it blocks nothing
-else.
+Phase 6 is under way. The audit and the first of its two API additions are merged; nothing is open.
 
-1. **Rebuild the demo database — this one needs the user.** `make reset-demo` then `make seed`. The
-   current database predates alert creation and carries the scars of the h2c defect: 7,260 `FAILED`
-   transactions, 13,455 degraded assessments and **zero alerts**, so every reporting endpoint honestly
-   returns nothing and tells nobody anything. But `make reset-demo` deletes the Prometheus and Grafana
-   volumes as well as PostgreSQL, and the target gates itself behind an interactive
-   `Type 'reset' to confirm` prompt — a control an agent should not route around. Read the profile
-   note below first: the stack is on the LOCAL profile.
-2. **Begin Phase 6 — the operations frontend**, which does not depend on step 1. Its first decision is ADR-0015 (SSE versus
-   WebSockets), and its gate is "no dead controls · keyboard and accessibility checks pass · the core
-   end-to-end journey passes · Lovable diffs reviewed and merged safely". The typed RTK Query layer
-   replacing `src/mocks/` is the first deliverable, and `.claude/rules/frontend.md` says exactly how
-   small that migration is meant to stay.
+1. **The transport and the real authentication flow.** `fetchBaseQuery({ baseUrl: API_BASE_URL })`,
+   `POST /auth/login`, the bearer header on every request, roles read from the token rather than
+   chosen from a menu, and the `401` that arrives mid-session because there is no refresh token by
+   design. It is the prerequisite for every other screen, and it retires `demoOperatorSlice` and the
+   role selector — choosing your own role is the interface equivalent of naming your own actor.
+2. **Then the types, and deleting `ALLOWED_TRANSITIONS`.** `domain/types.ts` rewritten against the
+   contract: the real enums, the reference/identifier pair (ADR-0007 — a queue row showing a UUID is
+   unreadable), `version`, `SYSTEM` as a fourth role, and the removal of the client-supplied `actor`
+   from three mutation bodies. The transition controls then render from `legalTargets`.
+3. **Then decide the four invented endpoints**, starting with the overview, and record each decision
+   where somebody will find it. The audit sets out what each one wants and what exists.
+
+**One decision is the user's and blocks nothing.** `make reset-demo` then `make seed`, because the
+demo database predates alert creation and holds **zero alerts** — every reporting endpoint honestly
+returns nothing. `make reset-demo` deletes the Prometheus and Grafana volumes as well as PostgreSQL
+and gates itself behind an interactive confirmation, which is a control worth respecting.
 
 ### What an earlier session found by running the stack rather than the suites
 
