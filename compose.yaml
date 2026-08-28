@@ -213,6 +213,11 @@ services:
       # POSTGRES_PASSWORD is: a default here would sign valid tokens on every
       # deployment that forgot to override it.
       SENTINELFLOW_JWT_SECRET: ${SENTINELFLOW_JWT_SECRET:?run make bootstrap to generate local secrets}
+      # Which web origins a browser may let read this API (ADR-0013). This one
+      # defaults where the secret above does not: a default origin list grants
+      # nothing to anybody who cannot already reach this machine's loopback
+      # interface. The entries are the console below and the Vite dev server.
+      SENTINELFLOW_CORS_ALLOWED_ORIGINS: ${SENTINELFLOW_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174}
       # The labelled training export (ADR-0010 section 1). Off unless set, for
       # the same reason as the seed. `make export-dataset` sets it for one
       # recreate of this service and then puts it back.
@@ -273,6 +278,16 @@ services:
       # single lockfile, and a frozen install needs it.
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # Vite inlines VITE_* at build time, so this is a build argument rather
+        # than an environment variable: the value is in the bundle the browser
+        # downloads, and changing it means rebuilding the image.
+        #
+        # It points at the host's published API port, not at http://api:8080 -
+        # the request is made by a browser on the host, which cannot resolve a
+        # compose service name. Keep it in step with API_PORT and with
+        # SENTINELFLOW_CORS_ALLOWED_ORIGINS above.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api/v1}
     image: sentinelflow/web:${SENTINELFLOW_VERSION:-dev}
     container_name: sentinelflow-web
     restart: unless-stopped

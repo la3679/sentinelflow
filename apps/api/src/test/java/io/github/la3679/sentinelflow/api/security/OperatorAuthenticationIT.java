@@ -55,6 +55,9 @@ class OperatorAuthenticationIT extends AbstractPostgresTest {
     private static final String ADMINISTRATOR = "administrator.it" + SUFFIX;
     private static final String AUDITOR = "auditor.it" + SUFFIX;
 
+    /** The compose console, and the first entry of the allow-list this suite runs with. */
+    private static final String CONSOLE_ORIGIN = "http://localhost:5173";
+
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     @LocalServerPort
@@ -254,6 +257,77 @@ class OperatorAuthenticationIT extends AbstractPostgresTest {
                 .exchange()
                 .expectStatus()
                 .isUnauthorized();
+    }
+
+    // ----------------------------------------------------------------------- //
+    // Being reached from a browser
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("a preflight from the console's origin is answered, and names the Authorization header")
+    void answersAPreflightFromTheConsole() {
+        // The default allow-list, which is what the demo runs on. Without
+        // Authorization among the allowed headers every authenticated request
+        // from the console fails its preflight while an anonymous one succeeds,
+        // which reads like a token defect and is a configuration one.
+        client.options()
+                .uri("/api/v1/alerts")
+                .header(HttpHeaders.ORIGIN, CONSOLE_ORIGIN)
+                .header("Access-Control-Request-Method", "GET")
+                .header("Access-Control-Request-Headers", HttpHeaders.AUTHORIZATION)
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectHeader()
+                .valueEquals("Access-Control-Allow-Origin", CONSOLE_ORIGIN)
+                .expectHeader()
+                .value("Access-Control-Allow-Headers", headers -> assertThat(headers)
+                        .containsIgnoringCase(HttpHeaders.AUTHORIZATION));
+    }
+
+    @Test
+    @DisplayName("a preflight is answered before authentication, or no unauthenticated client could ever log in")
+    void answersAPreflightWithoutAToken() {
+        // The login endpoint is the case that matters: a caller with no token
+        // has to be able to get one, and a preflight cannot carry the token the
+        // request it precedes would.
+        client.options()
+                .uri("/api/v1/auth/login")
+                .header(HttpHeaders.ORIGIN, CONSOLE_ORIGIN)
+                .header("Access-Control-Request-Method", "POST")
+                .exchange()
+                .expectStatus()
+                .isOk();
+    }
+
+    @Test
+    @DisplayName("an origin that is not on the list is not told it may read the response")
+    void refusesAnOriginThatIsNotAllowed() {
+        client.options()
+                .uri("/api/v1/alerts")
+                .header(HttpHeaders.ORIGIN, "https://not-the-console.example")
+                .header("Access-Control-Request-Method", "GET")
+                .exchange()
+                .expectStatus()
+                .isForbidden()
+                .expectHeader()
+                .doesNotExist("Access-Control-Allow-Origin");
+    }
+
+    @Test
+    @DisplayName("the actuator is not a browser surface and is not offered to one")
+    void doesNotOfferTheActuatorToABrowser() {
+        // ADR-0013 §6: the rule is registered for /api/v1/** only. A health
+        // screen reads this system's state through this API, not by widening
+        // this to a management endpoint shaped by Spring Boot rather than by
+        // the contract.
+        client.options()
+                .uri("/actuator/health")
+                .header(HttpHeaders.ORIGIN, CONSOLE_ORIGIN)
+                .header("Access-Control-Request-Method", "GET")
+                .exchange()
+                .expectHeader()
+                .doesNotExist("Access-Control-Allow-Origin");
     }
 
     /**
