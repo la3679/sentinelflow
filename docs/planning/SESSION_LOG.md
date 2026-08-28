@@ -1906,3 +1906,45 @@ None.
 
 Recorded in `PROJECT_STATE.md`: merge #51, then the reporting endpoints and the formula-injection-safe
 CSV export, then close Phase 5 against its gate with the evidence for each criterion.
+
+---
+
+## Session 16, closed — 2026-08-28 — an emergency checkpoint on the reporting branch
+
+**Stopped at 90% of the five-hour usage window, on the user's instruction**, part-way through
+Phase 5's last deliverable. `CLAUDE.md`'s checkpoint policy applies at that point: no further
+implementation, commit what is safe, push, record state.
+
+### What the session landed
+
+Three pull requests merged, each with all ten checks green:
+[#49](https://github.com/la3679/sentinelflow/pull/49) alert creation and ADR-0011 §4,
+[#50](https://github.com/la3679/sentinelflow/pull/50) the investigation state machine and ADR-0012's
+authentication, and [#51](https://github.com/la3679/sentinelflow/pull/51) assignment, notes,
+feedback and the queue reads. Phase 5 is one deliverable from its gate.
+
+### What is on `feat/alert-reporting`, and what is wrong with it
+
+The alert summary, the CSV export, and `CsvWriter` — which is the part that matters and is green,
+with 17 unit tests covering every character a spreadsheet treats as a formula and the apostrophe
+prefix going inside the quoting rather than outside it.
+
+**Four of `AlertReportIT`'s ten cases fail, and the fault is in the fixture rather than the
+endpoints.** The window is a class constant, so every test in the class writes into the same hour and
+the four that assert an exact total count rows another test left behind. The two that assert no total
+— the zero-key case and the formula-escaping case — pass, which is what says the production code
+behaves.
+
+**The failing suite is committed rather than deleted or disabled.** A test removed to go green is
+worse than one that is red for a reason somebody wrote down, and the commit message carries the
+diagnosis. The branch has no pull request, deliberately.
+
+### Blockers
+
+None. The fix is a window per test rather than per class.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: fix the fixture, document the two reporting paths in the OpenAPI
+contract, run the full suite, open the pull request, then close Phase 5 against its gate with the
+evidence for each criterion.
