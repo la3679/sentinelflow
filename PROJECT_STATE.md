@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T15:05Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T15:45Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5; reporting green and documented, open as a pull request                                                                         |
-| Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
-| Current task         | land the reporting pull request, then close Phase 5 against its gate                                                                             |
+| Overall status       | active — Phase 5 closed against its gate; Phase 6 not started                                                                                    |
+| Current phase        | between phases — Phase 5 complete, Phase 6 (operations frontend) next                                                                            |
+| Current task         | open the Phase 5 gate pull request, then run `make smoke` before starting Phase 6                                                                |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/alert-reporting` — pushed and open as [#52](https://github.com/la3679/sentinelflow/pull/52); every suite green                             |
+| Working branch       | `docs/phase-5-gate`                                                                                                                              |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#52](https://github.com/la3679/sentinelflow/pull/52) — the reporting endpoints                                                                  |
+| Open PRs             | none — [#52](https://github.com/la3679/sentinelflow/pull/52) merged                                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -77,8 +77,8 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 2 — contracts, domain, and database**
 - [x] **Phase 3 — ingestion, outbox, and Kafka**
 - [x] **Phase 4 — synthetic data and scoring**
-- [ ] **Phase 5 — alerts and investigations** ← in progress
-- [ ] Phase 6 — operations frontend
+- [x] **Phase 5 — alerts and investigations**
+- [ ] **Phase 6 — operations frontend** ← next
 - [ ] Phase 7 — observability and resilience
 - [ ] Phase 8 — security and quality hardening
 - [ ] Phase 9 — performance and documentation
@@ -739,16 +739,17 @@ one is still handled.
   synchronously rather than returning a failed future; and a unit test reading `../../contracts`,
   which cannot work inside the module-only Docker context where CI runs the unit suite.
 
-## In progress — Phase 5
+## Completed — Phase 5, merged as PRs [#49](https://github.com/la3679/sentinelflow/pull/49) through [#52](https://github.com/la3679/sentinelflow/pull/52)
 
 **Three pull requests merged**: alert creation as
 [#49](https://github.com/la3679/sentinelflow/pull/49), the investigation state machine with
 ADR-0012's authentication as [#50](https://github.com/la3679/sentinelflow/pull/50), and assignment,
 notes, feedback and the queue reads as [#51](https://github.com/la3679/sentinelflow/pull/51).
 
-**The reporting endpoints are green and documented**, open as
-[#52](https://github.com/la3679/sentinelflow/pull/52) — see the section below for what the four red
-tests turned out to be. Everything else in Phase 5 is on `main`.
+**All four pull requests are merged**, the reporting endpoints last as
+[#52](https://github.com/la3679/sentinelflow/pull/52) — see the section below for what its four red
+tests turned out to be, and "Acceptance criteria status — Phase 5 gate" for the evidence each
+criterion rests on.
 
 **The alerting rule joined the policy object** rather than starting a second one. ADR-0008 §4 gives
 this service "the alerting policy applied to a final score at runtime", and deciding which bands are
@@ -822,11 +823,11 @@ route back is a new rule that makes the shape transparent rather than an alert n
 | The CSV escaping (`CsvWriter`)                 | **done** — 17 unit tests, every formula-leading character        |
 | Reporting endpoints                            | **done** — 10 cases over real HTTP, both reports                 |
 | The reports in `contracts/openapi/`            | **done** — two paths, the summary schema, the export's 413       |
-| Phase 5 closed against its gate                | not started                                                      |
+| Phase 5 closed against its gate                | **done** — four criteria, each evidenced by a named test         |
 
 ### The reporting branch, and what the four red tests actually were
 
-**`feat/alert-reporting` is open as [#52](https://github.com/la3679/sentinelflow/pull/52).** What is
+**`feat/alert-reporting` merged as [#52](https://github.com/la3679/sentinelflow/pull/52).** What was
 on it:
 
 - **`CsvWriter` is the part that matters** — 17 unit tests covering every character a spreadsheet
@@ -967,6 +968,113 @@ does. Trusting the repository over this file, as `CLAUDE.md` says to.
 
 The schema's description of that field was corrected instead, for a different reason: it called it
 "the single largest contributor", which is not well defined across two incomparable scales.
+
+## Acceptance criteria status — Phase 5 gate
+
+The four criteria are `docs/planning/IMPLEMENTATION_PLAN.md`'s. Each row names the test that
+demonstrates it, because a criterion asserted rather than evidenced is not met.
+
+| Criterion                      | Status   | Evidence                                                                                                                                                            |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every state change audited     | **pass** | `AlertServiceIT` — "every move is written to the history with its actor and both ends"; 4 of the 5 writable action types covered, see below                         |
+| Invalid changes handled        | **pass** | `AlertTransitionIT` — an illegal move is a 409 naming the legal targets; `AlertServiceIT` — a terminal alert refuses every move                                     |
+| Concurrent changes handled     | **pass** | `AlertTransitionIT` — "a stale version is a conflict that names the version the alert is actually at"; a request with no version is refused before anything is read |
+| Auditor mutation attempts fail | **pass** | Four refusals, one per mutating endpoint: transition, assignment, note, feedback                                                                                    |
+| API documented                 | **pass** | Fourteen paths in `contracts/openapi/sentinelflow-api.yaml`, validated by `make contracts-check` in CI                                                              |
+
+**CI green, verified.** All ten required checks passed on
+[#49](https://github.com/la3679/sentinelflow/pull/49),
+[#50](https://github.com/la3679/sentinelflow/pull/50),
+[#51](https://github.com/la3679/sentinelflow/pull/51) and
+[#52](https://github.com/la3679/sentinelflow/pull/52). The api job ran the Testcontainers suites on
+the runner rather than merely compiling them — its log for #52 shows **189 unit and 250 integration
+tests** and the coverage gate met at LINE 0.80 and BRANCH 0.70, against actual line 0.8972 and
+branch 0.7945.
+
+### Every state change audited — what "every" covers, exactly
+
+`alert_actions` has five action types anything writes, and four are produced by Phase 5 code:
+
+- **`CREATED`** — `AlertRaiser`, in the assessment's own transaction, attributed to the system
+  principal. `RiskAssessmentWorkflowIT` covers the alert, its summary, its history row and its event.
+- **`ASSIGNED` / `UNASSIGNED`** — `AlertService.assign`, which writes **nothing** when the assignee
+  is unchanged. That is deliberate and tested ("assigning the same person twice writes nothing the
+  second time"): an audit row saying an alert was given to whoever already held it is noise in the
+  one place noise is most expensive.
+- **`TRANSITIONED`** — `AlertService.transition`, with both ends of the move, enforced by the
+  schema's own `alert_actions_transition_complete` CHECK rather than by the code alone.
+- **`NOTE_ADDED`** — `AlertService.addNote`.
+
+**`PRIORITY_CHANGED` is reserved by the schema and produced by nothing**, because no endpoint changes
+an alert's priority — the priority comes from the band through `priorityByBand` and nothing overrides
+it. Stated here rather than quietly left: V4 is merged and therefore immutable, so the CHECK
+constraint keeps a value the application cannot currently write, and removing the enum constant would
+put the enum and the constraint out of step for a reader to rediscover later. It is a gap in the
+product, not in the audit trail.
+
+**Analyst feedback writes no `alert_actions` row, and that is a decision rather than an omission.** A
+verdict is not something done _to_ the alert — it does not move it, assign it, or change what a queue
+shows. It is a training label about the _assessment_, in `analyst_feedback`, with its own actor and
+timestamp. Whether the alert was dispositioned is already recorded, by the transition that
+dispositioned it. `AlertQueueIT` covers the label, its revision, and its refusal on a closed alert.
+
+### Concurrency is checked twice, and neither check is redundant
+
+`expectedVersion` is compared on read and the write then relies on the JPA `@Version` column, so two
+callers who both read version 3 cannot both write version 4. The first check gives the second caller
+a 409 that names the version the alert is actually at, which is actionable; the second is what makes
+the guarantee true under a race the first cannot see. `AlertServiceIT` covers the stale read and
+`AlertTransitionIT` covers what a caller receives.
+
+**A request with no `expectedVersion` is refused before anything is read.** Optional optimistic
+concurrency is not optimistic concurrency: a client that omits the field would silently get
+last-write-wins, which is the behaviour the field exists to prevent.
+
+### The auditor refusals, one per mutating endpoint
+
+`ADR-0012 §4` makes `AUDITOR` read-only, and read-only has to mean every mutation rather than the
+memorable ones:
+
+| Endpoint                       | Test                                                            |
+| ------------------------------ | --------------------------------------------------------------- |
+| `POST /alerts/{id}/transition` | "an auditor is refused by the server, not by a disabled button" |
+| `PUT /alerts/{id}/assignment`  | "an auditor cannot assign an alert either"                      |
+| `POST /alerts/{id}/notes`      | "an auditor cannot annotate an alert"                           |
+| `PUT /alerts/{id}/feedback`    | "an auditor cannot record a verdict"                            |
+
+**The note refusal was added to close this gate.** The `@PreAuthorize` was there from the start and
+nothing exercised it, which is the same as not having it: an annotation nobody tests is a claim, and
+this criterion asks for evidence. A note is the quietest thing an auditor could add and the easiest
+guard to drop by accident.
+
+**An auditor can read everything**, including the audit trail and both reports. Read-only describes
+what somebody may do, not what they may see, and an auditor who could not read the history would be a
+contradiction.
+
+### Two deviations from the phase's deliverable list, stated rather than glossed
+
+**"Paginated reporting endpoints" — neither report is paged, deliberately.** The summary is a fixed
+size: six statuses, four priorities and four bands, however many alerts the window holds, so a page
+parameter would be one nobody could use. The export is _capped_ at 10,000 rows and refuses a wider
+window with `413`, because a report somebody opens in a spreadsheet is a file rather than a cursor
+and stitching four pages together in Excel is how a report becomes wrong. Both satisfy the rule the
+pagination requirement exists to enforce — `.claude/rules/java.md`'s "an endpoint whose result grows
+with the dataset is a denial-of-service primitive" — without pretending a cursor is the right shape
+for a download.
+
+**`POST /api/v1/transactions` is still unauthenticated** (ADR-0012 §5). It is a machine-to-machine
+surface whose caller is a payment switch rather than a person, and giving it a credential is Phase 8's
+work. Recorded here because a phase whose gate includes role authorization should say plainly which
+endpoint has none.
+
+### What this gate does not cover
+
+The same limitation the Phase 4 gate names, and for the same reason: `make smoke` has not been run
+since the actuator's closed endpoints began answering 401 rather than 404, and the Testcontainers
+suites and the compose stack are not the same system. Three Phase 4 defects were invisible to a green
+build, and this phase added a fourth kind — a reference collision invisible to a green _local_ build.
+A green gate is evidence about the code under one interleaving, not about the deployment the demo
+runs on. Phase 9's clean-clone check is where that distinction gets its own gate.
 
 ## Acceptance criteria status — Phase 4 gate
 
@@ -1587,19 +1695,22 @@ None.
 
 ## Next three actions
 
-The reporting endpoints are green, documented in `contracts/openapi/`, and open as
-[#52](https://github.com/la3679/sentinelflow/pull/52). Nothing is blocked.
+Phase 5 is complete and closed against its gate. [#52](https://github.com/la3679/sentinelflow/pull/52)
+merged with all ten checks green. Nothing is blocked.
 
-1. **Land [#52](https://github.com/la3679/sentinelflow/pull/52)** — watch the ten required checks,
-   confirm the api job ran the Testcontainers suites on the runner rather than merely compiling them,
-   and merge. A green local run is evidence about this machine.
-2. **Then close Phase 5 against its gate** — every state change audited, invalid and concurrent
-   changes handled, auditor mutations failing as expected, API documented — recording the evidence
-   for each criterion rather than asserting it, the way the Phase 4 gate section does.
-3. **Then run `make smoke` against the compose stack**, which has not been run since the actuator's
-   closed endpoints started answering 401 rather than 404. The script and its PowerShell equivalent
-   were updated to expect it and neither has been executed. The three defects below are the standing
-   reminder that the Testcontainers suites and the compose stack are not the same system.
+1. **Land the Phase 5 gate pull request** from `docs/phase-5-gate`, which carries the gate section,
+   the auditor-note refusal that closes its third criterion, and this file. Documentation only, plus
+   one test.
+2. **Then run `make smoke` against the compose stack**, which has not been run since the actuator's
+   closed endpoints started answering 401 rather than 404 — the script and its PowerShell equivalent
+   were updated to expect it and neither has been executed. Read the notes below first: the local
+   database is on the LOCAL profile and carries the scars of the h2c defect, so `make reset-demo`
+   then `make seed` before reading anything into what the stack shows.
+3. **Then begin Phase 6 — the operations frontend.** Its first decision is ADR-0015 (SSE versus
+   WebSockets), and its gate is "no dead controls · keyboard and accessibility checks pass · the core
+   end-to-end journey passes · Lovable diffs reviewed and merged safely". The typed RTK Query layer
+   replacing `src/mocks/` is the first deliverable, and `.claude/rules/frontend.md` says exactly how
+   small that migration is meant to stay.
 
 ### What an earlier session found by running the stack rather than the suites
 

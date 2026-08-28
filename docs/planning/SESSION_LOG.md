@@ -2041,9 +2041,32 @@ Phase 4.
 
 None.
 
+### Phase 5 closed against its gate
+
+[#52](https://github.com/la3679/sentinelflow/pull/52) merged with all ten checks green, which put
+Phase 5's last deliverable on `main`. The gate section in `PROJECT_STATE.md` records the evidence for
+each of the four criteria rather than asserting them, in the shape the Phase 4 gate uses.
+
+**Closing it found a real gap.** "Auditor mutation attempts fail as expected" had three tests, not
+four: `POST /alerts/{id}/notes` carried a `@PreAuthorize` that nothing exercised. An annotation nobody
+tests is a claim, so the criterion could not honestly be marked pass — the refusal now has a test of
+its own, and a note is the quietest thing an auditor could add and the easiest guard to drop by
+accident.
+
+**Two deviations from the phase's deliverable list are stated rather than glossed.** Neither reporting
+endpoint is paged: the summary is a fixed size whatever the window holds, and the export is capped and
+refuses a wider window with 413, because a report somebody opens in a spreadsheet is a file rather
+than a cursor. Both satisfy what the pagination requirement exists to enforce. And
+`POST /api/v1/transactions` is still unauthenticated (ADR-0012 §5), which a phase whose gate includes
+role authorization should say plainly.
+
+**One gap in the product, recorded rather than hidden.** `alert_actions` reserves
+`PRIORITY_CHANGED` and nothing writes it, because no endpoint changes an alert's priority. V4 is
+merged and immutable, so the constraint keeps a value the application cannot write; removing the enum
+constant would put the enum and the constraint out of step for somebody to rediscover later.
+
 ### Next actions
 
-Recorded in `PROJECT_STATE.md`: land the reporting pull request with the ten required checks green,
-then close Phase 5 against its gate with the evidence for each criterion, then run `make smoke`
-against the compose stack, which has not been run since the actuator's closed endpoints started
-answering 401 rather than 404.
+Recorded in `PROJECT_STATE.md`: land the Phase 5 gate pull request, then run `make smoke` against the
+compose stack — which has not been run since the actuator's closed endpoints started answering 401
+rather than 404 — then begin Phase 6, whose first decision is ADR-0015, SSE versus WebSockets.
