@@ -39,6 +39,6 @@ public class AuthController {
     @PostMapping(path = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
     TokenResponse login(@Valid @RequestBody LoginRequest request) {
         TokenIssuer.IssuedToken issued = logins.login(request.username(), request.password());
-        return TokenResponse.bearer(issued.value(), issued.expiresAt());
+        return TokenResponse.bearer(issued.value(), issued.expiresAt(), issued.roles());
     }
 }

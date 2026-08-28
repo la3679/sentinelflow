@@ -125,6 +125,10 @@ class OperatorAuthenticationIT extends AbstractPostgresTest {
         assertThat(response.get("expiresAt").asString())
                 .as("beside the token, so a client need not decode one to know when to log in again")
                 .isNotBlank();
+        assertThat(response.get("roles").valueStream().map(JsonNode::asString).toList())
+                .as("beside the token for the same reason, so a console can decide which controls "
+                        + "to offer without reading a structure this service is free to change")
+                .containsExactly("ANALYST");
 
         // Decoded with the application's own decoder, which is the assertion
         // that matters: a token this service signs and cannot verify would be
@@ -147,6 +151,19 @@ class OperatorAuthenticationIT extends AbstractPostgresTest {
                 .asString());
 
         assertThat(token.getClaimAsStringList("roles")).containsExactly("ADMINISTRATOR");
+    }
+
+    @Test
+    @DisplayName("the roles in the response are the roles in the token, not a second reading of them")
+    void theResponseAndTheTokenAgreeOnTheRoles() {
+        JsonNode response = MAPPER.readTree(login(AUDITOR, PASSWORD, 200));
+
+        // The audit trail records the role from the token; the console offers
+        // controls from the response. If the two could disagree, an operator
+        // would be shown an action attributed to a capacity they were not
+        // exercising, so this asserts they come from one reading.
+        assertThat(response.get("roles").valueStream().map(JsonNode::asString).toList())
+                .isEqualTo(decoder.decode(response.get("token").asString()).getClaimAsStringList("roles"));
     }
 
     // ----------------------------------------------------------------------- //

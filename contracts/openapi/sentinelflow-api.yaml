@@ -1009,7 +1009,24 @@ components:
             When the token stops working, beside it so a client need not decode
             the token to find out. A client that parsed it for the claim would
             be reading a structure this service is free to change.
-      required: [token, tokenType, expiresAt]
+        roles:
+          type: array
+          description: |
+            The roles held **at login**, beside the token for the same reason
+            the expiry is, and for one purpose only: a console decides which
+            controls to *offer* from them. That is a user-experience affordance
+            and never an authorization decision, which this API keeps.
+
+            Without this field a client's only options are to decode the token
+            — the structure the expiry's description says not to read — or to
+            attempt every action and collect the refusals.
+
+            `SYSTEM` never appears here: the system principal has no credential
+            and the login path refuses the role besides.
+          items:
+            type: string
+            enum: [ANALYST, ADMINISTRATOR, AUDITOR]
+      required: [token, tokenType, expiresAt, roles]
       additionalProperties: false
 
     TransactionRequest:
