@@ -300,8 +300,15 @@ curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: appli
 The token lasts thirty minutes and cannot be revoked before it expires, which is the trade
 [ADR-0012](docs/adr/0012-operator-authentication.md) takes for keeping the API stateless.
 
-The console's sign-in screen is still **presentational only** — it is not yet wired to this
-endpoint, which is Phase 6's work, and it says so on screen.
+**The console signs in against that same endpoint.** It holds the token in memory for the tab and
+writes nothing to browser storage, so a reload signs you out — the honest consequence of there
+being no refresh token. Roles come from the login response and decide which controls are offered;
+every authorization decision is still the API's, made from the token.
+
+The console and the API are separate origins, so the API answers a browser only from the origins in
+`SENTINELFLOW_CORS_ALLOWED_ORIGINS`
+([ADR-0013](docs/adr/0013-console-to-api-cross-origin-access.md)). If you change `API_PORT` or
+`WEB_PORT`, change `VITE_API_BASE_URL` and that list to match.
 
 Every variable is documented in [`.env.example`](.env.example) with its default, whether it is
 required, whether it is sensitive, and which component reads it.

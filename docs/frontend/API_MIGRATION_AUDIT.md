@@ -1,6 +1,12 @@
 # API migration audit — what the console asks for, and what the API answers
 
-**Audited:** 2026-08-28 · **Auditor:** Claude · **Opens:** Phase 6 · **Status:** open
+**Audited:** 2026-08-28 · **Auditor:** Claude · **Opens:** Phase 6 · **Status:** open — piece 1
+of 4 done
+
+> **Progress.** Piece 1 (transport and authentication) landed on 2026-08-28, along with the
+> first of piece 3's two API additions (legal targets on the alert). Pieces 2 and 4, and the
+> assignee-name decision, are open. Each section below still describes what was found; the
+> plan at the end records what is done.
 
 Phase 6's first deliverable is "typed RTK Query API layer replacing the Lovable mock fixtures".
 [`AGENTS.md`](../../AGENTS.md) describes that migration as "limited to replacing `mockBaseQuery`
@@ -177,14 +183,21 @@ actor.
 The migration is four pieces of work, not one, and only the first is what `AGENTS.md` describes:
 
 1. **Transport and authentication** — `fetchBaseQuery`, the login flow, the bearer header, `401`
-   handling. Prerequisite for everything else.
+   handling. Prerequisite for everything else. **Done, 2026-08-28.** `src/api/transport.ts` carries
+   the bearer token and maps RFC 9457 to one error shape; `sessionSlice` holds the token in memory;
+   the role selector and `demoOperatorSlice` are gone. Two things the work added that this audit did
+   not anticipate: the API had no CORS configuration at all, which
+   [ADR-0013](../adr/0013-console-to-api-cross-origin-access.md) now decides, and `TokenResponse`
+   grew `roles` so the console need not decode the token to learn them.
 2. **Types and mapping** — `domain/types.ts` rewritten against the contract: real enums, the
    reference/identifier pair, `version`, `SYSTEM` as a role, and the removal of `ALLOWED_TRANSITIONS`
-   and the client-supplied `actor`.
-3. **Two small API additions**, each needing its own decision: legal targets on `GET /alerts/{id}`,
-   and whatever resolves an `assigneeId` to a name.
+   and the client-supplied `actor`. **Open, and next.**
+3. **Two small API additions**, each needing its own decision: legal targets on `GET /alerts/{id}`
+   — **done**, merged as [#57](https://github.com/la3679/sentinelflow/pull/57) — and whatever
+   resolves an `assigneeId` to a name, which is still undecided.
 4. **The four invented endpoints** — for each, decide between an API addition and a client-side
    composition, and record it. The overview screen is the one that matters; it is the landing page.
+   **Open.**
 
 **Nothing here is a defect in the Phase 0 frontend.** It was scoped as a presentational foundation
 against fixtures and it is exactly that. The divergence is what always happens when a mock is

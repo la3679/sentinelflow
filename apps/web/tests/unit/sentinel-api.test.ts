@@ -6,8 +6,13 @@ import { makeStore } from "@/store";
 import { ALERT_STATUSES, RISK_BANDS } from "@/domain/types";
 
 describe("RTK Query data access", () => {
-  it("defaults to the /api/v1 base URL from the environment", () => {
-    expect(API_BASE_URL).toBe("/api/v1");
+  it("points at the API's own origin, not at a path on the console's", () => {
+    // ADR-0013: the two are separate origins. A relative base resolves against
+    // the console's own static-file server, which answers a path it does not
+    // serve with the application shell - a 200 the client then tries to parse
+    // as JSON, which is a worse failure than a 404.
+    expect(API_BASE_URL).toMatch(/^https?:\/\//);
+    expect(API_BASE_URL.endsWith("/api/v1")).toBe(true);
     expect(USING_MOCK_DATA).toBe(true);
   });
 

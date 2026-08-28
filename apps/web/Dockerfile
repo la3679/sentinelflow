@@ -23,6 +23,18 @@ RUN bun install --frozen-lockfile
 
 COPY apps/web/ apps/web/
 WORKDIR /build/apps/web
+
+# Where the built console will send its requests. Vite inlines VITE_* at build
+# time, so this is a build argument and not a runtime one: the value ends up in
+# the bundle the browser downloads, and changing it means rebuilding this image.
+#
+# The default is the host's published API port, because the request is made by a
+# browser on the host - http://api:8080 is a name only another container can
+# resolve. The API must list this image's own origin in
+# SENTINELFLOW_CORS_ALLOWED_ORIGINS (ADR-0013).
+ARG VITE_API_BASE_URL=http://localhost:8080/api/v1
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+
 RUN bun run build
 
 # ---------------------------------------------------------------------------

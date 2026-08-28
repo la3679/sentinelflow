@@ -60,6 +60,7 @@ public class TokenIssuer {
      */
     public IssuedToken issue(UUID userId, List<RoleCode> roles, Instant issuedAt) {
         Instant expiresAt = issuedAt.plus(properties.expiry());
+        List<RoleCode> held = List.copyOf(roles);
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(properties.issuer())
@@ -68,7 +69,7 @@ public class TokenIssuer {
                 .expiresAt(expiresAt)
                 .claim(
                         SecurityConfiguration.ROLES_CLAIM,
-                        roles.stream().map(RoleCode::name).toList())
+                        held.stream().map(RoleCode::name).toList())
                 .build();
 
         // The algorithm is stated rather than left to the encoder's default.
@@ -77,15 +78,23 @@ public class TokenIssuer {
                         JwsHeader.with(MacAlgorithm.HS256).build(), claims))
                 .getTokenValue();
 
-        return new IssuedToken(value, expiresAt);
+        return new IssuedToken(value, expiresAt, held);
     }
 
     /**
-     * A token and when it stops working.
+     * A token, when it stops working, and what it authorizes.
      *
-     * <p>The expiry travels beside it so a client need not decode the token to know when to log in
-     * again. A client that parsed the token to find out would be reading a structure this service
-     * is free to change.
+     * <p>The expiry and the roles travel beside the token rather than only inside it, so a client
+     * need decode nothing to know when to log in again or which controls to offer. A client that
+     * parsed the token for either would be reading a structure this service is free to change.
+     *
+     * <p>The roles are the same list that went into the claim, taken from the same call rather than
+     * read again — two reads could disagree, and the one the audit trail would record is the one
+     * inside the token.
      */
-    public record IssuedToken(String value, Instant expiresAt) {}
+    public record IssuedToken(String value, Instant expiresAt, List<RoleCode> roles) {
+        public IssuedToken {
+            roles = List.copyOf(roles);
+        }
+    }
 }

@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.security;
 
+import java.util.List;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -11,6 +14,11 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import io.github.la3679.sentinelflow.api.web.CorrelationIdFilter;
 
 /**
  * Who may reach what (ADR-0012 §4, §5).
@@ -49,6 +57,18 @@ import org.springframework.security.web.SecurityFilterChain;
  * Without it every role check silently fails closed — every operator gets a 403, which reads like an
  * authorization defect and is a naming one.
  *
+ * <h2>Cross-origin, by an allow-list, for the API path only</h2>
+ *
+ * The console is a separate origin (ADR-0002, ADR-0012 §1) and a browser will not let it read a
+ * response from this one without being told it may. ADR-0013 names the origins explicitly rather
+ * than by wildcard or pattern, allows no credentials — the token travels in an
+ * {@code Authorization} header the console sets itself, and nothing here authenticates from a
+ * cookie — and registers the rule under {@code /api/v1/**} only, because {@code /actuator/**} is not
+ * a browser surface.
+ *
+ * <p>None of that is an authorization control. It constrains what a page may read; {@code curl} and
+ * every server-side client are unaffected and still meet {@code anyRequest().authenticated()}.
+ *
  * <h2>Only in a web application</h2>
  *
  * A filter chain needs a servlet container to sit in, and the schema tests run this context with no
@@ -65,14 +85,17 @@ import org.springframework.security.web.SecurityFilterChain;
 public class WebSecurityConfiguration {
 
     private final ProblemAccessHandlers problems;
+    private final CorsProperties cors;
 
-    public WebSecurityConfiguration(ProblemAccessHandlers problems) {
+    public WebSecurityConfiguration(ProblemAccessHandlers problems, CorsProperties cors) {
         this.problems = problems;
+        this.cors = cors;
     }
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        return http.csrf(csrf -> csrf.disable())
+        return http.cors(c -> c.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests.requestMatchers(HttpMethod.POST, "/api/v1/auth/login")
                         .permitAll()
@@ -111,6 +134,34 @@ public class WebSecurityConfiguration {
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .build();
+    }
+
+    /**
+     * The allow-list, on the API path and nowhere else (ADR-0013 §1, §4, §5).
+     *
+     * <p>A preflight asks whether a method and a header would be accepted, so both are named. The
+     * {@code Authorization} header is the whole point — without it listed, every authenticated
+     * request from the console fails the preflight while an anonymous one succeeds, which reads like
+     * a token problem and is a configuration one.
+     *
+     * <p>{@code allowCredentials} is left false deliberately. Turning it on would permit the ambient
+     * cookie flow this design does not use, and would make the disabled CSRF filter above wrong.
+     */
+    private CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(cors.allowedOrigins());
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(
+                List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, CorrelationIdFilter.HEADER));
+        // The correlation identifier comes back on every response and ties it to
+        // its log line and span. Unexposed, script cannot read it, and the one
+        // value a person reporting a failure should quote is invisible to them.
+        configuration.setExposedHeaders(List.of(CorrelationIdFilter.HEADER));
+        configuration.setMaxAge(CorsProperties.PREFLIGHT_MAX_AGE_SECONDS);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/v1/**", configuration);
+        return source;
     }
 
     private static JwtAuthenticationConverter converter() {

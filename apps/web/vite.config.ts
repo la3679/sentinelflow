@@ -31,4 +31,17 @@ export default defineConfig({
   },
   // No Nitro server bundle: the deployable artifact is static files only.
   nitro: false,
+  vite: {
+    server: {
+      // The wrapper defaults the dev server to 8080, which is the port
+      // compose.yaml publishes the *API* on. Nothing collided while the console
+      // read from its own mock layer; now that it makes real requests,
+      // `make up && bun run dev` would be a console and an API fighting over
+      // one port - and Vite would quietly take another, changing the origin the
+      // API was told to expect. ADR-0013 section 2 pins it one above the
+      // compose console instead.
+      port: 5174,
+      strictPort: true,
+    },
+  },
 });

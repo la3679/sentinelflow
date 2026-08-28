@@ -396,6 +396,19 @@ sentinelflow:
       # The iss claim, checked on the way back in. Without it a token signed for
       # another environment with the same secret would verify here.
       issuer: ${SENTINELFLOW_JWT_ISSUER:sentinelflow-api}
+    cors:
+      # Which web origins a browser may let read this API (ADR-0013). This one
+      # DOES default where the JWT secret does not: a default secret is a
+      # credential everybody has, while a default origin list grants nothing to
+      # anybody who cannot already reach this machine's loopback interface - and
+      # a demo that will not start until an unguessable variable is set is a
+      # demo nobody runs.
+      #
+      # The two entries are the compose console (WEB_PORT, published on 5173)
+      # and the Vite dev server (5174, moved off 8080 where it collided with
+      # this service). Comma-separated; every entry is validated at startup, and
+      # "*" is refused with a message saying why.
+      allowed-origins: ${SENTINELFLOW_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
 
 server:
   port: ${SENTINELFLOW_API_PORT:8080}

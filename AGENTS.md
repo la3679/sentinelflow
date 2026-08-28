@@ -39,15 +39,27 @@ in `apps/web/`.
 Role handling in this console (`ANALYST`, `ADMINISTRATOR`, `AUDITOR`) is a
 user-experience affordance only — never treat it as a security boundary.
 
-## Mock data layer
+## Mock data layer, and what is left of it
 
-`apps/web/src/mocks/` is a **temporary** deterministic fixture layer. It exists so the
-console runs with no backend and will be deleted once the real client is wired
-up. RTK Query endpoints in `apps/web/src/api/sentinelApi.ts` already declare real
-`/api/v1` request descriptors, so the migration is limited to replacing
-`mockBaseQuery` with `fetchBaseQuery({ baseUrl: API_BASE_URL })`.
+`apps/web/src/mocks/` is a **temporary** deterministic fixture layer, now about
+half retired. An earlier version of this file said the migration was "limited to
+replacing `mockBaseQuery` with `fetchBaseQuery`";
+[`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)
+checked that endpoint by endpoint and found it is four pieces of work, not one.
+**The audit is the authoritative list.**
 
-`API_BASE_URL` comes from `VITE_API_BASE_URL` and defaults to `/api/v1`.
+`apps/web/src/api/transport.ts` is the real transport. An endpoint marked
+`transport: "mock"` in `sentinelApi.ts` is one with no server counterpart yet;
+one without it goes over HTTP with the operator's bearer token attached. The
+marker is per endpoint on purpose — the console is genuinely half-migrated, and
+a single flag would have to lie about one half or the other.
+
+`API_BASE_URL` comes from `VITE_API_BASE_URL` and defaults to
+`http://localhost:8080/api/v1`. It is **absolute**, because the console and the
+API are separate origins ([ADR-0013](docs/adr/0013-console-to-api-cross-origin-access.md));
+whatever it points at must list the console's origin in
+`SENTINELFLOW_CORS_ALLOWED_ORIGINS`. Vite inlines it at build time, so changing
+it means rebuilding.
 
 ## Conventions
 

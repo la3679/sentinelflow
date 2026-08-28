@@ -2145,3 +2145,108 @@ Recorded in `PROJECT_STATE.md`: the transport and the real authentication flow, 
 the deletion of `ALLOWED_TRANSITIONS`, then a decision per invented endpoint starting with the
 overview. Separately and blocking nothing, `make reset-demo` then `make seed` is the user's to run —
 the demo database predates alert creation and holds zero alerts.
+
+---
+
+## Session 18 — 2026-08-28 — the console starts calling the API, and signing in to do it
+
+| Field           | Value                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-28T15:40Z / 2026-08-28T16:35Z                                                 |
+| Starting SHA    | `1efa702` on `main`                                                                   |
+| Ending SHA      | `360167b` on `feat/web-transport-and-auth`                                            |
+| Objective       | Phase 6, piece 1 of the API migration: the transport and the real authentication flow |
+
+Resumed from `PROJECT_STATE.md`'s first next action. Nothing was redone: the audit and the alert's
+legal targets were already merged, `main` was clean and level with the remote, and all five checks
+on `1efa702` were green.
+
+### The migration's first piece, and the two questions it turned out to depend on
+
+The audit had described piece 1 as "`fetchBaseQuery`, the login flow, the bearer header, `401`
+handling". Two of its prerequisites were not in that list and neither is a detail.
+
+**The API had no CORS configuration at all.** Not a weak one — none. The console had never made a
+request, so nothing had ever had to answer how a browser is permitted to make one across the origin
+boundary ADR-0002 created and ADR-0012 §1 leans on when it rejects cookie sessions.
+[ADR-0013](../adr/0013-console-to-api-cross-origin-access.md) decides it: an explicit allow-list
+from `SENTINELFLOW_CORS_ALLOWED_ORIGINS`, registered for `/api/v1/**` only, no wildcard, no
+credentials, preflights cached for an hour.
+
+**Proxying `/api/v1` through the console's nginx was the tempting alternative and was rejected.** It
+needs no CORS at all, which is exactly why it is worth naming: it makes the two services one origin
+as far as any browser is concerned, quietly removing the premise ADR-0012 rests on, and it puts API
+routing in a container whose job is serving static files.
+
+**`TokenResponse` grew `roles`.** The audit said "roles read from the token"; the contract's own
+`expiresAt` description says a client that parsed the token would be reading a structure the service
+is free to change. Both cannot be right. Sending the roles beside the token — from the same
+`TokenIssuer.issue` call that puts them in the claim — is the form that satisfies each. A test
+asserts the response and the claim are equal, because if they could disagree an operator would be
+offered a control under one capacity and audited under another.
+
+### Three defects, each invisible until the console made a request
+
+- **The Vite dev server defaulted to port 8080**, which is the port `compose.yaml` publishes the API
+  on. Harmless for as long as the console called nothing; the moment it does, `make up && bun run
+dev` is two servers fighting over one port, and Vite quietly takes another — changing the origin
+  the API was told to expect. Pinned to 5174, `strictPort`.
+- **`API_BASE_URL` defaulted to the relative `/api/v1`.** Against the console's own nginx that
+  resolves to a path it does not serve, so `try_files` answers with the SPA shell and a `200` the
+  client then tries to parse as JSON. A 404 would have been the kinder failure. It is absolute now,
+  and a build argument, because Vite inlines `VITE_*` rather than reading it at runtime.
+- **The `/forbidden` screen told operators to "switch the simulated role in the header".** That
+  control is exactly what this change removes. Phase 6's gate is "no dead controls" and dead copy is
+  the same failure one layer up.
+
+### Four e2e tests had been passing by accident of a full page load
+
+The suite now stubs the API at the network boundary — CI has no backend, and stubbing there is what
+exercises the real transport, the real bearer header and the real `401` rather than a fixture
+pretending to be them.
+
+Four tests then failed, and every one of them was the test rather than the console. Two keyboard
+tests assumed the tab order started at the top of the document, which is only true after a fresh
+load; signing in ends with a click. Two timing tests read the DOM in the gap between the URL
+changing and React committing the new tree, so they were driving the sign-in screen while believing
+they were somewhere else. `signIn` now waits for the signed-in shell, and the keyboard tests clear
+focus rather than reloading — a reload would sign the operator out, which is the design.
+
+### The redirect sent operators back where they came from
+
+`RequireSession` read `location.pathname` inside its effect, so after redirecting to `/login` the
+effect re-ran against the new location and redirected again with `next=/login`. The intended path is
+captured once, on the way in. Two navigations racing on sign-out had the same shape and the same
+fix: the button drops the session and lets the gate do the navigating.
+
+### Tests and results
+
+| Check                                              | Result                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `bun run verify` (apps/web)                        | **PASS** — lint clean, typecheck clean, 38 unit tests in 6 files, build built |
+| `bun run test:e2e` (apps/web)                      | **PASS** — 68 tests, desktop and tablet, axe clean on all eight routes        |
+| `./mvnw verify -Dit.test=OperatorAuthenticationIT` | **PASS** — 12 integration tests, JDK 25.0.4.1+1                               |
+| `./mvnw test -Dtest=CorsPropertiesTests`           | **PASS** — 9 unit tests                                                       |
+
+`apps/api`'s full suite was **not** re-run: only the two suites this change touches were. The last
+full figure remains the one recorded against `9580a96` above. CI on
+[#59](https://github.com/la3679/sentinelflow/pull/59) is what will run everything.
+
+### Things worth keeping
+
+- **A migration's first piece is where its unstated prerequisites surface.** Neither CORS nor the
+  roles-in-the-response question appears in an audit that was thorough about endpoints, because both
+  are properties of the connection rather than of any endpoint.
+- **Three of this session's defects were latent for weeks and all three needed one thing to appear:
+  a real request.** A console that has never called anything cannot have a wrong base URL, a port
+  conflict, or a missing CORS rule — it can only have all three waiting.
+- **`transport: "mock"` per endpoint rather than a global flag.** The console is genuinely
+  half-migrated and will be for two more pieces of work. One switch would have to claim it is
+  entirely one thing or the other, and whichever it claimed would be a lie about four screens.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: merge #59 once green, then the types and the deletion of
+`ALLOWED_TRANSITIONS` — where the `409` is the real work rather than the renames — then a decision
+per invented endpoint starting with the overview. Separately and blocking nothing, `make reset-demo`
+then `make seed` is still the user's to run.

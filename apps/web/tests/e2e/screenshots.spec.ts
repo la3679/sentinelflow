@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 /**
  * Captures the screenshots the README uses.
@@ -23,8 +23,12 @@ const SHOTS = [
 
 test.describe("README screenshots", () => {
   for (const shot of SHOTS) {
-    test(`capture ${shot.name}`, async ({ page }) => {
-      await page.goto(shot.path);
+    test(`capture ${shot.name}`, async ({ page, api, signIn }) => {
+      void api;
+      // Both screens are behind the session gate now, so the capture signs in
+      // against the same stubbed API the e2e suite uses. No real backend is
+      // involved and no real credential exists.
+      await signIn(page, shot.path);
 
       // Wait for the real heading rather than a fixed timeout, so a slow
       // machine produces the same image as a fast one instead of a blank one.

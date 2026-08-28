@@ -32,14 +32,14 @@ import {
   formatMoney,
   ROLE_LABELS,
 } from "@/domain/labels";
-import { ALLOWED_TRANSITIONS, canMutate, type AlertDetail } from "@/domain/types";
+import { ALLOWED_TRANSITIONS, type AlertDetail } from "@/domain/types";
 import {
   useAddAlertNoteMutation,
   useAssignAlertMutation,
   useGetAlertQuery,
   useTransitionAlertMutation,
 } from "@/api/sentinelApi";
-import { useDemoOperator } from "@/store";
+import { principalRole, sessionCanMutate, useSession } from "@/store";
 
 export const Route = createFileRoute("/alerts/$alertId")({
   head: ({ params }) => ({
@@ -101,8 +101,15 @@ function AlertDetailPage() {
 }
 
 function AlertWorkspace({ alert }: { alert: AlertDetail }) {
-  const operator = useDemoOperator();
-  const mutable = canMutate(operator.role);
+  const session = useSession();
+  // The actor is the token's `sub` and this console does not send one. The
+  // username is what the operator typed and is only shown, never submitted -
+  // a client that names its own actor is a forgeable audit trail. The mock
+  // transport still takes the field; removing it is the contract migration's,
+  // not this one's.
+  const operatorName = session.username ?? "unknown";
+  const role = principalRole(session.roles);
+  const mutable = sessionCanMutate(session.roles);
   const [assignAlert, assignState] = useAssignAlertMutation();
   const [transitionAlert, transitionState] = useTransitionAlertMutation();
   const [addNote, noteState] = useAddAlertNoteMutation();
@@ -121,7 +128,7 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
     await addNote({
       alertId: alert.alertId,
       body: values.body,
-      actor: operator.operatorId,
+      actor: operatorName,
     }).unwrap();
     reset({ body: "" });
   };
@@ -248,10 +255,10 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel
           title="Case actions"
-          description={`Acting as ${operator.operatorId} — ${ROLE_LABELS[operator.role]}.`}
+          description={`Acting as ${operatorName}${role ? ` — ${ROLE_LABELS[role]}` : ""}.`}
           bodyClassName="space-y-4 p-4"
         >
-          <ReadOnlyNotice role={operator.role} />
+          <ReadOnlyNotice role={role} />
 
           <div className="space-y-2">
             <Label htmlFor="assignee">Assignee</Label>
@@ -262,7 +269,7 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
                 void assignAlert({
                   alertId: alert.alertId,
                   assignee: value,
-                  actor: operator.operatorId,
+                  actor: operatorName,
                 });
               }}
             >
@@ -300,7 +307,7 @@ function AlertWorkspace({ alert }: { alert: AlertDetail }) {
                       void transitionAlert({
                         alertId: alert.alertId,
                         status: next,
-                        actor: operator.operatorId,
+                        actor: operatorName,
                       });
                     }}
                   >

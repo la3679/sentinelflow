@@ -1,20 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 
 /**
- * Scope guard for the Phase 0 foundation.
+ * The token is a credential, and it lives in memory or nowhere.
  *
- * Nothing in the console may persist operator state to the browser. If a future
- * change reintroduces it, this fails rather than silently shipping a
- * pseudo-authenticated session.
+ * `.claude/rules/frontend.md` forbids session or authorization state in browser
+ * storage. This was a scope guard while the console had no session at all; now
+ * that it holds a real bearer token it is the thing that stops a reload-survives
+ * convenience from becoming a credential on disk. A reload signing the operator
+ * out is the intended consequence, not a defect to work around.
  */
 describe("browser storage", () => {
-  it("is never written by the store or the mock transport", async () => {
+  it("is not written when a real session is established", async () => {
     const localSet = vi.spyOn(Storage.prototype, "setItem");
 
-    const { makeStore, setDemoOperator } = await import("@/store");
+    const { makeStore, signedIn } = await import("@/store");
     const store = makeStore();
-    store.dispatch(setDemoOperator({ operatorId: "analyst.a1", role: "ANALYST" }));
+    store.dispatch(
+      signedIn({
+        username: "analyst.one",
+        token: "a.jwt.value",
+        tokenType: "Bearer",
+        expiresAt: "2026-08-28T20:00:00Z",
+        roles: ["ANALYST"],
+      }),
+    );
 
+    expect(store.getState().session.token).toBe("a.jwt.value");
     expect(localSet).not.toHaveBeenCalled();
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
