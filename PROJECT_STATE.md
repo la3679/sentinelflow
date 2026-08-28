@@ -14,7 +14,7 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T14:40Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T15:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — Phase 5; reporting green and documented, open as a pull request                                                                         |
 | Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
@@ -1121,7 +1121,7 @@ Every suite, on `feat/alert-reporting` at `e7cc4ba`, under `JAVA_HOME=~/.jdks/jd
 
 | Command                                         | Result                                                   |
 | ----------------------------------------------- | -------------------------------------------------------- |
-| `mvnw -B verify` (api, unit)                    | **203 passed**, 0 failures, 0 errors, 0 skipped          |
+| `mvnw -B verify` (api, unit)                    | **189 passed**, 0 failures, 0 errors, 0 skipped          |
 | `mvnw -B verify` (api, Testcontainers)          | **250 passed**, 0 failures, 0 errors, 0 skipped          |
 | JaCoCo gate (LINE 0.80, BRANCH 0.70)            | **met** — line 0.8972, branch 0.7945, instruction 0.9080 |
 | `bun run test` (web)                            | **24 passed**, 5 files                                   |
@@ -1142,6 +1142,11 @@ faked with a lowered constant, since a cap the test moves is not the cap that sh
 
 **The 250 was 248 before CI found a defect the local run could not.** See below; the two extra
 tests are `ReferenceAllocationIT`.
+
+**Both figures are the build's own `Results:` line**, and the runner printed the same two — 189 and 250. An earlier draft of this section said 203 unit tests, summed from the JUnit XML files, which
+counts a `@Nested` class's cases in both the container's file and its own. The console figure is the
+one to quote, because it is the one CI reports and the one a reader reproduces by running the
+command.
 
 **Not run this session:** `make smoke`, `make test-e2e`, and the compose stack. The standing note
 below about the actuator's 401 still applies.

@@ -1985,7 +1985,7 @@ every cell is neutralised against formula injection.
 
 Every suite, at `68e019f`, under `JAVA_HOME=~/.jdks/jdk-25.0.4.1+1`:
 
-api **203 unit** and **250 integration** passed, 0 failures · JaCoCo gate met (line 0.8972,
+api **189 unit** and **250 integration** passed, 0 failures · JaCoCo gate met (line 0.8972,
 branch 0.7945, instruction 0.9080) · web Vitest **24/24** · scoring pytest **169 passed** ·
 `ruff check` clean · `mypy` no issues in 42 files · `spotless:check` 221 files clean ·
 `eslint` 0 errors, 23 pre-existing warnings · `check-contracts.mjs` all passed ·
@@ -2002,9 +2002,12 @@ test moves is not the cap that ships.
   `release version 25 not supported` from the compiler plugin rather than anything naming a JDK.
   Already recorded in ADR-0003 and in `PROJECT_STATE.md`'s known issues; recorded again here because
   it costs a build every session that forgets it.
-- **The build's own `Tests run:` line and the per-class report files disagree**, because a
-  `@TestFactory` container counts as one in the `.txt` summary and as its children on the console.
-  The figures above are parsed from the JUnit XML, which counts each test once.
+- **The build's own `Results:` line and the JUnit XML files disagree**, and the console is the one
+  to quote. Summing the XML gives 203 unit tests where the console says 189, because a `@Nested`
+  class's cases appear in the container's file as well as its own. This was caught by comparing the
+  local figure against the runner's: CI printed 189, which is also what
+  `mvnw verify -DskipITs` prints locally. A number nobody else can reproduce by running the command
+  is not evidence, whatever it was derived from.
 
 ### CI found a defect two green local runs could not
 
