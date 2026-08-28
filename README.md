@@ -78,10 +78,12 @@ demonstrates the failure behaviour rather than describing it: it stops the scori
 assessments degrade to the rules alone, restarts it, and shows them scored again.
 
 An assessment that bands at or above the alerting threshold now opens an alert, its first history
-row and its `alert.created` event in the same transaction, and an analyst moves it through the
-investigation state machine over an authenticated endpoint. Logging in exchanges a password for a
-short-lived bearer token ([ADR-0012](docs/adr/0012-operator-authentication.md)); an auditor's
-token is refused by the server on every mutation, which is where that boundary belongs.
+row and its `alert.created` event in the same transaction. From there an analyst reads the queue,
+picks an alert up, assigns it, annotates it, moves it through the investigation state machine and
+records a verdict on the decision behind it — every one of those audited with the actor and the
+moment, and every mutation checked against a concurrent one. Logging in exchanges a password for a
+short-lived bearer token ([ADR-0012](docs/adr/0012-operator-authentication.md)); an auditor reads
+everything and is refused by the server on every mutation, which is where that boundary belongs.
 
 **One consequence worth knowing about the alerting rule.** Because the final score is floored by the
 rule score, a transaction that trips no transparent indicator cannot reach the alerting band however
@@ -89,9 +91,9 @@ confident the model is. That is a stated policy rather than an accident —
 [ADR-0011 §4](docs/adr/0011-risk-banding-and-the-final-score.md) writes out the arithmetic, why it is
 wanted, and what it costs.
 
-**What does not run yet:** assignment, notes, analyst feedback and the reporting endpoints. There
-are no read endpoints for alerts either, which is why the console still renders from a mock fixture
-layer — that is Phase 6.
+**What does not run yet:** the reporting endpoints and the CSV export, which are the last of
+Phase 5. The console still renders from a mock fixture layer rather than from these endpoints; that
+is Phase 6.
 
 Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 

@@ -16,17 +16,21 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import io.github.la3679.sentinelflow.api.security.OperatorLoginService.InvalidCredentialsException;
+import io.github.la3679.sentinelflow.api.service.exception.AlertClosedException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertNotFoundException;
 import io.github.la3679.sentinelflow.api.service.exception.AlertVersionConflictException;
 import io.github.la3679.sentinelflow.api.service.exception.IdempotencyConflictException;
 import io.github.la3679.sentinelflow.api.service.exception.IllegalAlertTransitionException;
 import io.github.la3679.sentinelflow.api.service.exception.InsufficientRoleException;
+import io.github.la3679.sentinelflow.api.service.exception.InvalidAssigneeException;
 import io.github.la3679.sentinelflow.api.service.exception.UnknownReferenceException;
 
 /**
@@ -207,6 +211,72 @@ public class ApiExceptionHandler {
                 "Insufficient role",
                 "This operation requires the " + exception.required() + " role.",
                 request);
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    ProblemDetail onParameterValidationFailure(HandlerMethodValidationException exception, HttpServletRequest request) {
+        // Constraints on method parameters - a page size above the cap, a
+        // negative page - rather than on a request body. Without this they reach
+        // the catch-all below and a client asking for 500 rows gets a 500 status
+        // to match, which is the wrong answer to a request that is simply too
+        // large.
+        //
+        // The same 422 and the same shape as a body validation failure, because
+        // from a caller's side they are the same thing: the request was
+        // understood and a value in it is not allowed.
+        ProblemDetail problem = problem(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "validation-failed",
+                "Validation failed",
+                "One or more parameters are invalid. See errors.",
+                request);
+
+        // getParameterValidationResults rather than the visitor interface: the
+        // visitor has a method per parameter kind - query parameter, path
+        // variable, request part - and would have to implement every one of them
+        // to say the same thing about each. (It is getAllValidationResults in
+        // Spring 6; this module is on 7.)
+        List<FieldProblem> errors = new ArrayList<>();
+        for (ParameterValidationResult result : exception.getParameterValidationResults()) {
+            String name = result.getMethodParameter().getParameterName();
+            result.getResolvableErrors()
+                    .forEach(error ->
+                            errors.add(new FieldProblem(name == null ? "parameter" : name, error.getDefaultMessage())));
+        }
+        errors.sort(Comparator.comparing(FieldProblem::field));
+        problem.setProperty("errors", errors);
+        return problem;
+    }
+
+    @ExceptionHandler(AlertClosedException.class)
+    ProblemDetail onAlertClosed(AlertClosedException exception, HttpServletRequest request) {
+        // 409 for the same reason an illegal transition is one: the request is
+        // well formed and the state refuses it. An assignee on a closed alert
+        // would sit in "what is on this analyst's desk" for ever, and a note
+        // added after a disposition reads as though it informed one.
+        ProblemDetail problem = problem(
+                HttpStatus.CONFLICT,
+                "alert-closed",
+                "The investigation is over",
+                "This alert is " + exception.status() + ", and that operation only applies while it is open.",
+                request);
+        problem.setProperty("currentStatus", exception.status().name());
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidAssigneeException.class)
+    ProblemDetail onInvalidAssignee(InvalidAssigneeException exception, HttpServletRequest request) {
+        // 422, like every other well-formed request naming something that
+        // cannot be used. The message says a user cannot be assigned work and
+        // never which users exist.
+        ProblemDetail problem = problem(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "invalid-assignee",
+                "Cannot be assigned",
+                "That user cannot be given an alert to work.",
+                request);
+        problem.setProperty("errors", List.of(new FieldProblem("assigneeId", "Cannot be assigned an alert")));
+        return problem;
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

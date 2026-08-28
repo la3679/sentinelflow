@@ -1854,3 +1854,55 @@ None.
 Recorded in `PROJECT_STATE.md`: merge #50, then assignment, notes and analyst feedback, then the
 reporting endpoints and the CSV export. And `make smoke` on a machine with the stack up, because the
 actuator's answer changed and no script has been run against it.
+
+---
+
+## Session 16, continued — 2026-08-28 — assignment, notes, feedback, and the queue
+
+Two commits on `feat/alert-assignment-and-notes`, opened as
+[#51](https://github.com/la3679/sentinelflow/pull/51) after
+[#50](https://github.com/la3679/sentinelflow/pull/50) merged with all ten checks green.
+
+### Three decisions that took longer to settle than to write
+
+**A note takes no version and publishes no event.** The version was the interesting half: every
+other operation replaces something, and a note is appended, so two analysts writing one at the same
+time both succeed and both are kept. Demanding `expectedVersion` would refuse the second for no
+reason a user could act on. Not publishing followed from the same look at the payload —
+`alert-updated.v1.json` requires the version _after_ the change and has no field for the text, so a
+note would either repeat the previous event's version or announce that something exists without
+saying what. The stronger argument is the one about audience: an analyst's own words belong on a
+detail page somebody opened, not on a topic that leaves the service, which is exactly the rule
+`AlertRaiser` already follows when it builds a summary from a reason code.
+
+**Feedback belongs to the assessment, not the alert.** Rescoring writes a new assessment rather than
+editing one, so a label attached to the alert would silently follow a decision it was never given
+about — and the value of these rows is that they label the features of one scored transaction.
+
+**The queue's ordering is not a parameter.** Open before closed, then priority, then oldest first. A
+`sort` parameter would let a console change which alerts an analyst sees first, and that is an
+operational decision rather than a display one. Each of the three terms is asserted separately,
+because each is a decision somebody could reasonably have made differently.
+
+### One defect found by running it
+
+An oversize page size answered 500. `@Validated` on a controller puts it behind a proxy and routes
+parameter constraints through Hibernate Validator's `ConstraintViolationException`, while Spring
+MVC's built-in method validation — which needs no annotation when a parameter carries a constraint —
+raises `HandlerMethodValidationException`. Two mechanisms would mean two handlers answering the same
+question, and which one fired would depend on an annotation nobody would think to look at. The
+annotation went; the exception maps to the same 422 a body validation failure produces.
+
+### Tests and results — every figure from a run on 2026-08-28
+
+172 unit tests, 238 integration tests, coverage 89.8% lines and 78.6% branches, every gate met.
+Contracts, links and formatting pass. Nothing run against the compose stack.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: merge #51, then the reporting endpoints and the formula-injection-safe
+CSV export, then close Phase 5 against its gate with the evidence for each criterion.

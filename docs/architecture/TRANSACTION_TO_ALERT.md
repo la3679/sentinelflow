@@ -9,8 +9,9 @@ row in the schema is written along the way.
 > machine over an authenticated endpoint. All of it is tested end to end against a real broker and a
 > real database.
 >
-> **What is not built yet:** assignment, notes, analyst feedback, and the reporting endpoints. An
-> alert can be picked up, escalated, dispositioned and closed; it cannot yet be given to somebody.
+> **What is not built yet:** the reporting endpoints and the CSV export. An alert can be read,
+> picked up, assigned, annotated, dispositioned, closed and labelled; what is missing is the
+> aggregate view over all of them.
 >
 > This page was written in Phase 2 and described scoring as a second Kafka consumer publishing
 > `risk.assessed` back to the API. [ADR-0008](../adr/0008-scoring-service-boundary.md) §1 rejected

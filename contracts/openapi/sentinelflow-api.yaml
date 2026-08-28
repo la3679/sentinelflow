@@ -253,6 +253,18 @@ paths:
       tags: [alerts]
       operationId: listAlerts
       summary: List alerts (Phase 5)
+      description: |
+        The queue, in the queue's own order: **open work before closed, then by
+        priority, then oldest first.**
+
+        **The ordering is not the caller's to choose.** Reordering a review queue
+        is an operational decision rather than a display one, and a `sort`
+        parameter would let a console quietly change which alerts an analyst sees
+        first. Priority is what a priority is for; oldest-first is because work
+        that has waited longest should be picked up next.
+
+        Every filter is optional and they combine. Readable by any authenticated
+        role, including `AUDITOR`.
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
         - $ref: "#/components/parameters/Page"
@@ -359,6 +371,178 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /alerts/{alertId}/assignment:
+    put:
+      tags: [alerts]
+      operationId: assignAlert
+      summary: Assign an alert, or release it (Phase 5)
+      description: |
+        Gives the alert to somebody, or takes it back when `assigneeId` is null.
+        One operation for both directions, because the alert holds one assignee
+        either way.
+
+        **Idempotent.** Sending the same assignment twice leaves the alert where
+        it is and writes nothing the second time — no history row saying it was
+        assigned to whoever already held it, and no event announcing a change
+        that did not happen.
+
+        **Assignment does not move the alert.** An alert can be given to somebody
+        who has not looked at it yet, and an analyst can be reviewing one that is
+        formally unassigned. Coupling the two would make the queue lie about one
+        of them.
+
+        The assignee must exist, be active, and hold a role that can work an
+        alert. An `AUDITOR` is read-only, so assigning one would create work they
+        are not permitted to do.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertAssignmentRequest"
+      responses:
+        "200":
+          description: The alert after the assignment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller's role does not permit this. An `AUDITOR` is read-only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            `expectedVersion` is stale, or the investigation is already closed —
+            an assignee on a closed alert would sit in "what is on this analyst's
+            desk" for ever.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /alerts/{alertId}/notes:
+    post:
+      tags: [alerts]
+      operationId: addAlertNote
+      summary: Add a note to an alert (Phase 5)
+      description: |
+        Appends an analyst's own words to the alert's history.
+
+        **No `expectedVersion`.** A note is appended rather than replacing
+        anything, so two analysts writing one at the same time both succeed and
+        both notes are kept. The alert row is not touched and its version does
+        not move.
+
+        **No event is published.** `alert.updated` describes a change to the
+        alert, and this is not one; more importantly, a note is an analyst's own
+        words about a transaction, which belongs on a detail page somebody has
+        opened rather than on a topic that leaves this service. Read it back
+        through `/alerts/{alertId}/history`.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertNoteRequest"
+      responses:
+        "201":
+          description: The history entry that was written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertAction"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller's role does not permit this. An `AUDITOR` is read-only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The investigation is closed, and a note added after a disposition reads as though it informed one.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /alerts/{alertId}/feedback:
+    put:
+      tags: [alerts]
+      operationId: recordAlertFeedback
+      summary: Record an analyst's verdict (Phase 5)
+      description: |
+        The label a future supervised model trains on.
+
+        **Recorded against the assessment, citing the alert.** Rescoring writes a
+        new assessment rather than editing one, so a label attached to the alert
+        would silently follow a decision it was never given about.
+
+        **One analyst, one verdict, revised rather than repeated.** Sending it
+        again replaces the label; it does not add a second, contradictory one.
+        Two opposite labels from the same person about the same decision cannot
+        both be training data, and nothing could choose between them afterwards.
+
+        `INCONCLUSIVE` exists so somebody who cannot tell is not forced to guess.
+
+        No `expectedVersion`: nobody else can write this row, so there is no
+        concurrent writer to lose a race against. Two analysts labelling the same
+        assessment differently is not a conflict — it is two opinions, and both
+        are kept.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertFeedbackRequest"
+      responses:
+        "200":
+          description: The verdict as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertFeedback"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller's role does not permit this. An `AUDITOR` is read-only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The investigation is closed, and a verdict is part of working the alert.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
   /alerts/{alertId}/history:
     get:
       tags: [alerts]
@@ -371,7 +555,13 @@ paths:
         - $ref: "#/components/parameters/Size"
       responses:
         "200":
-          description: A page of actions taken on this alert, newest first.
+          description: |
+            A page of actions taken on this alert, newest first.
+
+            **Readable by any authenticated role, including `AUDITOR`.**
+            Read-only describes what somebody may do, not what they may see —
+            an auditor who could not read the audit trail would be a
+            contradiction.
           content:
             application/json:
               schema:
@@ -380,6 +570,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /models/active:
     get:
@@ -869,6 +1061,73 @@ components:
           createdAt,
           updatedAt,
         ]
+      additionalProperties: false
+
+    AlertAssignmentRequest:
+      type: object
+      properties:
+        assigneeId:
+          type: [string, "null"]
+          format: uuid
+          description: |
+            Who to give the alert to, or null to release it back to the queue.
+            Null is a release rather than an assignment to nobody, and the audit
+            trail records it as `UNASSIGNED`.
+        expectedVersion:
+          type: integer
+          minimum: 0
+          description: The version the caller believes the alert is at. A mismatch is a `409`.
+        note:
+          type: string
+          maxLength: 2000
+          description: Why, in the actor's own words. Stored on the history row this writes.
+      required: [assigneeId, expectedVersion]
+      additionalProperties: false
+
+    AlertNoteRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: |
+            Sanitised on the way in. Rendered as text, never as markup, and
+            escaped in CSV export to prevent spreadsheet formula injection.
+      required: [note]
+      additionalProperties: false
+
+    FeedbackLabel:
+      type: string
+      enum: [TRUE_POSITIVE, FALSE_POSITIVE, INCONCLUSIVE]
+
+    AlertFeedbackRequest:
+      type: object
+      properties:
+        label:
+          $ref: "#/components/schemas/FeedbackLabel"
+        reason:
+          type: string
+          maxLength: 1000
+          description: Why, in the analyst's own words. Stored rather than interpreted.
+      required: [label]
+      additionalProperties: false
+
+    AlertFeedback:
+      type: object
+      properties:
+        feedbackId: { type: string, format: uuid }
+        assessmentId:
+          type: string
+          format: uuid
+          description: The decision this verdict is about. The label belongs to the assessment, not to the alert.
+        alertId: { type: [string, "null"], format: uuid }
+        actorId: { type: string, format: uuid }
+        label:
+          $ref: "#/components/schemas/FeedbackLabel"
+        reason: { type: [string, "null"], maxLength: 1000 }
+        createdAt: { type: string, format: date-time }
+      required: [feedbackId, assessmentId, actorId, label, createdAt]
       additionalProperties: false
 
     AlertPage:
