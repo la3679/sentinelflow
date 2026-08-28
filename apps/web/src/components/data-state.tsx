@@ -3,14 +3,22 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { ApiError } from "@/mocks/mockBaseQuery";
+import type { SentinelError } from "@/api/transport";
 
-function isApiError(value: unknown): value is ApiError {
-  return typeof value === "object" && value !== null && "message" in value && "status" in value;
+function isSentinelError(value: unknown): value is SentinelError {
+  return typeof value === "object" && value !== null && "status" in value && "title" in value;
 }
 
+/**
+ * The sentence a screen shows when a request failed.
+ *
+ * `detail` before `title`, because RFC 9457's detail is the specific one — "The
+ * username and password were not accepted." rather than "Unauthorized" — and
+ * the API is careful never to put an internal in it.
+ */
 export function errorMessage(error: unknown): string {
-  return isApiError(error) ? error.message : "The request could not be completed.";
+  if (!isSentinelError(error)) return "The request could not be completed.";
+  return error.detail ?? error.title;
 }
 
 export function LoadingBlock({ rows = 4, label }: { rows?: number | undefined; label: string }) {

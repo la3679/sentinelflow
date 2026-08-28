@@ -24,7 +24,9 @@ export const Route = createFileRoute("/about")({
 
 function AboutPage() {
   return (
-    <AppShell>
+    // Readable without signing in. This screen is the disclosure of what the
+    // project is and is not, and gating it would put that behind a credential.
+    <AppShell requireSession={false}>
       <PageHeader
         title="About SentinelFlow"
         description="Scope, disclaimers and the boundary between this console and the systems it represents."

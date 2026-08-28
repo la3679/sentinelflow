@@ -1,6 +1,6 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 
-import { API_BASE_URL } from "@/api/config";
+import { sentinelBaseQuery, type SentinelRequest } from "@/api/transport";
 import type {
   AlertDetail,
   AlertStatus,
@@ -14,7 +14,20 @@ import type {
   Transaction,
   TransactionDetail,
 } from "@/domain/types";
-import { mockBaseQuery, type ApiRequest } from "@/mocks/mockBaseQuery";
+
+/** `POST /auth/login`. The one request made without a token, and the one that returns one. */
+export interface LoginArgs {
+  username: string;
+  password: string;
+}
+
+/** `TokenResponse` in the contract. `roles` is validated before it reaches the store. */
+export interface TokenResponse {
+  token: string;
+  tokenType: string;
+  expiresAt: string;
+  roles: string[];
+}
 
 export interface AlertListArgs {
   page: number;
@@ -32,30 +45,42 @@ export interface TransactionListArgs {
   search: string;
 }
 
-const request = (input: ApiRequest): ApiRequest => input;
+/** A request the server answers today. */
+const real = (input: SentinelRequest): SentinelRequest => input;
+
+/**
+ * A request no server answers yet, resolved from fixtures.
+ *
+ * The marker is per endpoint so the console can be half-migrated honestly. The
+ * audit lists what each of these needs before it can lose the marker.
+ */
+const fixture = (input: SentinelRequest): SentinelRequest => ({ ...input, transport: "mock" });
 
 export const sentinelApi = createApi({
   reducerPath: "sentinelApi",
-  baseQuery: mockBaseQuery,
+  baseQuery: sentinelBaseQuery,
   tagTypes: ["Alert", "AlertList", "Overview"],
   endpoints: (builder) => ({
+    login: builder.mutation<TokenResponse, LoginArgs>({
+      query: (credentials) => real({ url: "/auth/login", method: "POST", body: credentials }),
+    }),
     getOverview: builder.query<OverviewSnapshot, void>({
-      query: () => request({ url: `${API_BASE_URL}/overview` }),
+      query: () => fixture({ url: `/overview` }),
       providesTags: ["Overview"],
     }),
     listTransactions: builder.query<Paginated<Transaction>, TransactionListArgs>({
-      query: (args) => request({ url: `${API_BASE_URL}/transactions`, params: { ...args } }),
+      query: (args) => fixture({ url: `/transactions`, params: { ...args } }),
     }),
     getTransaction: builder.query<TransactionDetail, string>({
       query: (transactionId) =>
-        request({ url: `${API_BASE_URL}/transactions/${encodeURIComponent(transactionId)}` }),
+        fixture({ url: `/transactions/${encodeURIComponent(transactionId)}` }),
     }),
     listAlerts: builder.query<Paginated<AlertSummary>, AlertListArgs>({
-      query: (args) => request({ url: `${API_BASE_URL}/alerts`, params: { ...args } }),
+      query: (args) => fixture({ url: `/alerts`, params: { ...args } }),
       providesTags: ["AlertList"],
     }),
     getAlert: builder.query<AlertDetail, string>({
-      query: (alertId) => request({ url: `${API_BASE_URL}/alerts/${encodeURIComponent(alertId)}` }),
+      query: (alertId) => fixture({ url: `/alerts/${encodeURIComponent(alertId)}` }),
       providesTags: (_result, _error, alertId) => [{ type: "Alert" as const, id: alertId }],
     }),
     assignAlert: builder.mutation<
@@ -63,8 +88,8 @@ export const sentinelApi = createApi({
       { alertId: string; assignee: string; actor: string }
     >({
       query: ({ alertId, assignee, actor }) =>
-        request({
-          url: `${API_BASE_URL}/alerts/${encodeURIComponent(alertId)}/assignee`,
+        fixture({
+          url: `/alerts/${encodeURIComponent(alertId)}/assignee`,
           method: "PATCH",
           body: { assignee, actor },
         }),
@@ -78,8 +103,8 @@ export const sentinelApi = createApi({
       { alertId: string; status: AlertStatus; actor: string }
     >({
       query: ({ alertId, status, actor }) =>
-        request({
-          url: `${API_BASE_URL}/alerts/${encodeURIComponent(alertId)}/status`,
+        fixture({
+          url: `/alerts/${encodeURIComponent(alertId)}/status`,
           method: "PATCH",
           body: { status, actor },
         }),
@@ -91,26 +116,27 @@ export const sentinelApi = createApi({
     }),
     addAlertNote: builder.mutation<AlertDetail, { alertId: string; body: string; actor: string }>({
       query: ({ alertId, body, actor }) =>
-        request({
-          url: `${API_BASE_URL}/alerts/${encodeURIComponent(alertId)}/notes`,
+        fixture({
+          url: `/alerts/${encodeURIComponent(alertId)}/notes`,
           method: "POST",
           body: { body, actor },
         }),
       invalidatesTags: (_r, _e, { alertId }) => [{ type: "Alert" as const, id: alertId }],
     }),
     getReports: builder.query<ReportsSnapshot, void>({
-      query: () => request({ url: `${API_BASE_URL}/reports` }),
+      query: () => fixture({ url: `/reports` }),
     }),
     getModelPolicy: builder.query<ModelPolicySnapshot, void>({
-      query: () => request({ url: `${API_BASE_URL}/model-policy` }),
+      query: () => fixture({ url: `/model-policy` }),
     }),
     getSystemHealth: builder.query<SystemHealthSnapshot, void>({
-      query: () => request({ url: `${API_BASE_URL}/health` }),
+      query: () => fixture({ url: `/health` }),
     }),
   }),
 });
 
 export const {
+  useLoginMutation,
   useGetOverviewQuery,
   useListTransactionsQuery,
   useGetTransactionQuery,

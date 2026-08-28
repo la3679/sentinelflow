@@ -31,14 +31,15 @@ function ForbiddenPage() {
         <p className="flex items-start gap-2">
           <ShieldAlert aria-hidden="true" className="mt-0.5 size-4 text-risk-high-foreground" />
           <span>
-            The role selected for this demonstration session does not include access to the
-            requested area. Switch the simulated role in the header, or return to a permitted
-            screen.
+            The roles on your account do not include access to the requested area. Roles come from
+            the account you signed in with — they are not something this console lets you choose —
+            so the way to a different answer is a different account.
           </span>
         </p>
         <p className="text-muted-foreground">
-          Role handling in this console is a user-experience affordance only. Authorization
-          decisions are made by the backend services, never in the browser.
+          Role handling in this console is a user-experience affordance only. The refusal you are
+          reading came from the API, which makes every authorization decision from the token rather
+          than from anything the browser was told.
         </p>
         <p>
           <Link to="/" className="underline underline-offset-4">
