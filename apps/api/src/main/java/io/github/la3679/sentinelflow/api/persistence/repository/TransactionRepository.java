@@ -7,11 +7,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import io.github.la3679.sentinelflow.api.domain.RiskBand;
 import io.github.la3679.sentinelflow.api.persistence.entity.TransactionRecord;
 
 /** Transactions. */
@@ -64,6 +67,115 @@ public interface TransactionRepository extends JpaRepository<TransactionRecord, 
                AND t.processingStatus = io.github.la3679.sentinelflow.api.domain.ProcessingStatus.PENDING
             """)
     int markProcessingFailed(@Param("id") UUID id);
+
+    /**
+     * One page of transactions, newest first, as a reader sees them.
+     *
+     * <p>Every filter is optional and applied only when supplied, written as {@code :param IS NULL
+     * OR column = :param} for the same reason the alert queue is: the alternative is one query
+     * method per combination.
+     *
+     * <p><strong>The band comes from the current assessment, which is the highest version.</strong>
+     * A transaction may carry more than one — a rescoring under a new policy writes a new row rather
+     * than editing the decision that was acted on — so the join names the version explicitly. A
+     * plain join on {@code transactionId} would multiply a rescored transaction into one row per
+     * assessment and page the duplicates.
+     *
+     * <p>The join is a {@code LEFT} one because a transaction with no assessment is a normal state
+     * rather than a missing row: ingestion is asynchronous, so between the {@code 202} and the
+     * consumer there is a window in which the transaction exists and nothing has scored it. An
+     * inner join would hide exactly the rows an operator is most likely to be looking for.
+     *
+     * <p><strong>The ordering is not the caller's to choose</strong>, for the reason the alert
+     * queue's is not: newest first is what a transaction feed means. {@code id} breaks ties so two
+     * identical requests page identically.
+     *
+     * <p>An explicit count query. Spring Data cannot derive one from a constructor expression, and
+     * the derived attempt would fail at startup rather than at the first call.
+     *
+     * <p><strong>The two instants are cast before they are tested for null, and that is not
+     * decoration.</strong> PostgreSQL types every placeholder from its context, and a bare
+     * {@code $n IS NULL} has none — so the statement was refused at prepare time with "could not
+     * determine data type of parameter", on a query that is valid HQL and valid JPQL. The enum and
+     * string filters above need no cast because Hibernate binds those with a type the driver
+     * declares. Removing either cast puts every list request back to a 500 that no test of the
+     * query's <em>logic</em> would catch.
+     */
+    @Query(value = """
+            SELECT new io.github.la3679.sentinelflow.api.persistence.repository.TransactionSummaryRow(
+                       t.id,
+                       t.transactionReference,
+                       a.accountReference,
+                       m.merchantReference,
+                       m.categoryCode,
+                       t.type,
+                       t.channel,
+                       t.money.amount,
+                       t.money.currency,
+                       t.originCountry,
+                       t.occurredAt,
+                       t.ingestedAt,
+                       t.processingStatus,
+                       r.riskBand)
+              FROM TransactionRecord t
+              JOIN Account a ON t.accountId = a.id
+              JOIN Merchant m ON t.merchantId = m.id
+              LEFT JOIN RiskAssessment r ON r.transactionId = t.id
+                   AND r.assessmentVersion = (SELECT max(r2.assessmentVersion)
+                                                FROM RiskAssessment r2
+                                               WHERE r2.transactionId = t.id)
+             WHERE (:accountReference IS NULL OR a.accountReference = :accountReference)
+               AND (:riskBand IS NULL OR r.riskBand = :riskBand)
+               AND (cast(:occurredAfter as Instant) IS NULL OR t.occurredAt >= :occurredAfter)
+               AND (cast(:occurredBefore as Instant) IS NULL OR t.occurredAt < :occurredBefore)
+             ORDER BY t.occurredAt DESC, t.id DESC
+            """, countQuery = """
+            SELECT count(t)
+              FROM TransactionRecord t
+              JOIN Account a ON t.accountId = a.id
+              LEFT JOIN RiskAssessment r ON r.transactionId = t.id
+                   AND r.assessmentVersion = (SELECT max(r2.assessmentVersion)
+                                                FROM RiskAssessment r2
+                                               WHERE r2.transactionId = t.id)
+             WHERE (:accountReference IS NULL OR a.accountReference = :accountReference)
+               AND (:riskBand IS NULL OR r.riskBand = :riskBand)
+               AND (cast(:occurredAfter as Instant) IS NULL OR t.occurredAt >= :occurredAfter)
+               AND (cast(:occurredBefore as Instant) IS NULL OR t.occurredAt < :occurredBefore)
+            """)
+    Page<TransactionSummaryRow> findReadablePage(
+            @Param("accountReference") String accountReference,
+            @Param("riskBand") RiskBand riskBand,
+            @Param("occurredAfter") Instant occurredAfter,
+            @Param("occurredBefore") Instant occurredBefore,
+            Pageable pageable);
+
+    /** One transaction, in the same shape and by the same joins as a row of the page. */
+    @Query("""
+            SELECT new io.github.la3679.sentinelflow.api.persistence.repository.TransactionSummaryRow(
+                       t.id,
+                       t.transactionReference,
+                       a.accountReference,
+                       m.merchantReference,
+                       m.categoryCode,
+                       t.type,
+                       t.channel,
+                       t.money.amount,
+                       t.money.currency,
+                       t.originCountry,
+                       t.occurredAt,
+                       t.ingestedAt,
+                       t.processingStatus,
+                       r.riskBand)
+              FROM TransactionRecord t
+              JOIN Account a ON t.accountId = a.id
+              JOIN Merchant m ON t.merchantId = m.id
+              LEFT JOIN RiskAssessment r ON r.transactionId = t.id
+                   AND r.assessmentVersion = (SELECT max(r2.assessmentVersion)
+                                                FROM RiskAssessment r2
+                                               WHERE r2.transactionId = t.id)
+             WHERE t.id = :transactionId
+            """)
+    Optional<TransactionSummaryRow> findReadableById(@Param("transactionId") UUID transactionId);
 
     /**
      * The account history behind one scoring request. One indexed read over
