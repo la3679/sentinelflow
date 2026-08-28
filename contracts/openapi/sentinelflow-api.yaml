@@ -43,6 +43,8 @@ servers:
       own machine and holds only synthetic data. **Not a deployment target.**
 
 tags:
+  - name: auth
+    description: Operator login. Phase 5.
   - name: transactions
     description: Ingestion and retrieval. Phase 3.
   - name: alerts
@@ -52,7 +54,54 @@ tags:
   - name: model
     description: Read-only model and policy metadata. Phase 4.
 
+# Every operation requires a bearer token unless it says otherwise, so an
+# endpoint added without thinking about authentication is protected rather than
+# exposed. The three exceptions carry `security: []` and each says why.
+security:
+  - bearerAuth: []
+
 paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Exchange a password for a token (Phase 5)
+      description: |
+        Returns a short-lived bearer token carrying the operator's identifier
+        and the roles they held at login (ADR-0012).
+
+        **A refusal never says why.** An unknown username, a disabled account
+        and a wrong password all answer `401` with the same body: distinguishing
+        them would turn an endpoint that is necessarily open into an oracle for
+        which usernames exist.
+
+        **There is no refresh token.** The expiry is short instead, because a
+        stateless token cannot be revoked before it expires and a refresh flow
+        would extend the window a withdrawn role keeps working.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: The token, and when it stops working.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: The username and password were not accepted.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /transactions:
     post:
       tags: [transactions]
@@ -67,6 +116,14 @@ paths:
         **Idempotent.** `idempotencyKey` is unique per account: resubmitting the
         same key returns the original result rather than creating a second
         transaction.
+
+        **Unauthenticated until Phase 8, deliberately.** This is a
+        machine-to-machine surface whose caller is a payment pipeline rather
+        than a person, so an operator's password buys nothing here. It needs its
+        own credential together with the rate limits and payload bounds that
+        belong beside it, which is Phase 8's work. ADR-0012 §5 records it as a
+        stated gap rather than an oversight.
+      security: []
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
       requestBody:
@@ -287,11 +344,20 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The transition is illegal from the current state, or `expectedVersion` is stale.
+          description: |
+            The transition is illegal from the current state, or
+            `expectedVersion` is stale.
+
+            An illegal move carries `currentStatus` and `legalTargets`, so a
+            client can say what is possible instead. A stale version carries
+            `expectedVersion` and `currentVersion`, so it can re-read and decide
+            again.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /alerts/{alertId}/history:
     get:
@@ -349,7 +415,17 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Phase 8. No authentication is enforced before then.
+      description: |
+        A token from `POST /auth/login`, signed by this service and verified
+        from its signature alone — no session and no lookup (ADR-0012).
+
+        `sub` is the operator's identifier, because every audit row a mutation
+        writes stores it as a foreign key. `roles` carries the roles held **at
+        login**, which is what makes `alert_actions.actor_role` an honest record
+        of the capacity somebody acted in.
+
+        Enforced from Phase 5. Phase 8 hardens it: a credential for ingestion,
+        rate limits, and whatever revocation the demo turns out to need.
 
   parameters:
     CorrelationId:
@@ -548,6 +624,47 @@ components:
             required: [field, message]
             additionalProperties: false
       required: [type, title, status]
+
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          description: |
+            Bounded but not pattern-checked. A username that cannot exist and
+            one that merely does not must be refused identically, and a format
+            rejected at the boundary would answer a question the login path
+            deliberately does not.
+        password:
+          type: string
+          maxLength: 200
+          description: Never logged, never echoed, and never part of any response.
+      required: [username, password]
+      additionalProperties: false
+
+    TokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: The bearer token. A credential for as long as it is valid.
+        tokenType:
+          type: string
+          const: Bearer
+          description: |
+            What to put before the token in the `Authorization` header. Sent
+            rather than assumed, so a client that hardcoded it would be guessing
+            correctly rather than knowing.
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            When the token stops working, beside it so a client need not decode
+            the token to find out. A client that parsed it for the claim would
+            be reading a structure this service is free to change.
+      required: [token, tokenType, expiresAt]
+      additionalProperties: false
 
     TransactionRequest:
       type: object

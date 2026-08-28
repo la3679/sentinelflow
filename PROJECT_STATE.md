@@ -14,19 +14,19 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T00:20Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T04:10Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 5; alert creation covered end to end and open as a pull request                                                                   |
+| Overall status       | active — Phase 5; alert creation merged, the state machine and authentication open as a pull request                                             |
 | Current phase        | Phase 5 — alerts, investigations and audit (first piece in progress)                                                                             |
-| Current task         | the alert state machine, once the alert-creation pull request has merged                                                                         |
+| Current task         | assignment, notes and analyst feedback, once the state-machine pull request has merged                                                           |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `feat/alert-creation` — pushed, pull request [#49](https://github.com/la3679/sentinelflow/pull/49) open                                          |
+| Working branch       | `feat/alert-state-machine` — pushed, pull request [#50](https://github.com/la3679/sentinelflow/pull/50) open                                     |
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | [#49](https://github.com/la3679/sentinelflow/pull/49) — Phase 5 alert creation                                                                   |
+| Open PRs             | [#50](https://github.com/la3679/sentinelflow/pull/50) — the investigation state machine and ADR-0012                                             |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -741,9 +741,10 @@ one is still handled.
 
 ## In progress — Phase 5
 
-**The first piece is complete and open as a pull request.** Everything below is written, unit-tested,
-covered end to end against a real broker and database, and pushed on `feat/alert-creation`. What
-remains of Phase 5 — the state machine, assignment, notes, feedback, authorization — has not started.
+**Alert creation is merged** as [#49](https://github.com/la3679/sentinelflow/pull/49). **The
+investigation state machine and the authentication it needed** are written, covered, and open as
+[#50](https://github.com/la3679/sentinelflow/pull/50). What remains of Phase 5 is assignment, notes,
+analyst feedback, and the reporting endpoints.
 
 **The alerting rule joined the policy object** rather than starting a second one. ADR-0008 §4 gives
 this service "the alerting policy applied to a final score at runtime", and deciding which bands are
@@ -808,8 +809,76 @@ route back is a new rule that makes the shape transparent rather than an alert n
 | `AlertRaiser`, and the wiring into the service | **done** — five cases in `RiskAssessmentWorkflowIT` exercise it  |
 | An integration test for the alert path         | **done** — the alert, its summary, its history row, its event    |
 | "The model alone cannot alert" (ADR-0011 §4)   | **decided and recorded** — stated as policy, asserted by 2 tests |
-| Alert state machine, assignment, notes, audit  | not started                                                      |
-| Role authorization, reporting endpoints        | not started                                                      |
+| The investigation state machine                | **done** — 9 property and edge tests                             |
+| Transitions, audited and version-checked       | **done** — 8 cases against PostgreSQL                            |
+| Operator authentication (ADR-0012, V10)        | **done** — 7 unit, 7 integration over real HTTP                  |
+| The transition endpoint and role authorization | **done** — 9 cases, including both role refusals                 |
+| Assignment, notes, analyst feedback            | not started                                                      |
+| Reporting endpoints                            | not started                                                      |
+
+### The state machine, and the three things it is worth knowing about
+
+**Which moves exist is not configuration.** The band thresholds are numbers on their own schedule
+and live in `application.yaml`; this is a definition of what an investigation _is_. A stack
+configured to allow `CLOSED → NEW` would reopen closed alerts and produce an audit trail no other
+stack could reproduce.
+
+**Terminal means terminal, and that is load-bearing.** `Alert.transitionTo` clears `closed_at` when
+it moves to a live state, because `alerts_closed_at_consistent` requires a live alert not to carry
+one — so a legal move out of a terminal state would erase when the investigation ended, which is the
+timestamp every resolution-time figure is computed from. Reopening is therefore not a transition at
+all; it would be a new alert citing the same assessment, and it does not exist.
+
+**Three property tests carry more weight than the edges**: no self-transitions, which the
+`alert_actions` CHECK would refuse at commit; no outgoing move from a terminal state; and a
+breadth-first search proving no live state can be stranded without a path to a terminal one. Each
+catches a change that would satisfy every edge test and still break something.
+
+### The concurrency check is made twice, and neither half is redundant
+
+`expectedVersion` is compared against the loaded alert, and the persistence provider compares it
+again at flush. The explicit check is for a caller working from a stale read — the analyst who
+opened the alert five minutes ago — and it fails before anything is written and can name the version
+the alert is actually at. It is a read followed by a write, so nothing about it is atomic;
+`@Version` on the UPDATE is what makes the loser of a genuine race lose. Both surface as the same
+409, because from the caller's side they are the same thing.
+
+The flush is not tidiness either: `alert-updated.v1.json` requires the version **after** the change,
+and that value does not exist until the UPDATE is written.
+
+### Authentication, and the gap it deliberately leaves
+
+ADR-0012. A username and password are exchanged for a thirty-minute bearer token; V10 adds
+`user_credentials`, and the system principal deliberately has no row in it — which is what makes
+authenticating as the principal that attributes automated actions impossible rather than merely
+forbidden. Demo operators are created by the application seed from a password `make bootstrap`
+generates, never by a migration: a hash committed to V10 would be a credential in the repository and
+the same one on every machine that ran it.
+
+**`POST /api/v1/transactions` stays unauthenticated**, deliberately and temporarily. It is a
+machine-to-machine surface whose caller is a payment pipeline rather than a person, so an operator's
+password buys nothing there; it needs its own credential together with the rate limits and payload
+bounds that belong beside it, which is Phase 8's. Recorded in ADR-0012 §5, in the README's stated
+limitations, and under known issues below.
+
+### Two defects the endpoint found by being run
+
+- **An auditor's token produced a 500 rather than a 403.** `@PreAuthorize` throws inside the
+  handler, so the dispatcher sees `AccessDeniedException` before Spring Security's
+  `ExceptionTranslationFilter` can — and it fell through to the catch-all. `ApiExceptionHandler` now
+  maps it to the same body the filter chain writes, so a client cannot tell which layer refused it.
+- **The security configuration broke every schema test.** A `SecurityFilterChain` needs
+  `HttpSecurity`, which does not exist in a context started with `webEnvironment = NONE`. The
+  cryptographic beans — the password encoder, the encoder and the decoder — are needed by the seed
+  and the login service and have nothing to do with HTTP, so they are declared separately from the
+  filter chain, which is now `@ConditionalOnWebApplication`.
+
+### A fixture that passed alone and failed behind another suite
+
+`OperatorAuthenticationIT` first seeded its operators. One container serves the whole fork and
+`DeterministicSeedLoader` skips a database that already has parties in it, so the suite passed on its
+own and failed whenever anything had written a customer first. It now creates its own operators; that
+the seed gives its own working credentials is asserted where the seed is.
 
 ### What the alert-path test needed, and why it is worth reading
 
@@ -987,6 +1056,26 @@ available.
 ## Test and verification evidence
 
 Every figure below came from a run on the date its section names. Nothing here is estimated.
+
+### 2026-08-28 — Phase 5, the investigation state machine and ADR-0012
+
+| Command                                    | Result                                            |
+| ------------------------------------------ | ------------------------------------------------- |
+| `./mvnw verify -DskipITs` (JDK 25.0.4.1+1) | **PASS** — 172 unit tests                         |
+| `./mvnw verify -DskipUnitTests=true`       | **PASS** — 211 integration tests                  |
+| `./mvnw verify` (both suites)              | **PASS** — every coverage check met               |
+| JaCoCo, both suites                        | 88.3% lines (2212/2506), 78.1% branches (438/561) |
+| `bun run format:check`                     | **PASS** — repository-wide                        |
+| `bun scripts/dev/check-docs.mjs`           | **PASS** — 160 links across 42 files              |
+| `bun scripts/dev/check-contracts.mjs`      | **PASS** — every schema, example and API document |
+| `docker compose config`                    | **PASS** — after adding the two new secrets       |
+
+Line coverage rose from 87.0% to 88.3% and branch coverage from 77.8% to 78.1%.
+
+**Not demonstrated on the compose stack.** No transition has been made against a running system, and
+`make smoke` has not been re-run since the actuator's closed endpoints started answering 401 rather
+than 404 — the script and its PowerShell equivalent were updated to expect it, and neither has been
+executed. That is the first thing to do on a machine with the stack up.
 
 ### 2026-08-28 — Phase 5, the alert path covered end to end, and ADR-0011 §4
 
@@ -1210,9 +1299,16 @@ this repository. None has been measured.** Phase 9 measures them.
 | 0007 | Decimal money as JSON strings, UUIDv7 keys, `timestamptz`, forward-only Flyway migrations           |
 | 0008 | Scoring over HTTP from the consumer; degrade on outage; the API owns the alerting threshold         |
 | 0009 | Adopt Lovable's TanStack Start foundation; render client-side so Spring Boot stays the sole backend |
+| 0010 | Model selection and evaluation: the comparison, the metrics, and training as a command              |
+| 0011 | The final score is `max(rule, weighted mean)`, banded from configured bounds; §4 gates alerting     |
+| 0012 | Operator authentication: a password for a short-lived JWT, credentials in their own table           |
 
-**Still needing an ADR:** 0010 model and evaluation choice · 0011 SSE versus WebSockets · 0012
-authentication · 0013 observability · 0014 deployment strategy.
+**This table was three ADRs out of date**, and its "still needing" line was wrong about two of the
+numbers as well. 0010 and 0011 were accepted in Phase 4 and 0012 in Phase 5; corrected against
+`docs/adr/`, which is the authority.
+
+**Still needing an ADR:** 0013 observability · 0014 deployment strategy · 0015 SSE versus WebSockets.
+The numbers are the implementation plan's, not this file's.
 
 **Contracts:** `contracts/` is validated in CI — OpenAPI 3.1 for the public `/api/v1`, OpenAPI 3.1
 for the internal API-to-scoring boundary, AsyncAPI 3.0 for the five topics, and seven JSON Schemas.
@@ -1223,6 +1319,18 @@ checks.
 
 ## Known issues and technical debt
 
+- **`POST /api/v1/transactions` is unauthenticated**, deliberately and temporarily (ADR-0012 §5).
+  Operator endpoints require a bearer token; ingestion does not, because it is a machine-to-machine
+  surface that needs its own credential rather than an operator's password. Until Phase 8 gives it
+  one, anything that can reach the API can submit a synthetic transaction. The demo stack binds to
+  localhost.
+- **A token cannot be revoked before it expires.** Thirty minutes is the whole of how long a
+  withdrawn role keeps working. That is the cost of statelessness and it is accepted rather than
+  overlooked; a revocation list is Phase 8's if the demo ever needs one.
+- **`/actuator/prometheus` is open**, because a scrape cannot hold a token that expires every thirty
+  minutes. The series are aggregate counters and timers with bounded labels — no identifier, no
+  amount, no payload — so what it discloses is the shape of the traffic. The real answer is a
+  management port that is not published to the host, which is Phase 8's hardening work.
 - **Node 22.19.0 on the reference machine** passed its LTS end date (2026-07-28). `engines`
   requires Node 24. Bun runs everything, so nothing is blocked, but local Node should be upgraded.
 - **Default `JAVA_HOME` points at JDK 17.** JDK 25 is at `~/.jdks/jdk-25.0.4.1+1`;
@@ -1324,20 +1432,26 @@ None.
 
 ## Next three actions
 
-Phase 5's first piece is complete, covered end to end, and open as pull request
-[#49](https://github.com/la3679/sentinelflow/pull/49). `main` is green and carries none of it yet.
-Nothing is blocked.
+Alert creation merged as [#49](https://github.com/la3679/sentinelflow/pull/49). The investigation
+state machine, ADR-0012's authentication and the transition endpoint are open as
+[#50](https://github.com/la3679/sentinelflow/pull/50). Nothing is blocked.
 
-1. **Merge [#49](https://github.com/la3679/sentinelflow/pull/49) once CI is green**, then branch for
-   the next piece. Do not stack the state machine on an unmerged branch.
-2. **The alert state machine, with every transition audited.** `AlertStatus` already names the six
-   states and `alert_actions` already refuses a `TRANSITIONED` row that does not say what it moved
-   from and to. What does not exist is the object that says which moves are legal, the service that
-   applies one, or the endpoint that asks for it. Optimistic concurrency on `alerts.version` belongs
-   with it rather than after it: two analysts opening the same alert is the ordinary case in a queue,
-   and the loser of that race has to be told.
-3. **Then assignment, notes and feedback, and role authorization** — the auditor's mutations failing
-   as expected is the assertion that matters, not the happy path.
+1. **Merge [#50](https://github.com/la3679/sentinelflow/pull/50) once CI is green**, then branch for
+   the next piece rather than stacking on it.
+2. **Assignment, notes and analyst feedback.** `alert_actions` already has `ASSIGNED`,
+   `UNASSIGNED` and `NOTE_ADDED`, `alerts.assignee_id` already has its foreign key and its partial
+   index, and `analyst_feedback` already exists with a unique constraint per assessment and actor.
+   None of it is written. `AlertUpdatedPayload` already carries `changeType` and both assignees, so
+   an assignment publishes through the path a transition already uses.
+3. **Then the reporting endpoints and the CSV export** — paged, bounded, and formula-injection-safe,
+   which the implementation plan names explicitly and which is the last of Phase 5's deliverables
+   before its gate.
+
+**One thing to do on a machine with the stack up, before the next piece.** `make smoke` has not been
+run since the actuator's closed endpoints started answering 401 rather than 404. The script and its
+PowerShell equivalent were updated to expect it and neither has been executed, and the previous
+session's three defects are the standing reminder that the Testcontainers suites and the compose
+stack are not the same system.
 
 ### What an earlier session found by running the stack rather than the suites
 

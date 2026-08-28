@@ -1,0 +1,40 @@
+# Gitleaks configuration.
+#
+# The default rule set, plus an allowlist of exactly three string literals.
+#
+# WHY THIS FILE EXISTS. ADR-0012 gave the API an HMAC signing key, and every
+# Spring context in the test suite has to be given one or it refuses to start -
+# which is the point of that validation. The values are English sentences that
+# say what they are, and gitleaks' generic-api-key rule fires on any
+# high-entropy string assigned to something called "secret". Both findings were
+# real matches of the rule and neither is a secret.
+#
+# WHY IT IS THIS NARROW. The allowlist is three exact literals, not a path
+# pattern and not a rule exclusion. Allowlisting `apps/api/src/test/**` would
+# turn off secret scanning for a third of the repository, and a real credential
+# committed to a test fixture is exactly the kind of mistake this scan exists to
+# catch. A new test key has to be added here deliberately, by somebody writing
+# down why - which is the review this file is asking for.
+#
+# The signing key that actually matters has no default anywhere and is generated
+# by `make bootstrap` into the git-ignored `.env`. Nothing in this repository
+# can be authenticated with the strings below except a test container that is
+# destroyed when the suite ends.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test-only HMAC signing keys. Exact literals, so nothing else can hide behind them."
+regexes = [
+  # apps/api/src/test/.../security/JwtPropertiesTests.java - the valid
+  # configuration every refusal in that suite is contrasted against.
+  '''a-signing-key-that-is-long-enough-for-hs256''',
+  # apps/api/src/test/.../support/AbstractPostgresTest.java - given to every
+  # Spring context in the suite, because JwtProperties refuses a blank one.
+  '''a-test-signing-key-of-sufficient-length-for-hs256''',
+  # apps/api/src/test/.../security/OperatorAuthenticationIT.java - a second key,
+  # used to sign a token the application must refuse. The test is worthless
+  # unless this differs from the one above.
+  '''a-different-key-that-is-also-long-enough-for-hs256''',
+]

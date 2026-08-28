@@ -14,13 +14,19 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import io.github.la3679.sentinelflow.api.security.OperatorLoginService.InvalidCredentialsException;
+import io.github.la3679.sentinelflow.api.service.exception.AlertNotFoundException;
+import io.github.la3679.sentinelflow.api.service.exception.AlertVersionConflictException;
 import io.github.la3679.sentinelflow.api.service.exception.IdempotencyConflictException;
+import io.github.la3679.sentinelflow.api.service.exception.IllegalAlertTransitionException;
+import io.github.la3679.sentinelflow.api.service.exception.InsufficientRoleException;
 import io.github.la3679.sentinelflow.api.service.exception.UnknownReferenceException;
 
 /**
@@ -108,6 +114,98 @@ public class ApiExceptionHandler {
                 "Idempotency key reused with a different payload",
                 "This idempotency key was already used on this account for a different transaction. "
                         + "Returning the original result would hide a key-generation bug, so the request is refused.",
+                request);
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    ProblemDetail onInvalidCredentials(InvalidCredentialsException exception, HttpServletRequest request) {
+        // One sentence, and the same one whether the username was unknown, the
+        // account disabled, or the password wrong. Distinguishing them would
+        // turn an endpoint that is necessarily open into an oracle for which
+        // usernames exist. The service logs which it was.
+        return problem(
+                HttpStatus.UNAUTHORIZED,
+                "invalid-credentials",
+                "Invalid credentials",
+                "The username and password were not accepted.",
+                request);
+    }
+
+    @ExceptionHandler(AlertNotFoundException.class)
+    ProblemDetail onAlertNotFound(AlertNotFoundException exception, HttpServletRequest request) {
+        // 404, unlike UnknownReferenceException's 422: an alert identifier is
+        // part of the path rather than of a payload, so "there is nothing here"
+        // is the accurate answer and the one a client's router expects.
+        return problem(
+                HttpStatus.NOT_FOUND, "alert-not-found", "Alert not found", "No alert has that identifier.", request);
+    }
+
+    @ExceptionHandler(IllegalAlertTransitionException.class)
+    ProblemDetail onIllegalTransition(IllegalAlertTransitionException exception, HttpServletRequest request) {
+        // 409 rather than 400. The request is well formed and the target is a
+        // real status; what refuses it is the state the alert is in, and that
+        // state can change between one request and the next. Telling the caller
+        // to fix their request would send them looking for a fault that is not
+        // in it.
+        ProblemDetail problem = problem(
+                HttpStatus.CONFLICT,
+                "illegal-transition",
+                "Illegal transition",
+                "An alert in " + exception.from() + " cannot move to " + exception.to() + ".",
+                request);
+        problem.setProperty("currentStatus", exception.from().name());
+        // What the caller may do instead. A property of the state machine
+        // rather than of this alert, so naming it discloses nothing.
+        problem.setProperty(
+                "legalTargets",
+                exception.legalTargets().stream().map(Enum::name).sorted().toList());
+        return problem;
+    }
+
+    @ExceptionHandler(AlertVersionConflictException.class)
+    ProblemDetail onVersionConflict(AlertVersionConflictException exception, HttpServletRequest request) {
+        ProblemDetail problem = problem(
+                HttpStatus.CONFLICT,
+                "version-conflict",
+                "The alert has changed",
+                "Somebody else changed this alert since it was read. Re-read it and decide again.",
+                request);
+        problem.setProperty("expectedVersion", exception.expectedVersion());
+        if (exception.actualVersion() != null) {
+            problem.setProperty("currentVersion", exception.actualVersion());
+        }
+        return problem;
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    ProblemDetail onAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
+        // @PreAuthorize throws inside the handler, which means the dispatcher
+        // sees it before Spring Security's ExceptionTranslationFilter can - so
+        // without this it falls through to the catch-all below and a role
+        // refusal is served as a 500. Found by an auditor's token producing an
+        // internal error instead of a 403.
+        //
+        // The same body ProblemAccessHandlers writes for a denial the filter
+        // chain catches, because a client should not be able to tell which of
+        // the two layers refused it.
+        return problem(
+                HttpStatus.FORBIDDEN,
+                "insufficient-role",
+                "Insufficient role",
+                "The authenticated role does not permit this operation.",
+                request);
+    }
+
+    @ExceptionHandler(InsufficientRoleException.class)
+    ProblemDetail onInsufficientRole(InsufficientRoleException exception, HttpServletRequest request) {
+        // 403 and not 401: the caller proved who they are, and the answer is
+        // still no. A client should re-authenticate on one and never on the
+        // other.
+        return problem(
+                HttpStatus.FORBIDDEN,
+                "insufficient-role",
+                "Insufficient role",
+                "This operation requires the " + exception.required() + " role.",
                 request);
     }
 

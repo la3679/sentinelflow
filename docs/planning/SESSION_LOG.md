@@ -1765,3 +1765,92 @@ None.
 
 Recorded in `PROJECT_STATE.md`: merge the pull request, then the alert state machine with optimistic
 concurrency on `alerts.version` beside it, then assignment, notes, feedback and role authorization.
+
+---
+
+## Session 16, continued — 2026-08-28 — the investigation state machine, and the authentication it needed
+
+Four commits on `feat/alert-state-machine`, opened as [#50](https://github.com/la3679/sentinelflow/pull/50)
+after [#49](https://github.com/la3679/sentinelflow/pull/49) merged with all ten checks green.
+
+### The order was chosen rather than inherited
+
+The build prompt's likely-commit list puts the state machine before authentication, and the
+implementation plan lists ADR-0012 among Phase 5's deliverables without ordering the two. The
+transition endpoint needs a principal, so the sequence taken was: the graph, then the service with
+the actor as a parameter, then authentication, then the endpoint. The middle step is what makes the
+order work — a service that takes an actor is the same code whether a person holds a token or the
+pipeline is acting, and it was covered against a real database before any of the security code
+existed.
+
+### Three things about the graph worth keeping
+
+**Which moves exist is not configuration.** Thresholds are numbers on their own schedule and belong
+in `application.yaml`; this is a definition of what an investigation is, and a stack configured to
+allow `CLOSED → NEW` would produce an audit trail no other stack could reproduce.
+
+**Terminal means terminal, and it is load-bearing.** `Alert.transitionTo` clears `closed_at` on a
+move to a live state because the CHECK requires a live alert not to carry one — so a legal move out
+of a terminal state would erase when the investigation ended. Reopening is not a transition; it
+would be a new alert citing the same assessment.
+
+**Three property tests carry more weight than the edges.** No self-transitions, which the
+`alert_actions` CHECK would refuse at commit; no outgoing move from a terminal state; and a
+breadth-first search proving no live state can be stranded. Each catches a change that would satisfy
+every edge assertion and still break something.
+
+### The concurrency check is made twice, on purpose
+
+`expectedVersion` is compared against the loaded alert, and `@Version` is compared again at flush.
+The first is for an analyst working from a stale read and can name the version the alert is actually
+at; it is a read followed by a write, so `@Version` on the UPDATE is what makes the loser of a real
+race lose. Both answer 409, because from the caller's side they are the same thing.
+
+The flush is also not tidiness: `alert-updated.v1.json` requires the version **after** the change,
+and that value does not exist until the UPDATE is written. Adding one to what was in memory would be
+a second implementation of the provider's counter.
+
+### ADR-0012, and the gap it leaves on purpose
+
+A password for a thirty-minute bearer token, verified from its signature alone. Credentials in their
+own table, because the system principal must never authenticate and the absence of a row makes that
+structural rather than a rule somebody remembers. Demo operators come from the application seed with
+a password `make bootstrap` generates, never from a migration.
+
+`POST /api/v1/transactions` stays open. It is a machine-to-machine surface whose caller is a payment
+pipeline rather than a person, so an operator's password buys nothing there; it needs its own
+credential with the rate limits and payload bounds beside it, which is Phase 8's. Written into
+ADR-0012 §5, the README's stated limitations, and `PROJECT_STATE.md`'s known issues — three places,
+because a security gap that is only in a commit message is a gap nobody will find.
+
+### Four things found by running rather than reading
+
+- **An auditor's token produced a 500 rather than a 403.** `@PreAuthorize` throws inside the
+  handler, so the dispatcher sees `AccessDeniedException` before Spring Security's
+  `ExceptionTranslationFilter` does, and it fell through to the catch-all.
+- **The security configuration broke every schema test.** A `SecurityFilterChain` needs
+  `HttpSecurity`, which does not exist under `webEnvironment = NONE`. The password encoder and the
+  JWT encoder and decoder are needed by the seed and the login service and have nothing to do with
+  HTTP, so they now live apart from the filter chain.
+- **A fixture that passed alone and failed behind another suite.** `OperatorAuthenticationIT` seeded
+  its operators, and the seed skips a database that already has parties in it — so it passed on its
+  own and failed whenever anything had written a customer first. It creates its own operators now.
+- **`/actuator/env` answers 401 rather than 404.** The chain refuses before the actuator decides
+  whether the endpoint exists, which discloses less. Both smoke scripts and the application test were
+  updated to expect it; neither script has been run against a live stack yet, and that is recorded.
+
+### Tests and results — every figure from a run on 2026-08-28
+
+172 unit tests, 211 integration tests, every coverage check met, 88.3% lines and 78.1% branches.
+Contracts, documentation links and repository-wide formatting all pass. Nothing has been
+demonstrated on the compose stack this session.
+
+### Blockers
+
+None.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: merge #50, then assignment, notes and analyst feedback, then the
+reporting endpoints and the CSV export. And `make smoke` on a machine with the stack up, because the
+actuator's answer changed and no script has been run against it.

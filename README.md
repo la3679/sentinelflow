@@ -28,7 +28,7 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phases 0 to 4 complete, Phase 5 next
+## Current status — Phases 0 to 4 complete, Phase 5 in progress
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
@@ -40,7 +40,7 @@ finished system as though it were running.
 | 2     | Contracts, domain model, PostgreSQL migrations     | **complete** |
 | 3     | Transaction ingestion, transactional outbox, Kafka | **complete** |
 | 4     | Synthetic data generation and risk scoring         | **complete** |
-| 5     | Alert lifecycle, investigations, audit             | **next**     |
+| 5     | Alert lifecycle, investigations, audit             | in progress  |
 | 6     | Operations console wired to the real API           | not started  |
 | 7     | Observability and resilience                       | not started  |
 | 8     | Security and release-quality hardening             | not started  |
@@ -77,10 +77,21 @@ the same database transaction as the ledger row that records the event as handle
 demonstrates the failure behaviour rather than describing it: it stops the scoring container, shows
 assessments degrade to the rules alone, restarts it, and shows them scored again.
 
-**What does not run yet:** no alert is raised. Every assessment is banded and every band is
-persisted, and nothing reads them — alert creation, the investigation workflow and the read
-endpoints are Phases 5 and 6, which is also why the console still renders from a mock fixture
-layer.
+An assessment that bands at or above the alerting threshold now opens an alert, its first history
+row and its `alert.created` event in the same transaction, and an analyst moves it through the
+investigation state machine over an authenticated endpoint. Logging in exchanges a password for a
+short-lived bearer token ([ADR-0012](docs/adr/0012-operator-authentication.md)); an auditor's
+token is refused by the server on every mutation, which is where that boundary belongs.
+
+**One consequence worth knowing about the alerting rule.** Because the final score is floored by the
+rule score, a transaction that trips no transparent indicator cannot reach the alerting band however
+confident the model is. That is a stated policy rather than an accident —
+[ADR-0011 §4](docs/adr/0011-risk-banding-and-the-final-score.md) writes out the arithmetic, why it is
+wanted, and what it costs.
+
+**What does not run yet:** assignment, notes, analyst feedback and the reporting endpoints. There
+are no read endpoints for alerts either, which is why the console still renders from a mock fixture
+layer — that is Phase 6.
 
 Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 
@@ -180,7 +191,8 @@ Diagrams arrive with the behaviour they describe. The ER diagram and the transac
 exist — [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md) and
 [`TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md), both generated from
 `information_schema` on a database the migrations built, with a test asserting the ER diagram's
-entities are exactly the tables that exist. The alert state machine arrives with Phase 5.
+entities are exactly the tables that exist. The investigation state machine and what each move
+means are documented in `AlertTransitions`, beside the graph itself.
 
 ## Technology
 
@@ -269,13 +281,25 @@ you to type `reset` first.
 
 ### Credentials
 
-There are none to find and none committed. `make bootstrap` generates a random PostgreSQL password
-and a random Grafana admin password into `.env`, which is git-ignored. Compose refuses to start if
-either is missing rather than falling back to something guessable — you can see this in
+There are none to find and none committed. `make bootstrap` generates four random values into the
+git-ignored `.env`: a PostgreSQL password, a Grafana admin password, the API's token-signing secret,
+and the password the seeded demo operators share. Compose refuses to start when the signing secret
+is missing rather than falling back to something guessable — you can see this in
 [`compose.yaml`](compose.yaml).
 
-The console's sign-in screen is **presentational only**. It has no password field and no real
-authentication, and it says so on screen. Real authentication is Phase 8.
+**To call an operator endpoint,** log in as one of the four seeded operators — `analyst.one`,
+`analyst.two`, `administrator.one` or `auditor.one` — with the password in
+`SENTINELFLOW_DEMO_OPERATOR_PASSWORD`, and send the token back as a bearer:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d "{\"username\":\"analyst.one\",\"password\":\"$SENTINELFLOW_DEMO_OPERATOR_PASSWORD\"}"
+```
+
+The token lasts thirty minutes and cannot be revoked before it expires, which is the trade
+[ADR-0012](docs/adr/0012-operator-authentication.md) takes for keeping the API stateless.
+
+The console's sign-in screen is still **presentational only** — it is not yet wired to this
+endpoint, which is Phase 6's work, and it says so on screen.
 
 Every variable is documented in [`.env.example`](.env.example) with its default, whether it is
 required, whether it is sensitive, and which component reads it.
@@ -439,7 +463,14 @@ Controls that exist today, not aspirations:
 
 ### Known limitations, stated plainly
 
-- **There is no authentication yet.** Phase 8. The sign-in screen is presentational and says so.
+- **Ingestion is unauthenticated.** Operator endpoints require a bearer token from Phase 5, but
+  `POST /api/v1/transactions` does not: it is a machine-to-machine surface that needs its own
+  credential rather than an operator's password, and that arrives in Phase 8 with the rate limits
+  and payload bounds that belong beside it. [ADR-0012 §5](docs/adr/0012-operator-authentication.md).
+- **A token cannot be revoked before it expires.** Thirty minutes is the whole of how long a
+  withdrawn role keeps working. That is the cost of a stateless token and it is deliberate.
+- **The console is not wired to authentication yet.** Its sign-in screen is presentational and says
+  so; connecting it is Phase 6.
 - **Role handling in the console is a UX affordance, never a security boundary.** Disabling a
   control authorizes nothing.
 - **The local stack is not a deployment target.** It binds to your machine, holds only synthetic

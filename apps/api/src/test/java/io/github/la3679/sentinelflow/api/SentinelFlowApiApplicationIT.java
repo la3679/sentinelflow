@@ -94,8 +94,15 @@ class SentinelFlowApiApplicationIT extends AbstractPostgresTest {
     @DisplayName("management endpoints that were not opened stay closed")
     void unexposedManagementEndpointsAreNotReachable() {
         // env and beans disclose configuration and wiring. Neither is in the
-        // exposure list, so both must answer 404 rather than serve.
-        client.get().uri("/actuator/env").exchange().expectStatus().isNotFound();
-        client.get().uri("/actuator/beans").exchange().expectStatus().isNotFound();
+        // exposure list, and neither is permitted by the filter chain.
+        //
+        // 401 rather than the 404 this asserted before ADR-0012. The filter
+        // chain refuses an unauthenticated request before the actuator can
+        // decide whether the endpoint exists, so the answer no longer
+        // distinguishes "not exposed" from "exposed and not yours" - which is
+        // the better of the two answers to give a caller who has not
+        // authenticated. What matters is that neither serves, and neither does.
+        client.get().uri("/actuator/env").exchange().expectStatus().isUnauthorized();
+        client.get().uri("/actuator/beans").exchange().expectStatus().isUnauthorized();
     }
 }

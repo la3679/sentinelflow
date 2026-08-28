@@ -422,8 +422,11 @@ function Invoke-Smoke {
 
         Write-Host ''
         Write-Host 'Closed by design:'
-        Test-Endpoint 'api /actuator/env is closed'   "http://127.0.0.1:$apiPort/actuator/env"   404
-        Test-Endpoint 'api /actuator/beans is closed' "http://127.0.0.1:$apiPort/actuator/beans" 404
+        # 401 rather than 404 since ADR-0012: the filter chain refuses an
+        # unauthenticated request before the actuator decides whether the
+        # endpoint exists. Neither serves, which is what this checks.
+        Test-Endpoint 'api /actuator/env is closed'   "http://127.0.0.1:$apiPort/actuator/env"   401
+        Test-Endpoint 'api /actuator/beans is closed' "http://127.0.0.1:$apiPort/actuator/beans" 401
 
         Write-Host ''
         Write-Host 'Wiring:'

@@ -73,6 +73,29 @@
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
 
+    <!--
+      Authentication (ADR-0012). Two artifacts, because issuing a token and
+      verifying one are separate concerns in Spring Security:
+
+      starter-security brings the filter chain, the authorization rules and the
+      PasswordEncoder that hashes what user_credentials stores.
+
+      starter-oauth2-resource-server brings Nimbus, and with it both halves of
+      the JWT work - JwtEncoder to sign the token the login endpoint returns and
+      JwtDecoder to verify the one every other request carries. Using it for a
+      token this service issues to itself is deliberate: the alternative is a
+      third-party JWT library and a hand-written filter, which is more code
+      doing the same thing with more places to get the validation wrong.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+
     <!-- Health, readiness and the Prometheus scrape endpoint. -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -145,6 +168,15 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- MockMvc request post-processors and the annotations that put a
+         principal on a test request, so an authorization rule can be asserted
+         without every test performing a login first. -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
 
