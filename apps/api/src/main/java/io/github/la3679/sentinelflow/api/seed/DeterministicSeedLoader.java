@@ -125,7 +125,17 @@ public class DeterministicSeedLoader {
         SeedProfile profile = properties.profile();
 
         if (alreadySeeded()) {
-            log.info("Demo data already present; seed skipped. Use `make reset-demo` to start from empty.");
+            // The bulk data is there, which does not mean everything this
+            // loader writes is - see restoreMissingOperators.
+            int restored = restoreMissingOperators(properties.operatorPassword());
+            if (restored > 0) {
+                log.warn(
+                        "Demo data already present, but {} operator(s) could not have logged in; "
+                                + "their credentials were created. Seed otherwise skipped.",
+                        restored);
+            } else {
+                log.info("Demo data already present; seed skipped. Use `make reset-demo` to start from empty.");
+            }
             return SeedManifest.skipped(properties.seed(), profile);
         }
 
@@ -158,6 +168,76 @@ public class DeterministicSeedLoader {
                 profile,
                 manifest.checksum());
         return manifest;
+    }
+
+    /**
+     * Gives an operator who cannot log in the credential they were supposed to have.
+     *
+     * <h2>Why this exists at all</h2>
+     *
+     * {@link #alreadySeeded()} asks whether any customer exists and takes that as meaning everything
+     * this loader writes exists. That proxy holds only until the seed learns to write a new kind of
+     * row, and it has: {@code user_credentials} arrived with V10, after every existing database had
+     * already been seeded. Those databases have four operators and no passwords, and the seed will
+     * never fix them because they have customers.
+     *
+     * <p><strong>The symptom is silent.</strong> Every login answers 401 with a body that
+     * deliberately says nothing about why — distinguishing "no such user" from "wrong password"
+     * would turn an open endpoint into an oracle for which usernames exist (ADR-0012 §3). So the
+     * console simply stops working, with no diagnostic anywhere, and the only documented route out
+     * is {@code make reset-demo}, which destroys the data. Found by running the compose stack after
+     * Phase 5, not by any suite.
+     *
+     * <h2>What it will and will not do</h2>
+     *
+     * It creates a missing operator, their role, and their credential. It <strong>never rotates an
+     * existing credential</strong>: changing {@code SENTINELFLOW_DEMO_OPERATOR_PASSWORD} and
+     * restarting must not silently reset four passwords, and a repair that overwrote what it found
+     * could not be run safely.
+     *
+     * <p>It knows only the four fixed demo operators, so it cannot reach the {@code system}
+     * principal — which must never acquire a credential, and whose inability to log in is structural
+     * rather than a rule anybody applies (see {@code UserCredential}).
+     *
+     * @return how many operators needed repair, which is zero on every healthy database
+     */
+    private int restoreMissingOperators(String operatorPassword) {
+        List<String> loginless = entityManager
+                .createQuery("""
+                        SELECT u.username FROM User u
+                         WHERE u.username IN :usernames
+                           AND NOT EXISTS (SELECT 1 FROM UserCredential c WHERE c.userId = u.id)
+                        """, String.class)
+                .setParameter("usernames", ANALYST_USERNAMES)
+                .getResultList();
+
+        List<String> missing = new ArrayList<>(ANALYST_USERNAMES);
+        missing.removeAll(entityManager
+                .createQuery("SELECT u.username FROM User u WHERE u.username IN :usernames", String.class)
+                .setParameter("usernames", ANALYST_USERNAMES)
+                .getResultList());
+
+        if (loginless.isEmpty() && missing.isEmpty()) {
+            return 0;
+        }
+
+        // Encoded once, for the reason seedAnalysts gives.
+        String passwordHash = passwordEncoder.encode(operatorPassword);
+
+        for (String username : missing) {
+            User user = new User(username, displayNameFor(username), UserStatus.ACTIVE);
+            entityManager.persist(user);
+            entityManager.persist(new UserRole(user.getId(), roleId(roleFor(username))));
+            entityManager.persist(new UserCredential(user.getId(), passwordHash));
+        }
+        for (String username : loginless) {
+            UUID userId = entityManager
+                    .createQuery("SELECT u.id FROM User u WHERE u.username = :username", UUID.class)
+                    .setParameter("username", username)
+                    .getSingleResult();
+            entityManager.persist(new UserCredential(userId, passwordHash));
+        }
+        return loginless.size() + missing.size();
     }
 
     private boolean alreadySeeded() {
