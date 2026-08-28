@@ -269,7 +269,7 @@ class AccountContextAssemblerIT extends AbstractPostgresTest {
         Merchant merchant = aMerchant();
 
         transactions.saveAndFlush(new TransactionRecord(
-                "TXN-" + SchemaFixtures.next6(),
+                SchemaFixtures.nextTransactionReference(jdbc),
                 "idem-" + UUID.randomUUID(),
                 account.getId(),
                 merchant.getId(),
@@ -360,7 +360,7 @@ class AccountContextAssemblerIT extends AbstractPostgresTest {
         // Never persisted: the foreign key makes this state unreachable through
         // the schema, which is exactly why the assembler must not assume it away.
         TransactionRecord orphan = new TransactionRecord(
-                "TXN-" + SchemaFixtures.next6(),
+                SchemaFixtures.nextTransactionReference(jdbc),
                 "idem-" + UUID.randomUUID(),
                 UUID.randomUUID(),
                 merchant.getId(),
@@ -409,7 +409,7 @@ class AccountContextAssemblerIT extends AbstractPostgresTest {
 
     private TransactionRecord transactionAt(Account account, Merchant merchant, Instant at, String amount) {
         return transactions.saveAndFlush(new TransactionRecord(
-                "TXN-" + SchemaFixtures.next6(),
+                SchemaFixtures.nextTransactionReference(jdbc),
                 "idem-" + UUID.randomUUID(),
                 account.getId(),
                 merchant.getId(),

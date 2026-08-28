@@ -255,7 +255,13 @@ class AlertReportIT extends AbstractPostgresTest {
                     summary, risk_band, final_score)
                 VALUES (?, ?, ?, ?, ?, 'Synthetic alert for a report test', 'HIGH', 71.50)
                 RETURNING id
-                """, UUID.class, "ALT-" + SchemaFixtures.next4(), transactionId, assessmentId, status, priority);
+                """,
+                UUID.class,
+                SchemaFixtures.nextAlertReference(jdbc),
+                transactionId,
+                assessmentId,
+                status,
+                priority);
         // created_at is a database default, so it is set afterwards rather than
         // by the insert. The window is what this suite is about.
         jdbc.update("UPDATE alerts SET created_at = ? WHERE id = ?", java.sql.Timestamp.from(createdAt), alertId);
