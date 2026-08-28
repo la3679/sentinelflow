@@ -1,12 +1,28 @@
 # API migration audit — what the console asks for, and what the API answers
 
-**Audited:** 2026-08-28 · **Auditor:** Claude · **Opens:** Phase 6 · **Status:** open — piece 1
-of 4 done
+**Audited:** 2026-08-28 · **Auditor:** Claude · **Opens:** Phase 6 · **Status:** open — pieces 1
+and 2 of 4 done
 
-> **Progress.** Piece 1 (transport and authentication) landed on 2026-08-28, along with the
-> first of piece 3's two API additions (legal targets on the alert). Pieces 2 and 4, and the
-> assignee-name decision, are open. Each section below still describes what was found; the
-> plan at the end records what is done.
+> **Progress.** Piece 1 (transport and authentication) landed on 2026-08-28, along with the first
+> of piece 3's two API additions (legal targets on the alert). Piece 2 (types and mapping) landed
+> the same day, together with the three transaction read endpoints this audit had wrongly recorded
+> as existing. Piece 4 and the assignee-name decision are open. Each section below still describes
+> what was found; the plan at the end records what is done.
+
+## Correction: three of the endpoints in the table below did not exist
+
+**This audit says it checked the handlers. On the transaction endpoints it checked the contract.**
+`contracts/openapi/` has described `GET /transactions`, `GET /transactions/{id}` and
+`GET /transactions/{id}/assessment` since Phase 3; `TransactionController` implemented only the
+`POST`. The verdict table's "Maps, with field renames" was true of the document and false of the
+code, and the count of endpoints with no server counterpart was four when it was seven.
+
+Found by writing the client the audit called for, which is the honest way it was ever going to be
+found: nothing had called those paths, so nothing had discovered they answered 404. The three are
+built and merged as [#62](https://github.com/la3679/sentinelflow/pull/62) with 16 integration
+tests, so the table below is now accurate — but the lesson is the general one, and it is the same
+shape as the reference collision and the seed's idempotency guard: **a check that reads one of two
+documents and reports on both is a check that has not been made.**
 
 Phase 6's first deliverable is "typed RTK Query API layer replacing the Lovable mock fixtures".
 [`AGENTS.md`](../../AGENTS.md) describes that migration as "limited to replacing `mockBaseQuery`
@@ -41,6 +57,15 @@ not against either document's description of the other.
 
 Of the console's eleven endpoints, two reach a real endpoint at the same verb and path and still
 need every field renamed; the other nine need more. Five server endpoints have no client at all.
+
+**The table above is what was found, and is left as found.** Where each stands after pieces 1 and 2:
+
+| Now                                             | Which                                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Reads the API**                               | login, the alert queue, one alert, its history, its notes, its transition, its assignment, the transaction list, one transaction, its assessment                   |
+| **Still a fixture, and needs a decision first** | `/overview`, `/reports`, `/model-policy`, `/health` — piece 4                                                                                                      |
+| **Deleted rather than migrated**                | the queue's free-text search and risk-band filter, the feed's authorisation-status filter, `ALLOWED_TRANSITIONS`, the client-supplied `actor`, the assignee picker |
+| **A server endpoint with still no client**      | `PUT /alerts/{id}/feedback` and `GET /reports/alerts.csv` — both belong to screens piece 4 has yet to decide                                                       |
 
 ## The finding that matters most: the console renders controls the server refuses
 
@@ -190,8 +215,29 @@ The migration is four pieces of work, not one, and only the first is what `AGENT
    [ADR-0013](../adr/0013-console-to-api-cross-origin-access.md) now decides, and `TokenResponse`
    grew `roles` so the console need not decode the token to learn them.
 2. **Types and mapping** — `domain/types.ts` rewritten against the contract: real enums, the
-   reference/identifier pair, `version`, `SYSTEM` as a role, and the removal of `ALLOWED_TRANSITIONS`
-   and the client-supplied `actor`. **Open, and next.**
+   reference/identifier pair, `version`, `SYSTEM` as a role, and the removal of
+   `ALLOWED_TRANSITIONS` and the client-supplied `actor`. **Done, 2026-08-28.** The alert queue,
+   the alert detail, the transaction feed and the transaction detail all read the API; the `409` is
+   answered by re-reading the alert, saying what it is now, and offering the move again. Three
+   things the work found that this audit had not:
+
+   - **The three transaction read endpoints did not exist.** See the correction at the top.
+   - **The console cannot assign an alert to anybody**, which is sharper than "an assignee renders
+     as a UUID". Assignment takes an identifier; nothing resolves a name to one, and the login
+     response carries the operator's roles but not their own identifier — so not even "assign to
+     me" can be built. Release, which sends `null`, is the only assignment this console can make,
+     and it is the only one offered.
+   - **Nothing goes from a transaction to its alert.** `GET /alerts` filters on status, priority
+     and assignee, and there is no lookup by transaction. The transaction page says so rather than
+     offering a link it would have to guess at. The route that exists is alert to transaction.
+
+   Two smaller decisions, recorded because each removed a control rather than adding one: the
+   queue's free-text search and risk-band filter are gone, because `GET /alerts` has neither and a
+   filter that quietly matched everything is a dead control; and the transaction feed's
+   authorisation-status filter is gone with the enum behind it, because this system scores and
+   never authorises. The feed is now polling rather than a window advancing over a fixture, which
+   is what "live" can honestly mean against a real API.
+
 3. **Two small API additions**, each needing its own decision: legal targets on `GET /alerts/{id}`
    — **done**, merged as [#57](https://github.com/la3679/sentinelflow/pull/57) — and whatever
    resolves an `assigneeId` to a name, which is still undecided.

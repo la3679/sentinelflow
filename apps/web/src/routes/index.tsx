@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ALERT_STATUS_LABELS, formatAge, formatMoney, RISK_BAND_LABELS } from "@/domain/labels";
+import { ALERT_STATUS_LABELS, formatAgeSince, RISK_BAND_LABELS } from "@/domain/labels";
 import { useGetOverviewQuery } from "@/api/sentinelApi";
 
 export const Route = createFileRoute("/")({
@@ -262,9 +262,9 @@ function OverviewPage() {
                       <TableHead scope="col" className="text-right">
                         Final score
                       </TableHead>
-                      <TableHead scope="col">Amount</TableHead>
+                      <TableHead scope="col">Summary</TableHead>
                       <TableHead scope="col">Age</TableHead>
-                      <TableHead scope="col">Assignee</TableHead>
+                      <TableHead scope="col">Assignment</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -276,7 +276,7 @@ function OverviewPage() {
                             params={{ alertId: alert.alertId }}
                             className="tabular underline underline-offset-4"
                           >
-                            {alert.alertId}
+                            {alert.alertReference}
                           </Link>
                         </TableCell>
                         <TableCell>
@@ -289,11 +289,11 @@ function OverviewPage() {
                           <RiskBandChip band={alert.riskBand} />
                         </TableCell>
                         <TableCell className="tabular text-right">{alert.finalScore}</TableCell>
-                        <TableCell className="tabular">
-                          {formatMoney(alert.money.amount, alert.money.currency)}
+                        <TableCell className="max-w-md text-xs">{alert.summary}</TableCell>
+                        <TableCell className="tabular">{formatAgeSince(alert.createdAt)}</TableCell>
+                        <TableCell className="text-xs">
+                          {alert.assigneeId ? "Assigned" : "Unassigned"}
                         </TableCell>
-                        <TableCell className="tabular">{formatAge(alert.ageMinutes)}</TableCell>
-                        <TableCell className="tabular">{alert.assignee ?? "Unassigned"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

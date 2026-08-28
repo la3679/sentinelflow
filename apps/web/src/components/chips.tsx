@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { ALERT_STATUS_LABELS, HEALTH_LABELS, RISK_BAND_LABELS } from "@/domain/labels";
+import {
+  ALERT_PRIORITY_LABELS,
+  ALERT_STATUS_LABELS,
+  HEALTH_LABELS,
+  RISK_BAND_LABELS,
+} from "@/domain/labels";
 import type { AlertPriority, AlertStatus, HealthState, RiskBand } from "@/domain/types";
 
 const chipBase =
@@ -116,17 +121,17 @@ export function HealthChip({
 }
 
 const PRIORITY_CLASSES: Record<AlertPriority, string> = {
-  P1: "bg-risk-critical text-risk-critical-foreground border-risk-critical",
-  P2: "bg-risk-high text-risk-high-foreground border-risk-high",
-  P3: "bg-risk-medium text-risk-medium-foreground border-risk-medium",
-  P4: "bg-surface-raised text-foreground border-border-strong",
+  URGENT: "bg-risk-critical text-risk-critical-foreground border-risk-critical",
+  HIGH: "bg-risk-high text-risk-high-foreground border-risk-high",
+  MEDIUM: "bg-risk-medium text-risk-medium-foreground border-risk-medium",
+  LOW: "bg-surface-raised text-foreground border-border-strong",
 };
 
 export function PriorityChip({ priority }: { priority: AlertPriority }) {
   return (
-    <span className={cn(chipBase, "tabular", PRIORITY_CLASSES[priority])}>
+    <span className={cn(chipBase, PRIORITY_CLASSES[priority])}>
       <Clock aria-hidden="true" className="size-3.5 shrink-0" />
-      Priority {priority.slice(1)}
+      {ALERT_PRIORITY_LABELS[priority]} priority
     </span>
   );
 }

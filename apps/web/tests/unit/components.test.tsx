@@ -39,12 +39,12 @@ describe("status chips", () => {
   it("renders priorities and passes an axe scan", async () => {
     const { container } = render(
       <div>
-        <PriorityChip priority="P1" />
+        <PriorityChip priority="URGENT" />
         <RiskBandChip band="CRITICAL" />
         <AlertStatusChip status="IN_REVIEW" />
       </div>,
     );
-    expect(screen.getByText(/priority 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/urgent priority/i)).toBeInTheDocument();
     await expectNoAxeViolations(container);
   });
 });

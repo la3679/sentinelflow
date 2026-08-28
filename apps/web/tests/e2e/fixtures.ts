@@ -10,6 +10,11 @@ import { test as base, expect, type Page, type Route } from "@playwright/test";
  * and a database behind them, and it keeps the suite honest about which
  * requests the console actually makes: anything not routed here fails visibly
  * rather than quietly resolving from a fixture.
+ *
+ * **Every body below is the contract's shape**, field for field with
+ * `contracts/openapi/sentinelflow-api.yaml`. A stub that answered a shape the
+ * API does not serve would let a screen pass here and break against the real
+ * one, which is the whole failure mode this suite exists to prevent.
  */
 export const OPERATOR = { username: "analyst.one", password: "a-demo-password" } as const;
 
@@ -26,12 +31,22 @@ const TOKEN_BODY = {
   roles: ["ANALYST"],
 };
 
-function problem(status: number, title: string, detail: string) {
+export const ALERT_ID = "11111111-1111-4111-a111-111111111111";
+export const ALERT_REFERENCE = "ALT-0001";
+export const TRANSACTION_ID = "22222222-2222-4222-a222-222222222222";
+export const TRANSACTION_REFERENCE = "TXN-000042";
+const ASSESSMENT_ID = "33333333-3333-4333-a333-333333333333";
+
+function problem(status: number, title: string, detail: string, extras: object = {}) {
   return {
     status,
     contentType: "application/problem+json",
-    body: JSON.stringify({ type: "about:blank", title, status, detail }),
+    body: JSON.stringify({ type: "about:blank", title, status, detail, ...extras }),
   };
+}
+
+function json(body: unknown) {
+  return { status: 200, contentType: "application/json", body: JSON.stringify(body) };
 }
 
 export interface ApiStub {
@@ -41,6 +56,11 @@ export interface ApiStub {
   refuseLogin(): void;
   /** Make every authenticated request answer 401, the way an expired token does. */
   expireSession(): void;
+  /**
+   * Make the next transition answer 409 with a stale version, and move the
+   * alert on — the way a second analyst acting first looks from here.
+   */
+  conflictOnNextTransition(): void;
 }
 
 interface Fixtures {
@@ -61,9 +81,103 @@ export const test = base.extend<Fixtures>({
       expireSession() {
         sessionExpired = true;
       },
+      conflictOnNextTransition() {
+        conflictArmed = true;
+      },
     };
     let loginRefused = false;
     let sessionExpired = false;
+    let conflictArmed = false;
+
+    /** The one alert this stub serves, which a transition moves. */
+    const alert = {
+      alertId: ALERT_ID,
+      alertReference: ALERT_REFERENCE,
+      transactionId: TRANSACTION_ID,
+      assessmentId: ASSESSMENT_ID,
+      status: "NEW",
+      priority: "URGENT",
+      assigneeId: null as string | null,
+      summary: "HIGH risk 82 on TXN-000042 — R_VELOCITY_10M",
+      riskBand: "HIGH",
+      finalScore: 82,
+      version: 0,
+      legalTargets: ["IN_REVIEW"],
+      createdAt: "2026-08-28T09:00:00Z",
+      updatedAt: "2026-08-28T09:00:00Z",
+      closedAt: null as string | null,
+    };
+
+    const transaction = {
+      transactionId: TRANSACTION_ID,
+      transactionReference: TRANSACTION_REFERENCE,
+      accountReference: "ACC-000045",
+      merchantReference: "MER-0042",
+      merchantCategoryCode: "5411",
+      type: "PURCHASE",
+      channel: "CARD_NOT_PRESENT",
+      amount: { value: "1249.9900", currency: "GBP" },
+      originCountry: "GB",
+      occurredAt: "2026-08-28T08:59:00Z",
+      ingestedAt: "2026-08-28T08:59:01Z",
+      processingStatus: "ASSESSED",
+      riskBand: "HIGH",
+    };
+
+    const assessment = {
+      assessmentId: ASSESSMENT_ID,
+      transactionId: TRANSACTION_ID,
+      ruleScore: 50,
+      modelScore: 91,
+      finalScore: 82,
+      riskBand: "HIGH",
+      degraded: false,
+      modelVersion: "1.0.0",
+      featureVersion: "1.0.0",
+      rulesetVersion: "1.0.0",
+      policyVersion: "1.1.0",
+      reasonCodes: [
+        {
+          code: "R_VELOCITY_10M",
+          description: "Five attempts on this account within ten minutes.",
+          contribution: 25,
+          source: "RULE",
+        },
+      ],
+      scoringLatencyMs: 42,
+      assessedAt: "2026-08-28T08:59:03Z",
+    };
+
+    const page0 = (content: unknown[]) => ({
+      content,
+      page: { page: 0, size: 20, totalElements: content.length, totalPages: 1 },
+    });
+
+    /**
+     * A queue with enough in it to be a queue.
+     *
+     * The single alert above is the one every detail and transition test acts
+     * on. A list of exactly one would still pass those, and would make the
+     * README's screenshot of the queue a picture of an empty morning — so the
+     * rest of the page is filled deterministically, in the server's own order.
+     */
+    const QUEUE_PADDING = ["URGENT", "HIGH", "HIGH", "MEDIUM", "MEDIUM", "MEDIUM", "LOW"].map(
+      (priority, index) => ({
+        ...alert,
+        alertId: `a1a1a1a1-1111-4111-a111-${String(index + 10).padStart(12, "0")}`,
+        alertReference: `ALT-${String(index + 2).padStart(4, "0")}`,
+        status: ["NEW", "IN_REVIEW", "ESCALATED", "NEW", "IN_REVIEW", "NEW", "CLOSED"][index],
+        priority,
+        assigneeId: index % 2 === 0 ? null : "55555555-5555-4555-a555-555555555555",
+        riskBand: priority === "URGENT" ? "CRITICAL" : priority === "LOW" ? "MEDIUM" : "HIGH",
+        finalScore: 92 - index * 4,
+        summary: `${priority === "URGENT" ? "CRITICAL" : "HIGH"} risk ${92 - index * 4} on TXN-0000${index + 43} — ${
+          ["R_VELOCITY_10M", "R_GEO_MISMATCH", "R_UNKNOWN_DEVICE", "R_BALANCE_DRAIN"][index % 4]
+        }`,
+        createdAt: `2026-08-28T0${index}:12:00Z`,
+        legalTargets: [],
+      }),
+    );
 
     await page.route(API_GLOB, async (route: Route) => {
       const request = route.request();
@@ -81,16 +195,100 @@ export const test = base.extend<Fixtures>({
           );
           return;
         }
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(TOKEN_BODY),
-        });
+        await route.fulfill(json(TOKEN_BODY));
         return;
       }
 
       if (sessionExpired) {
         await route.fulfill(problem(401, "Unauthorized", "The token has expired."));
+        return;
+      }
+
+      if (path.endsWith(`/alerts/${ALERT_ID}/transition`)) {
+        if (conflictArmed) {
+          conflictArmed = false;
+          // Somebody else acted first: the alert has moved on, and the version
+          // the console held is stale. The problem body carries what it is now,
+          // so the console can re-read and offer the move again.
+          alert.status = "IN_REVIEW";
+          alert.version = 1;
+          alert.legalTargets = ["ESCALATED", "CONFIRMED_SUSPICIOUS", "DISMISSED_FALSE_POSITIVE"];
+          await route.fulfill(
+            problem(409, "Version conflict", "This alert has changed since you read it.", {
+              expectedVersion: 0,
+              currentVersion: alert.version,
+            }),
+          );
+          return;
+        }
+        const body = JSON.parse(request.postData() ?? "{}") as { targetStatus?: string };
+        alert.status = body.targetStatus ?? alert.status;
+        alert.version += 1;
+        alert.legalTargets = ["ESCALATED", "CONFIRMED_SUSPICIOUS", "DISMISSED_FALSE_POSITIVE"];
+        await route.fulfill(json(alert));
+        return;
+      }
+
+      if (path.endsWith(`/alerts/${ALERT_ID}/history`)) {
+        await route.fulfill(
+          json(
+            page0([
+              {
+                actionId: "44444444-4444-4444-a444-444444444444",
+                alertId: ALERT_ID,
+                actorId: "55555555-5555-4555-a555-555555555555",
+                actorRole: "SYSTEM",
+                actionType: "CREATED",
+                previousStatus: null,
+                newStatus: "NEW",
+                note: null,
+                occurredAt: "2026-08-28T09:00:00Z",
+              },
+            ]),
+          ),
+        );
+        return;
+      }
+
+      if (path.endsWith(`/alerts/${ALERT_ID}/notes`)) {
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            actionId: "66666666-6666-4666-a666-666666666666",
+            alertId: ALERT_ID,
+            actorId: "55555555-5555-4555-a555-555555555555",
+            actorRole: "ANALYST",
+            actionType: "NOTE_ADDED",
+            note: "Recorded by the end-to-end suite.",
+            occurredAt: "2026-08-28T09:05:00Z",
+          }),
+        });
+        return;
+      }
+
+      if (path.endsWith(`/alerts/${ALERT_ID}`)) {
+        await route.fulfill(json(alert));
+        return;
+      }
+
+      if (path.endsWith("/alerts")) {
+        await route.fulfill(json(page0([alert, ...QUEUE_PADDING])));
+        return;
+      }
+
+      if (path.endsWith(`/transactions/${TRANSACTION_ID}/assessment`)) {
+        await route.fulfill(json(assessment));
+        return;
+      }
+
+      if (path.endsWith(`/transactions/${TRANSACTION_ID}`)) {
+        await route.fulfill(json(transaction));
+        return;
+      }
+
+      if (path.endsWith("/transactions")) {
+        await route.fulfill(json(page0([transaction])));
         return;
       }
 

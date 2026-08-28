@@ -1,30 +1,28 @@
 /**
- * TEMPORARY deterministic mock fixture layer.
+ * TEMPORARY deterministic fixtures for the four screens with no server.
  *
- * Every value here is fictional synthetic data generated from a fixed seed so
- * the console renders identically on every load with no backend. This module
- * will be deleted once the real `/api/v1` client is wired up.
+ * Every value here is fictional synthetic data generated from a fixed seed, so
+ * the console renders identically on every load. It stands in for the overview,
+ * the reports screen, the model and policy screen, and system health — the four
+ * endpoints this console invents. `docs/frontend/API_MIGRATION_AUDIT.md` records
+ * what each one wants and what has to be decided before it can be real.
+ *
+ * **Nothing here backs the alert queue or the transaction list any more.** Those
+ * read the API. What remains is shaped like the contract even so, because a
+ * fixture in a shape the API does not serve is a shape somebody writes a screen
+ * against.
  */
 import type {
-  AlertDetail,
+  Alert,
   AlertPriority,
   AlertStatus,
-  AlertSummary,
-  AuditEntry,
   ComponentHealth,
   ModelPolicySnapshot,
   PipelineHealth,
-  ReasonCode,
-  RelatedAccountActivity,
   ReportsSnapshot,
-  RiskAssessment,
   RiskBand,
   ThroughputPoint,
-  TimelineEvent,
-  Transaction,
-  TransactionStatus,
 } from "@/domain/types";
-import { ALERT_STATUSES } from "@/domain/types";
 
 export const MOCK_EPOCH = Date.parse("2026-08-25T12:00:00.000Z");
 
@@ -51,39 +49,36 @@ function pad(value: number, width: number): string {
   return String(value).padStart(width, "0");
 }
 
-const CHANNELS = ["CARD_PRESENT", "CARD_NOT_PRESENT", "ACH", "WIRE", "INSTANT_TRANSFER"] as const;
+/**
+ * A UUID-shaped identifier drawn from the seeded generator.
+ *
+ * The API's keys are UUIDs and its handles are references, and a fixture that
+ * used a readable string for both would hide the two-field design every screen
+ * has to respect: display the reference, route on the identifier.
+ */
+function uuidFrom(rng: () => number): string {
+  const hex = (count: number): string =>
+    Array.from({ length: count }, () => Math.floor(rng() * 16).toString(16)).join("");
+  return `${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}`;
+}
 
-const CATEGORIES = [
-  "ELECTRONICS",
-  "GROCERY",
-  "TRAVEL",
-  "GAMING",
-  "CRYPTO_ONRAMP",
-  "MONEY_TRANSFER",
-  "SUBSCRIPTION",
+const REASON_CODES = [
+  "R_VELOCITY_10M",
+  "R_GEO_MISMATCH",
+  "R_AMOUNT_ABOVE_BASELINE",
+  "R_UNKNOWN_DEVICE",
+  "R_SMALL_HOURS",
+  "R_BALANCE_DRAIN",
 ] as const;
 
-const COUNTRIES = ["US", "GB", "DE", "SG", "BR", "NG", "JP"] as const;
-
-const TRANSACTION_STATUSES: readonly TransactionStatus[] = [
-  "AUTHORIZED",
-  "DECLINED",
-  "PENDING",
-  "REVERSED",
+const STATUSES: readonly AlertStatus[] = [
+  "NEW",
+  "IN_REVIEW",
+  "ESCALATED",
+  "CONFIRMED_SUSPICIOUS",
+  "DISMISSED_FALSE_POSITIVE",
+  "CLOSED",
 ];
-
-const REASON_LIBRARY: readonly Omit<ReasonCode, "contribution">[] = [
-  { code: "R-VEL-01", label: "Velocity: 5+ attempts in 10 minutes", source: "RULE" },
-  { code: "R-GEO-04", label: "Country mismatch with account profile", source: "RULE" },
-  { code: "R-AMT-02", label: "Amount above account rolling maximum", source: "RULE" },
-  { code: "R-DEV-07", label: "Unrecognised device fingerprint", source: "RULE" },
-  { code: "M-EMB-11", label: "Merchant-category embedding anomaly", source: "MODEL" },
-  { code: "M-SEQ-03", label: "Unusual transaction sequence for account", source: "MODEL" },
-  { code: "M-TIM-05", label: "Off-pattern hour of day", source: "MODEL" },
-  { code: "M-NET-08", label: "Shared-device cluster signal", source: "MODEL" },
-];
-
-const ANALYSTS = ["analyst.a1", "analyst.b2", "analyst.c3", "admin.z9"] as const;
 
 function bandFor(finalScore: number): RiskBand {
   if (finalScore >= 90) return "CRITICAL";
@@ -92,192 +87,65 @@ function bandFor(finalScore: number): RiskBand {
   return "LOW";
 }
 
+/** The same mapping `priorityByBand` makes on the server, for fixture data only. */
 function priorityFor(band: RiskBand): AlertPriority {
   switch (band) {
     case "CRITICAL":
-      return "P1";
+      return "URGENT";
     case "HIGH":
-      return "P2";
+      return "HIGH";
     case "MEDIUM":
-      return "P3";
+      return "MEDIUM";
     default:
-      return "P4";
+      return "LOW";
   }
 }
 
-function amountString(rng: () => number): string {
-  const units = Math.floor(rng() * 980_00) + 500; // cents-ish, integer math only
-  const whole = Math.floor(units / 100);
-  const cents = units % 100;
-  return `${whole}.${pad(cents, 2)}`;
-}
-
-function buildAssessment(rng: () => number, index: number, occurredAt: string): RiskAssessment {
-  const ruleScore = Math.floor(rng() * 100);
-  const modelScore = Math.floor(rng() * 100);
-  const finalScore = Math.round(ruleScore * 0.4 + modelScore * 0.6);
-  const reasonCount = 2 + Math.floor(rng() * 3);
-  const chosen: ReasonCode[] = [];
-  const used = new Set<string>();
-  while (chosen.length < reasonCount) {
-    const candidate = pick(rng, REASON_LIBRARY);
-    if (used.has(candidate.code)) continue;
-    used.add(candidate.code);
-    const contribution = Math.floor(rng() * 24) + 3;
-    chosen.push({ ...candidate, contribution: `${contribution}.0` });
-  }
-  return {
-    assessmentId: `ASM-${pad(index, 6)}`,
-    ruleScore,
-    modelScore,
-    finalScore,
-    riskBand: bandFor(finalScore),
-    modelVersion: MODEL_VERSION,
-    featureVersion: FEATURE_VERSION,
-    policyVersion: POLICY_VERSION,
-    reasonCodes: chosen,
-    scoringLatencyMs: 18 + Math.floor(rng() * 120),
-    assessedAt: occurredAt,
-  };
-}
-
-function buildTransaction(index: number): Transaction {
-  const rng = mulberry32(1_000 + index * 7);
-  const occurredAt = new Date(MOCK_EPOCH - index * 47_000).toISOString();
-  return {
-    transactionId: `TXN-${pad(index, 6)}`,
-    accountId: `ACC-${pad((index % 120) + 1, 6)}`,
-    merchantId: `MER-${pad((index % 48) + 1, 4)}`,
-    merchantCategory: pick(rng, CATEGORIES),
-    channel: pick(rng, CHANNELS),
-    money: { amount: amountString(rng), currency: pick(rng, ["USD", "EUR", "GBP"] as const) },
-    status: pick(rng, TRANSACTION_STATUSES),
-    countryCode: pick(rng, COUNTRIES),
-    deviceId: `DEV-${pad((index % 200) + 1, 5)}`,
-    occurredAt,
-    correlationId: `corr-${pad(index, 6)}-${pad(index % 97, 4)}`,
-    assessment: buildAssessment(rng, index, occurredAt),
-  };
-}
-
-export const TRANSACTIONS: Transaction[] = Array.from({ length: 480 }, (_, i) =>
-  buildTransaction(i + 1),
-);
-
-const TRANSACTION_INDEX = new Map(TRANSACTIONS.map((t) => [t.transactionId, t]));
-
-export function findTransaction(transactionId: string): Transaction | undefined {
-  return TRANSACTION_INDEX.get(transactionId);
-}
-
-function statusFor(rng: () => number, index: number): AlertStatus {
-  if (index % 9 === 0) return "NEW";
-  return pick(rng, ALERT_STATUSES);
-}
-
-function buildAlert(index: number): AlertSummary {
+function buildAlert(index: number): Alert {
   const rng = mulberry32(50_000 + index * 13);
-  const transaction = TRANSACTIONS[(index * 3) % TRANSACTIONS.length] as Transaction;
-  const status = statusFor(rng, index);
+  const finalScore = 62 + Math.floor(rng() * 38);
+  const riskBand = bandFor(finalScore);
+  const status = index % 9 === 0 ? "NEW" : pick(rng, STATUSES);
   const ageMinutes = 3 + Math.floor(rng() * 4_000);
+  const createdAt = new Date(MOCK_EPOCH - ageMinutes * 60_000).toISOString();
+  const closed = status === "CLOSED";
   return {
-    alertId: `ALR-${pad(index, 6)}`,
-    transactionId: transaction.transactionId,
-    accountId: transaction.accountId,
-    priority: priorityFor(transaction.assessment.riskBand),
+    alertId: uuidFrom(rng),
+    alertReference: `ALT-${pad(index, 4)}`,
+    transactionId: uuidFrom(rng),
+    assessmentId: uuidFrom(rng),
     status,
-    riskBand: transaction.assessment.riskBand,
-    finalScore: transaction.assessment.finalScore,
-    topReasonCode: transaction.assessment.reasonCodes[0]?.code ?? "R-VEL-01",
-    assignee: status === "NEW" ? null : pick(rng, ANALYSTS),
-    createdAt: new Date(MOCK_EPOCH - ageMinutes * 60_000).toISOString(),
-    ageMinutes,
-    money: transaction.money,
+    priority: priorityFor(riskBand),
+    assigneeId: status === "NEW" ? null : uuidFrom(rng),
+    summary: `${riskBand} risk ${finalScore} on TXN-${pad(index * 3, 6)} — ${pick(rng, REASON_CODES)}`,
+    riskBand,
+    finalScore,
+    version: status === "NEW" ? 0 : 1 + Math.floor(rng() * 4),
+    // Empty deliberately. The overview lists alerts and offers no move on any of
+    // them, and a fixture that guessed at this field would be the second copy of
+    // the state machine this migration deleted.
+    legalTargets: [],
+    createdAt,
+    updatedAt: new Date(MOCK_EPOCH - Math.floor(ageMinutes / 2) * 60_000).toISOString(),
+    closedAt: closed ? new Date(MOCK_EPOCH - 60_000).toISOString() : null,
   };
 }
 
-export const ALERTS: AlertSummary[] = Array.from({ length: 164 }, (_, i) => buildAlert(i + 1));
+export const ALERTS: Alert[] = Array.from({ length: 164 }, (_, i) => buildAlert(i + 1));
 
-const ALERT_INDEX = new Map(ALERTS.map((a) => [a.alertId, a]));
-
-export function findAlertSummary(alertId: string): AlertSummary | undefined {
-  return ALERT_INDEX.get(alertId);
-}
-
-export function alertForTransaction(transactionId: string): AlertSummary | undefined {
-  return ALERTS.find((a) => a.transactionId === transactionId);
-}
-
-export function buildAlertDetail(summary: AlertSummary): AlertDetail {
-  const transaction = findTransaction(summary.transactionId) as Transaction;
-  const timeline: TimelineEvent[] = [
-    {
-      eventId: `${summary.alertId}-E1`,
-      kind: "CREATED",
-      actor: "scoring-service",
-      message: `Alert opened from assessment ${transaction.assessment.assessmentId} (final score ${transaction.assessment.finalScore}).`,
-      occurredAt: summary.createdAt,
-    },
-  ];
-  if (summary.assignee) {
-    timeline.push({
-      eventId: `${summary.alertId}-E2`,
-      kind: "ASSIGNED",
-      actor: "queue-router",
-      message: `Assigned to ${summary.assignee}.`,
-      occurredAt: new Date(Date.parse(summary.createdAt) + 240_000).toISOString(),
-    });
-  }
-  if (summary.status !== "NEW") {
-    timeline.push({
-      eventId: `${summary.alertId}-E3`,
-      kind: "STATUS_CHANGE",
-      actor: summary.assignee ?? "analyst.a1",
-      message: `Status set to ${summary.status}.`,
-      occurredAt: new Date(Date.parse(summary.createdAt) + 900_000).toISOString(),
-    });
-  }
-
-  const audit: AuditEntry[] = timeline.map((event, i) => ({
-    entryId: `${summary.alertId}-A${i + 1}`,
-    action: event.kind,
-    actor: event.actor,
-    actorRole: event.actor.startsWith("admin") ? "ADMINISTRATOR" : "ANALYST",
-    occurredAt: event.occurredAt,
-    detail: event.message,
-  }));
-
-  return {
-    ...summary,
-    transaction,
-    timeline,
-    audit,
-    notes:
-      summary.status === "NEW"
-        ? []
-        : [
-            {
-              noteId: `${summary.alertId}-N1`,
-              author: summary.assignee ?? "analyst.a1",
-              body: "Synthetic case note: reviewed velocity pattern against account baseline.",
-              createdAt: new Date(Date.parse(summary.createdAt) + 1_200_000).toISOString(),
-            },
-          ],
-  };
-}
-
-export function relatedActivity(accountId: string, excludeId: string): RelatedAccountActivity[] {
-  return TRANSACTIONS.filter((t) => t.accountId === accountId && t.transactionId !== excludeId)
-    .slice(0, 8)
-    .map((t) => ({
-      transactionId: t.transactionId,
-      occurredAt: t.occurredAt,
-      money: t.money,
-      merchantId: t.merchantId,
-      riskBand: t.assessment.riskBand,
-      status: t.status,
-    }));
-}
+/**
+ * A band distribution over scored transactions, generated directly.
+ *
+ * It is not derived from the alerts: most scored transactions never raise one,
+ * so counting alerts by band would show a distribution shaped like the alerting
+ * threshold rather than like the traffic.
+ */
+export const SCORED_BAND_COUNTS: Record<RiskBand, number> = {
+  LOW: 14_920,
+  MEDIUM: 4_260,
+  HIGH: 812,
+  CRITICAL: 143,
+};
 
 export function throughputSeries(): ThroughputPoint[] {
   return Array.from({ length: 24 }, (_, i) => {
@@ -345,9 +213,9 @@ export const MODEL_POLICY: ModelPolicySnapshot = {
   ],
   thresholds: [
     { riskBand: "LOW", minFinalScore: 0, action: "Score and store only" },
-    { riskBand: "MEDIUM", minFinalScore: 40, action: "Open alert at P3" },
-    { riskBand: "HIGH", minFinalScore: 70, action: "Open alert at P2" },
-    { riskBand: "CRITICAL", minFinalScore: 90, action: "Open alert at P1 and page on-call" },
+    { riskBand: "MEDIUM", minFinalScore: 40, action: "Open alert at medium priority" },
+    { riskBand: "HIGH", minFinalScore: 70, action: "Open alert at high priority" },
+    { riskBand: "CRITICAL", minFinalScore: 90, action: "Open alert at urgent priority" },
   ],
   limitations: [
     "All figures on this screen describe a synthetic demonstration model. No production or real-world performance is represented.",
