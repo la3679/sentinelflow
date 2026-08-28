@@ -253,6 +253,18 @@ paths:
       tags: [alerts]
       operationId: listAlerts
       summary: List alerts (Phase 5)
+      description: |
+        The queue, in the queue's own order: **open work before closed, then by
+        priority, then oldest first.**
+
+        **The ordering is not the caller's to choose.** Reordering a review queue
+        is an operational decision rather than a display one, and a `sort`
+        parameter would let a console quietly change which alerts an analyst sees
+        first. Priority is what a priority is for; oldest-first is because work
+        that has waited longest should be picked up next.
+
+        Every filter is optional and they combine. Readable by any authenticated
+        role, including `AUDITOR`.
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
         - $ref: "#/components/parameters/Page"
@@ -466,6 +478,64 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: The investigation is closed, and a note added after a disposition reads as though it informed one.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /alerts/{alertId}/feedback:
+    put:
+      tags: [alerts]
+      operationId: recordAlertFeedback
+      summary: Record an analyst's verdict (Phase 5)
+      description: |
+        The label a future supervised model trains on.
+
+        **Recorded against the assessment, citing the alert.** Rescoring writes a
+        new assessment rather than editing one, so a label attached to the alert
+        would silently follow a decision it was never given about.
+
+        **One analyst, one verdict, revised rather than repeated.** Sending it
+        again replaces the label; it does not add a second, contradictory one.
+        Two opposite labels from the same person about the same decision cannot
+        both be training data, and nothing could choose between them afterwards.
+
+        `INCONCLUSIVE` exists so somebody who cannot tell is not forced to guess.
+
+        No `expectedVersion`: nobody else can write this row, so there is no
+        concurrent writer to lose a race against. Two analysts labelling the same
+        assessment differently is not a conflict — it is two opinions, and both
+        are kept.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertFeedbackRequest"
+      responses:
+        "200":
+          description: The verdict as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertFeedback"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller's role does not permit this. An `AUDITOR` is read-only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The investigation is closed, and a verdict is part of working the alert.
           content:
             application/problem+json:
               schema:
@@ -1025,6 +1095,39 @@ components:
             Sanitised on the way in. Rendered as text, never as markup, and
             escaped in CSV export to prevent spreadsheet formula injection.
       required: [note]
+      additionalProperties: false
+
+    FeedbackLabel:
+      type: string
+      enum: [TRUE_POSITIVE, FALSE_POSITIVE, INCONCLUSIVE]
+
+    AlertFeedbackRequest:
+      type: object
+      properties:
+        label:
+          $ref: "#/components/schemas/FeedbackLabel"
+        reason:
+          type: string
+          maxLength: 1000
+          description: Why, in the analyst's own words. Stored rather than interpreted.
+      required: [label]
+      additionalProperties: false
+
+    AlertFeedback:
+      type: object
+      properties:
+        feedbackId: { type: string, format: uuid }
+        assessmentId:
+          type: string
+          format: uuid
+          description: The decision this verdict is about. The label belongs to the assessment, not to the alert.
+        alertId: { type: [string, "null"], format: uuid }
+        actorId: { type: string, format: uuid }
+        label:
+          $ref: "#/components/schemas/FeedbackLabel"
+        reason: { type: [string, "null"], maxLength: 1000 }
+        createdAt: { type: string, format: date-time }
+      required: [feedbackId, assessmentId, actorId, label, createdAt]
       additionalProperties: false
 
     AlertPage:

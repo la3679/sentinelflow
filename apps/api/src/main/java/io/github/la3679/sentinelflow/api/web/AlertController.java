@@ -27,10 +27,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.github.la3679.sentinelflow.api.alert.AlertService;
 import io.github.la3679.sentinelflow.api.domain.Actor;
+import io.github.la3679.sentinelflow.api.domain.AlertPriority;
+import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
 import io.github.la3679.sentinelflow.api.security.AuthenticatedOperator;
 import io.github.la3679.sentinelflow.api.web.dto.AlertActionResponse;
 import io.github.la3679.sentinelflow.api.web.dto.AlertAssignmentRequest;
+import io.github.la3679.sentinelflow.api.web.dto.AlertFeedbackRequest;
+import io.github.la3679.sentinelflow.api.web.dto.AlertFeedbackResponse;
 import io.github.la3679.sentinelflow.api.web.dto.AlertNoteRequest;
 import io.github.la3679.sentinelflow.api.web.dto.AlertResponse;
 import io.github.la3679.sentinelflow.api.web.dto.AlertTransitionRequest;
@@ -80,6 +84,32 @@ public class AlertController {
 
     public AlertController(AlertService alerts) {
         this.alerts = alerts;
+    }
+
+    /**
+     * One page of the queue.
+     *
+     * <p>Readable by every authenticated role, mutable by two of them. The filters are the ones an
+     * operations screen actually asks for — what is open, what is urgent, what is on my desk — and
+     * the ordering is fixed rather than client-supplied, because reordering a review queue is an
+     * operational decision rather than a display one.
+     */
+    @GetMapping
+    PageResponse<AlertResponse> queue(
+            @RequestParam(required = false) AlertStatus status,
+            @RequestParam(required = false) AlertPriority priority,
+            @RequestParam(required = false) UUID assigneeId,
+            @RequestParam(defaultValue = "0") @PositiveOrZero int page,
+            @RequestParam(defaultValue = "20") @Positive @Max(MAX_PAGE_SIZE) int size) {
+
+        return PageResponse.of(
+                alerts.queue(status, priority, assigneeId, PageRequest.of(page, size)), AlertResponse::of);
+    }
+
+    /** One alert, for the page an analyst opens. */
+    @GetMapping("/{alertId}")
+    AlertResponse get(@PathVariable UUID alertId) {
+        return AlertResponse.of(alerts.get(alertId));
     }
 
     /**
@@ -154,6 +184,25 @@ public class AlertController {
                 request.note(),
                 AuthenticatedOperator.from(token),
                 CorrelationIdFilter.currentOrNew(httpRequest)));
+    }
+
+    /**
+     * Record this analyst's verdict on the decision behind the alert.
+     *
+     * <p>{@code PUT}, because one analyst has one verdict per assessment and sending it again
+     * replaces it. A {@code POST} would suggest a second row is created, which the unique constraint
+     * refuses and which would be the wrong thing to want: two opposite labels from one person about
+     * one decision cannot both be training data.
+     */
+    @PutMapping(path = "/{alertId}/feedback", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasAnyRole('ANALYST', 'ADMINISTRATOR')")
+    AlertFeedbackResponse recordFeedback(
+            @PathVariable UUID alertId,
+            @Valid @RequestBody AlertFeedbackRequest request,
+            @AuthenticationPrincipal Jwt token) {
+
+        return AlertFeedbackResponse.of(
+                alerts.recordFeedback(alertId, request.label(), request.reason(), AuthenticatedOperator.from(token)));
     }
 
     /**

@@ -18,17 +18,21 @@ import io.github.la3679.sentinelflow.api.domain.Actor;
 import io.github.la3679.sentinelflow.api.domain.ActorRole;
 import io.github.la3679.sentinelflow.api.domain.AlertActionType;
 import io.github.la3679.sentinelflow.api.domain.AlertChangeType;
+import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 import io.github.la3679.sentinelflow.api.domain.EventType;
+import io.github.la3679.sentinelflow.api.domain.FeedbackLabel;
 import io.github.la3679.sentinelflow.api.domain.RoleCode;
 import io.github.la3679.sentinelflow.api.domain.UserStatus;
 import io.github.la3679.sentinelflow.api.messaging.payload.AlertUpdatedPayload;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
 import io.github.la3679.sentinelflow.api.persistence.entity.AlertAction;
+import io.github.la3679.sentinelflow.api.persistence.entity.AnalystFeedback;
 import io.github.la3679.sentinelflow.api.persistence.entity.OutboxEvent;
 import io.github.la3679.sentinelflow.api.persistence.entity.User;
 import io.github.la3679.sentinelflow.api.persistence.repository.AlertActionRepository;
 import io.github.la3679.sentinelflow.api.persistence.repository.AlertRepository;
+import io.github.la3679.sentinelflow.api.persistence.repository.AnalystFeedbackRepository;
 import io.github.la3679.sentinelflow.api.persistence.repository.OutboxEventRepository;
 import io.github.la3679.sentinelflow.api.persistence.repository.UserRepository;
 import io.github.la3679.sentinelflow.api.service.exception.AlertClosedException;
@@ -96,6 +100,7 @@ public class AlertService {
     private final AlertRepository alerts;
     private final AlertActionRepository actions;
     private final OutboxEventRepository outbox;
+    private final AnalystFeedbackRepository feedback;
     private final UserRepository users;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meters;
@@ -104,12 +109,14 @@ public class AlertService {
             AlertRepository alerts,
             AlertActionRepository actions,
             OutboxEventRepository outbox,
+            AnalystFeedbackRepository feedback,
             UserRepository users,
             ObjectMapper objectMapper,
             MeterRegistry meters) {
         this.alerts = alerts;
         this.actions = actions;
         this.outbox = outbox;
+        this.feedback = feedback;
         this.users = users;
         this.objectMapper = objectMapper;
         this.meters = meters;
@@ -276,6 +283,77 @@ public class AlertService {
         }
         return actions.save(
                 AlertAction.of(alertId, actor.userId(), actor.role(), AlertActionType.NOTE_ADDED, note, correlationId));
+    }
+
+    /**
+     * Record what an analyst concluded about the decision behind this alert.
+     *
+     * <h2>The label is about the assessment, not the alert</h2>
+     *
+     * {@code analyst_feedback.assessment_id} is what carries it, and the alert is cited beside it.
+     * Rescoring writes a <em>new</em> assessment rather than editing one (ADR-0011 §2), so a label
+     * attached to the alert would silently follow a decision it was never given about — and the
+     * whole value of these rows is that they are labels for a model that will be trained on the
+     * features of a specific scored transaction.
+     *
+     * <h2>One analyst, one label, revised rather than repeated</h2>
+     *
+     * {@code analyst_feedback_unique} is per assessment and per actor. Changing your mind updates
+     * the row; it does not add a second, contradictory training label, because two opposite labels
+     * from the same person about the same decision would poison a training set quietly and there is
+     * no principled way to choose between them afterwards.
+     *
+     * <p>No {@code expectedVersion} and no conflict, therefore: nobody else can write this row. Two
+     * analysts labelling the same assessment differently is not a race, it is two opinions, and both
+     * are kept.
+     *
+     * <h2>Not audited on the alert, and not published</h2>
+     *
+     * A verdict is not something done <em>to</em> the alert — it does not move it, assign it or
+     * change what a queue shows — so it writes no {@code alert_actions} row and no event. It is its
+     * own table with its own timestamp and its own actor, which is what a training-label source has
+     * to be. Whether the alert was dispositioned is already recorded, by the transition that
+     * dispositioned it.
+     *
+     * @throws AlertClosedException if the investigation is over. A verdict is part of working the
+     *     alert; recording one afterwards would let a closed case acquire a label nobody reviewed.
+     */
+    @Transactional
+    public AnalystFeedback recordFeedback(UUID alertId, FeedbackLabel label, String reason, Actor actor) {
+        Alert alert = alerts.findById(alertId).orElseThrow(() -> new AlertNotFoundException(alertId));
+        if (alert.isTerminal()) {
+            throw new AlertClosedException(alertId, alert.getStatus(), "Recording feedback");
+        }
+
+        return feedback.findByAssessmentIdAndActorId(alert.getAssessmentId(), actor.userId())
+                .map(existing -> {
+                    existing.revise(label, reason);
+                    return existing;
+                })
+                .orElseGet(() -> feedback.save(
+                        new AnalystFeedback(alert.getAssessmentId(), alertId, actor.userId(), label, reason)));
+    }
+
+    /**
+     * One alert, for the page an analyst opens.
+     *
+     * @throws AlertNotFoundException if no alert has that identifier
+     */
+    @Transactional(readOnly = true)
+    public Alert get(UUID alertId) {
+        return alerts.findById(alertId).orElseThrow(() -> new AlertNotFoundException(alertId));
+    }
+
+    /**
+     * One page of the queue.
+     *
+     * <p>Every filter is optional. The ordering is the queue's own and is not the caller's to
+     * choose, for the reason {@link AlertRepository#findQueue} records: reordering a review queue is
+     * an operational decision rather than a display one.
+     */
+    @Transactional(readOnly = true)
+    public Page<Alert> queue(AlertStatus status, AlertPriority priority, UUID assigneeId, Pageable pageable) {
+        return alerts.findQueue(status, priority, assigneeId, pageable);
     }
 
     /**
