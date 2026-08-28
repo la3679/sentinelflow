@@ -234,13 +234,21 @@ describe("the 401 that ends a session", () => {
   });
 });
 
-describe("the endpoints that still have no server", () => {
-  it("issue no network request at all", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
+describe("every endpoint goes over HTTP", () => {
+  it("leaves nothing resolving from an in-memory fixture", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      );
     const store = makeStore();
 
-    await store.dispatch(sentinelApi.endpoints.getOverview.initiate());
+    // The screen that was the last to have no server counterpart. When this
+    // made no request, `src/mocks/` existed; the assertion is inverted rather
+    // than deleted so the deletion is what a reader sees.
+    await store.dispatch(sentinelApi.endpoints.getSystemHealth.initiate());
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });

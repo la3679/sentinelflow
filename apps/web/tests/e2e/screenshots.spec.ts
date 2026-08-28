@@ -7,8 +7,9 @@ import { expect, test } from "./fixtures";
  * build: every one comes from the same production bundle the e2e suite
  * exercises, and re-running this regenerates them all.
  *
- * All data visible in them is synthetic - the fixtures in src/mocks/ - which is
- * the reason a screenshot of this console can be published at all.
+ * All data visible in them is synthetic — served by the stub in `fixtures.ts`,
+ * which answers in the contract's own shapes — which is the reason a screenshot
+ * of this console can be published at all.
  *
  *   bun run build && bunx playwright test screenshots --project=desktop --update-snapshots
  *
@@ -39,6 +40,11 @@ test.describe("README screenshots", () => {
       // Charts animate on mount. Without this the captured frame is whatever
       // the animation happened to be showing.
       await page.emulateMedia({ reducedMotion: "reduce" });
+
+      // And the pointer goes to a corner first. Signing in ends with a click,
+      // which leaves the cursor wherever the button was - and if that lands over
+      // a chart, the capture includes a hover tooltip nobody asked for.
+      await page.mouse.move(0, 0);
       await page.waitForTimeout(600);
 
       await page.screenshot({

@@ -3,7 +3,7 @@ import type {
   AlertActionType,
   AlertPriority,
   AlertStatus,
-  HealthState,
+  ComponentState,
   ProcessingStatus,
   RiskBand,
 } from "./types";
@@ -71,11 +71,14 @@ export const ALERT_ACTION_LABELS: Record<AlertActionType, string> = {
   PRIORITY_CHANGED: "Priority changed",
 };
 
-export const HEALTH_LABELS: Record<HealthState, string> = {
+/**
+ * No `UNKNOWN`. A component the API reports on was asked, and "we did not ask"
+ * is not a state it can be in.
+ */
+export const HEALTH_LABELS: Record<ComponentState, string> = {
   OPERATIONAL: "Operational",
   DEGRADED: "Degraded",
-  OUTAGE: "Outage",
-  UNKNOWN: "Unknown",
+  OUTAGE: "Not answering",
 };
 
 /**

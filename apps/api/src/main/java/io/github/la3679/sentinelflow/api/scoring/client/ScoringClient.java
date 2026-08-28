@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClient;
 
 import io.github.la3679.sentinelflow.api.resilience.CircuitBreaker;
 import io.github.la3679.sentinelflow.api.resilience.FullJitterBackOff;
+import io.github.la3679.sentinelflow.api.scoring.payload.ModelInfoResponse;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreRequest;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreResponse;
 
@@ -58,6 +59,7 @@ public class ScoringClient {
     private static final Logger log = LoggerFactory.getLogger(ScoringClient.class);
 
     private static final String SCORE_PATH = "/v1/score";
+    private static final String MODEL_PATH = "/v1/model";
     private static final String CORRELATION_HEADER = "X-Correlation-Id";
 
     /** What the breaker guards, for logging. Never a URL: a base URL is deployment detail. */
@@ -211,6 +213,63 @@ public class ScoringClient {
 
     private static long elapsedMillis(long startedNanos) {
         return Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
+    }
+
+    /**
+     * What model the scoring service has loaded, for the read-only screen that publishes it.
+     *
+     * <p><strong>It neither consults the breaker nor reports to it, and that is deliberate.</strong>
+     * The breaker exists so a scoring outage costs the consumer nothing per record; it is a property
+     * of the pipeline. A screen somebody refreshes must not be able to open it — that would let a
+     * dashboard degrade every assessment — and must not close it either, because a successful
+     * metadata read says nothing about whether inference is answering. One read, one timeout, no
+     * retry.
+     *
+     * <p>The timeout is the request factory's, so this cannot hang a request thread on a service
+     * that has stopped answering.
+     *
+     * @param correlationId ties this read to the request that caused it
+     * @return the loaded model's metadata
+     * @throws ScoringUnavailableException if the service did not answer, or answered something this
+     *     build cannot read. The caller publishes the policy half alone and says the model half is
+     *     unavailable — a screen that went blank while scoring restarted would be less useful than
+     *     one that says so.
+     */
+    public ModelInfoResponse modelInfo(UUID correlationId) {
+        try {
+            ModelInfoResponse response = restClient
+                    .get()
+                    .uri(MODEL_PATH)
+                    .header(CORRELATION_HEADER, correlationId.toString())
+                    .exchange((httpRequest, httpResponse) -> {
+                        HttpStatusCode status = httpResponse.getStatusCode();
+                        if (status.is2xxSuccessful()) {
+                            return httpResponse.bodyTo(ModelInfoResponse.class);
+                        }
+                        // 503 is what the service answers when no model is
+                        // loaded, which is the ordinary case on a cold start.
+                        // Not a distinct exception: to the screen and to the
+                        // operator, "no model yet" and "cannot ask" are both
+                        // "the model half is not available", and inventing a
+                        // second failure type would put a distinction in the
+                        // API that nothing acts on.
+                        throw new ScoringUnavailableException("Scoring answered " + status.value() + " for /v1/model");
+                    });
+
+            if (response == null) {
+                throw new ScoringUnavailableException("Scoring answered 2xx with an empty body for /v1/model");
+            }
+            return response;
+        } catch (ScoringUnavailableException known) {
+            throw known;
+        } catch (ResourceAccessException transport) {
+            throw new ScoringUnavailableException(
+                    "Scoring could not be reached for /v1/model: " + transport.getMessage(), transport);
+        } catch (RuntimeException unexpected) {
+            throw new ScoringUnavailableException(
+                    "Scoring returned model metadata this build could not read: " + unexpected.getMessage(),
+                    unexpected);
+        }
     }
 
     /** The breaker's state, for a health indicator and for tests. */

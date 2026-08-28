@@ -224,6 +224,86 @@ test.describe("the transport", () => {
   });
 });
 
+test.describe("the screens that describe the platform", () => {
+  test("the model screen shows the policy that runs, not just the model", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    void api;
+    await signIn(page, "/model");
+
+    await expect(page.getByText("gradient-boosting")).toBeVisible();
+    // The policy half is the part an analyst acts on: which band opens an
+    // alert, and at what priority.
+    await expect(
+      page.getByRole("cell", { name: /no — scored and stored only/i }).first(),
+    ).toBeVisible();
+    await expect(page.getByText(/urgent priority/i).first()).toBeVisible();
+  });
+
+  test("the model screen keeps the policy when the scoring service is gone", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    api.loseTheScoringService();
+    await signIn(page, "/model");
+
+    // The two halves have different owners and either can be missing without
+    // the other being wrong. Blanking this screen during a scoring outage would
+    // hide exactly what somebody would be looking for.
+    await expect(
+      page.getByText("The scoring service is not answering.", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/the policy that runs/i)).toBeVisible();
+    await expect(page.getByRole("cell", { name: "70" })).toBeVisible();
+  });
+
+  test("the health screen says what is not measured rather than inventing it", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    void api;
+    await signIn(page, "/health");
+
+    await expect(page.getByText(/operations api/i)).toBeVisible();
+    await expect(page.getByText(/not answering/i).first()).toBeVisible();
+    // Consumer lag and dead-letter depth used to be shown here as figures
+    // nothing had measured.
+    await expect(page.getByText(/not measured yet, so not shown/i)).toBeVisible();
+  });
+
+  test("the reports screen counts a window and offers the same window as a file", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    void api;
+    await signIn(page, "/reports");
+
+    await expect(page.getByText(/alerts raised/i).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /download this window as csv/i })).toBeEnabled();
+  });
+
+  test("the overview composes two requests and asks for no aggregate endpoint", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    await signIn(page, "/");
+    await expect(page.getByText(/next in the queue/i)).toBeVisible();
+
+    const paths = api.requests.map((r) => r.path);
+    expect(paths.some((path) => path.endsWith("/reports/alert-summary"))).toBe(true);
+    expect(paths.some((path) => path.endsWith("/alerts"))).toBe(true);
+    // ADR-0014 §3: an aggregate would be a second implementation of risk-band
+    // counting beside the report that already does it.
+    expect(paths.some((path) => path.endsWith("/overview"))).toBe(false);
+  });
+});
+
 test.describe("keyboard operation", () => {
   // Signed in once per test: the console's routes are gated, and a reload would
   // drop the in-memory token, so every navigation below stays in the app.

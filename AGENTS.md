@@ -39,22 +39,28 @@ in `apps/web/`.
 Role handling in this console (`ANALYST`, `ADMINISTRATOR`, `AUDITOR`) is a
 user-experience affordance only — never treat it as a security boundary.
 
-## Mock data layer, and what is left of it
+## Where the console's data comes from
 
-`apps/web/src/mocks/` is a **temporary** deterministic fixture layer, now down
-to four screens: the overview, reports, model and policy, and system health.
-Every alert and transaction screen reads the API. An earlier version of this
-file said the migration was "limited to replacing `mockBaseQuery` with
-`fetchBaseQuery`";
+**There is no mock layer.** `apps/web/src/mocks/` is deleted and every screen
+reads the API through `apps/web/src/api/transport.ts`, which attaches the
+operator's bearer token and maps every RFC 9457 problem document to one error
+shape. An earlier version of this file said the migration was "limited to
+replacing `mockBaseQuery` with `fetchBaseQuery`";
 [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)
-checked that endpoint by endpoint and found it is four pieces of work, not one.
-**The audit is the authoritative list.**
+checked it endpoint by endpoint, found four pieces of work rather than one, and
+is now closed.
 
-`apps/web/src/api/transport.ts` is the real transport. An endpoint marked
-`transport: "mock"` in `sentinelApi.ts` is one with no server counterpart yet;
-one without it goes over HTTP with the operator's bearer token attached. The
-marker is per endpoint on purpose — the console is genuinely half-migrated, and
-a single flag would have to lie about one half or the other.
+**Do not reintroduce a fixture layer to make a screen look finished.** Where the
+API cannot answer something — throughput per hour, latency percentiles, consumer
+lag — the screen says so and names the phase that measures it. Three panels of
+invented numbers were deleted for that reason, and
+[ADR-0014](docs/adr/0014-where-the-console-s-remaining-screens-get-their-data.md)
+records where each remaining screen's data comes from.
+
+The end-to-end suite stubs the API at the network boundary in
+`tests/e2e/fixtures.ts`, in the contract's own shapes. That is the one place
+synthetic responses belong: it exercises the real transport, the real bearer
+header and the real 401 with no backend anywhere.
 
 `API_BASE_URL` comes from `VITE_API_BASE_URL` and defaults to
 `http://localhost:8080/api/v1`. It is **absolute**, because the console and the

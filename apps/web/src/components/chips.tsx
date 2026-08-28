@@ -8,7 +8,6 @@ import {
   Eye,
   MinusCircle,
   ShieldAlert,
-  ShieldQuestion,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
@@ -20,7 +19,7 @@ import {
   HEALTH_LABELS,
   RISK_BAND_LABELS,
 } from "@/domain/labels";
-import type { AlertPriority, AlertStatus, HealthState, RiskBand } from "@/domain/types";
+import type { AlertPriority, AlertStatus, ComponentState, RiskBand } from "@/domain/types";
 
 const chipBase =
   "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap";
@@ -90,25 +89,23 @@ export function AlertStatusChip({
   );
 }
 
-const HEALTH_ICONS: Record<HealthState, LucideIcon> = {
+const HEALTH_ICONS: Record<ComponentState, LucideIcon> = {
   OPERATIONAL: CheckCircle2,
   DEGRADED: AlertTriangle,
   OUTAGE: AlertOctagon,
-  UNKNOWN: ShieldQuestion,
 };
 
-const HEALTH_CLASSES: Record<HealthState, string> = {
+const HEALTH_CLASSES: Record<ComponentState, string> = {
   OPERATIONAL: "bg-surface-raised text-foreground border-border-strong",
   DEGRADED: "bg-risk-medium text-risk-medium-foreground border-risk-medium",
   OUTAGE: "bg-risk-critical text-risk-critical-foreground border-risk-critical",
-  UNKNOWN: "bg-muted text-muted-foreground border-border-strong",
 };
 
 export function HealthChip({
   state,
   className,
 }: {
-  state: HealthState;
+  state: ComponentState;
   className?: string | undefined;
 }) {
   const Icon = HEALTH_ICONS[state];

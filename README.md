@@ -100,13 +100,17 @@ alert summary is generated text built from a reference that arrived through an o
 endpoint. Both were exercised over HTTP against the running stack on 2026-08-28, not only in
 Testcontainers.
 
-**What does not run yet: the console against that API.** Phase 6 is migrating it endpoint by
-endpoint, and today **only sign-in is real** — the remaining screens still render from a mock
-fixture layer, and each endpoint says in code which of the two it is rather than the whole console
-claiming to be one or the other. Four of the endpoints the console calls have no server counterpart
-at all and five server endpoints have no client;
-[`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md) is the authoritative
-list of what each one needs.
+**The console reads the API, and there is no fixture layer left.** Every screen — the overview, the
+transaction feed, the alert queue and its investigation workspace, reports, model and policy, system
+health — sends real requests with the operator's token and renders what comes back.
+`apps/web/src/mocks/` is deleted. The migration is recorded endpoint by endpoint in
+[`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md), now closed.
+
+**What is not on those screens is as deliberate as what is.** Transaction throughput per hour,
+scoring latency percentiles, consumer-group lag and dead-letter depth were four charts and four
+tiles, and nothing had measured any of them. They are gone, and the screens say which phase brings
+them back with the signals behind them. A figure nobody measured is worse than no figure, because
+somebody quotes it.
 
 Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
 
@@ -142,10 +146,10 @@ Generated from the production bundle by
 [`apps/web/tests/e2e/screenshots.spec.ts`](apps/web/tests/e2e/screenshots.spec.ts), so they cannot
 drift from the build.
 
-**Every number in those images is a mock fixture, not a measurement.** The latency and consumer-lag
-figures shown are synthetic sample data for layout purposes. SentinelFlow has measured no
-performance yet; that is Phase 9, and the results will be reported with the method that produced
-them.
+**Every alert and score in those images is synthetic**, served to the browser by the end-to-end
+suite's stub, which answers in the contract's own shapes. No performance figure appears on either
+screen: SentinelFlow has measured none, that is Phase 9's work, and the panels that used to show
+invented latency and lag are gone rather than filled in.
 
 ## Architecture
 
@@ -525,9 +529,12 @@ Controls that exist today, not aspirations:
   the honest consequence of a stateless token with no refresh token
   ([ADR-0012 §3](docs/adr/0012-operator-authentication.md)), and the sign-in screen says so rather
   than letting an analyst discover it mid-review.
-- **Most console screens still render fixtures.** Sign-in is the only endpoint migrated so far; the
-  rest of Phase 6 is tracked endpoint by endpoint in
-  [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md).
+- **The console cannot assign an alert to a person.** Assignment takes an identifier, nothing
+  resolves a name to one, and the login response carries the operator's roles but not their own
+  identifier — so not even "assign to me" is buildable. Releasing an alert back to the queue is the
+  only assignment it can make, and the screen says why.
+- **Nothing goes from a transaction to its alert.** The alert queue filters on status, priority and
+  assignee, and there is no lookup by transaction. The route that exists is alert to transaction.
 - **Role handling in the console is a UX affordance, never a security boundary.** Disabling a
   control authorizes nothing.
 - **The local stack is not a deployment target.** It binds to your machine, holds only synthetic

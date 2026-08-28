@@ -6,13 +6,12 @@ import type {
   AlertAction,
   AlertPriority,
   AlertStatus,
-  ModelPolicySnapshot,
-  OverviewSnapshot,
+  AlertSummaryReport,
+  ModelMetadata,
   Page,
-  ReportsSnapshot,
   RiskAssessment,
   RiskBand,
-  SystemHealthSnapshot,
+  SystemHealth,
   Transaction,
 } from "@/domain/types";
 
@@ -56,16 +55,14 @@ export interface TransactionListArgs {
   riskBand?: RiskBand | undefined;
 }
 
-/** A request the server answers today. */
-const real = (input: SentinelRequest): SentinelRequest => input;
-
 /**
- * A request no server answers yet, resolved from fixtures.
+ * A request, unchanged.
  *
- * The marker is per endpoint so the console can be half-migrated honestly. The
- * audit lists what each of these needs before it can lose the marker.
+ * Kept as a named identity through the migration so every endpoint said which
+ * half it was in. Every one is real now, and this is what the last `fixture(`
+ * became rather than a diff that quietly removed a marker.
  */
-const fixture = (input: SentinelRequest): SentinelRequest => ({ ...input, transport: "mock" });
+const real = (input: SentinelRequest): SentinelRequest => input;
 
 /** Query parameters, with the ones nobody chose left off rather than sent empty. */
 function params(
@@ -86,10 +83,6 @@ export const sentinelApi = createApi({
   endpoints: (builder) => ({
     login: builder.mutation<TokenResponse, LoginArgs>({
       query: (credentials) => real({ url: "/auth/login", method: "POST", body: credentials }),
-    }),
-    getOverview: builder.query<OverviewSnapshot, void>({
-      query: () => fixture({ url: `/overview` }),
-      providesTags: ["Overview"],
     }),
     listTransactions: builder.query<Page<Transaction>, TransactionListArgs>({
       query: (args) => real({ url: `/transactions`, params: params({ ...args }) }),
@@ -172,21 +165,46 @@ export const sentinelApi = createApi({
         }),
       invalidatesTags: (_r, _e, { alertId }) => [{ type: "AlertHistory" as const, id: alertId }],
     }),
-    getReports: builder.query<ReportsSnapshot, void>({
-      query: () => fixture({ url: `/reports` }),
+    /**
+     * Counts over one half-open window, every enum key present including the
+     * zeroes — a chart with a gap where `CRITICAL` should be reads as missing
+     * data rather than as none.
+     */
+    getAlertSummary: builder.query<AlertSummaryReport, { from: string; to: string }>({
+      query: ({ from, to }) => real({ url: `/reports/alert-summary`, params: { from, to } }),
+      providesTags: ["Overview"],
     }),
-    getModelPolicy: builder.query<ModelPolicySnapshot, void>({
-      query: () => fixture({ url: `/model-policy` }),
+    /**
+     * The same window as a file.
+     *
+     * Through the transport rather than a bare `fetch`, so it carries the bearer
+     * token and a refusal - including the `413` above ten thousand rows - is the
+     * one error shape every screen handles.
+     */
+    exportAlerts: builder.mutation<Blob, { from: string; to: string }>({
+      query: ({ from, to }) =>
+        real({
+          url: `/reports/alerts.csv`,
+          params: { from, to },
+          responseHandler: (response) => response.blob(),
+        }),
     }),
-    getSystemHealth: builder.query<SystemHealthSnapshot, void>({
-      query: () => fixture({ url: `/health` }),
+    getModelPolicy: builder.query<ModelMetadata, void>({
+      query: () => real({ url: `/models/active` }),
+    }),
+    /**
+     * Always answers 200, including when a component is down — "the scoring
+     * service is not answering" is the answer rather than a failure to produce
+     * one. So there is no error state to render that is not a transport failure.
+     */
+    getSystemHealth: builder.query<SystemHealth, void>({
+      query: () => real({ url: `/system/health` }),
     }),
   }),
 });
 
 export const {
   useLoginMutation,
-  useGetOverviewQuery,
   useListTransactionsQuery,
   useGetTransactionQuery,
   useGetTransactionAssessmentQuery,
@@ -196,7 +214,8 @@ export const {
   useAssignAlertMutation,
   useTransitionAlertMutation,
   useAddAlertNoteMutation,
-  useGetReportsQuery,
+  useGetAlertSummaryQuery,
+  useExportAlertsMutation,
   useGetModelPolicyQuery,
   useGetSystemHealthQuery,
 } = sentinelApi;
