@@ -2320,3 +2320,68 @@ Recorded in `PROJECT_STATE.md`: piece 4 of the migration — a decision per inve
 the overview and the model registry being the two that are genuinely architectural rather than
 mechanical. Separately and blocking nothing, `make reset-demo` then `make seed` is still the user's
 to run.
+
+## 2026-08-28 — the console's last four screens, and what deciding them cost
+
+### What was done
+
+[ADR-0014](../adr/0014-where-the-console-s-remaining-screens-get-their-data.md) decides where the
+four screens the console invented get their data, and #65 builds all four. The migration audit is
+closed and `apps/web/src/mocks/` is deleted.
+
+Two API endpoints came with it: `GET /models/active`, which the contract had at Phase 4 with no
+handler, and `GET /system/health`, which is new.
+
+### Things worth keeping
+
+- **Four screens, four different answers.** The temptation was one rule — "add an endpoint" or
+  "compose in the client" — and it would have been wrong three times out of four. The model screen
+  needed an API composition because only the scoring service knows what artifact is loaded. The
+  overview needed a client composition because an aggregate would have been a second implementation
+  of risk-band counting. Health needed a small new endpoint. Reports needed nothing built at all: the
+  endpoints already existed, and one of them had been tested and unused since Phase 5.
+- **A contract entry is not an implementation, and this is the second time that has bitten.**
+  `GET /models/active` had been documented since Phase 4 and never built, exactly like the three
+  transaction reads found earlier the same day. The pattern to take away is that **a document
+  describing what an endpoint answers is evidence about intent, not about behaviour** — and the only
+  thing that distinguishes them is a caller.
+- **An empty table is a decision waiting, not a gap to fill.** `model_registry` has constraints,
+  constraint tests and no rows. Building the model endpoint over it would have produced a permanent
+  404 that looked like an outage. It stays empty and recorded as debt, because populating it means
+  deciding the API is the registry of record — with promotion, audit and rollback — which is much
+  more than a read screen should drag in.
+- **Deleting three panels of invented numbers was the largest single improvement in the console.**
+  Throughput per hour, latency percentiles, consumer lag and dead-letter depth were charts that had
+  never been connected to anything that measured them. The screens are smaller and say which phase
+  brings each back. A figure nobody measured is worse than no figure, because somebody quotes it.
+- **A metadata read must not be able to move the pipeline's circuit breaker.** `ScoringClient.modelInfo`
+  neither consults the breaker nor reports to it: a dashboard somebody refreshes could otherwise
+  open it and degrade every assessment, and a successful metadata read says nothing about whether
+  inference is answering. One read, one timeout, no retry — and a test asserts eight consecutive
+  failures leave the breaker closed.
+- **A composition with two owners needs a field saying which half is missing.** `modelAvailable` is
+  explicit rather than inferred from a null `modelVersion`, for the same reason `degraded` is
+  explicit on an assessment: a reader working it out for themselves is a rule in every client, and
+  the two disagree the day a legitimate null appears.
+- **The unit-test count fell from 41 to 37, and that is the deletion.** The suite that asserted the
+  fixture layer's determinism went with the fixture layer. The one transport test that asserted the
+  overview made _no_ network request was inverted rather than deleted, so a reader sees the change
+  rather than a disappearance.
+
+### Verification
+
+| Check                       | Result                                                    |
+| --------------------------- | --------------------------------------------------------- |
+| `./mvnw verify` (apps/api)  | **PASS** — 209 unit and 289 integration tests, 0 failures |
+| JaCoCo gate                 | **met** — line 0.8953, branch 0.7931                      |
+| `bun run verify` (apps/web) | **PASS** — 37 unit tests in 5 files                       |
+| `bun run test:e2e`          | **PASS** — 82 tests, axe clean on all eight routes        |
+| contracts · docs · format   | **PASS** — 184 links, 0 broken                            |
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: ADR-0015 on SSE versus WebSockets, which the plan lists as a Phase 6
+deliverable and which should be written against what the console now does rather than what it was
+going to; then exercising the console against the running stack, because the API's new call to the
+scoring service's `/v1/model` has never been made against the real service; then closing Phase 6
+against its gate.

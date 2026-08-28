@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { API_BASE_URL, USING_MOCK_DATA } from "@/api/config";
+import { API_BASE_URL } from "@/api/config";
 import { sentinelApi } from "@/api/sentinelApi";
 import { makeStore } from "@/store";
-import { ALERT_STATUSES, RISK_BANDS } from "@/domain/types";
 
 describe("RTK Query data access", () => {
   it("points at the API's own origin, not at a path on the console's", () => {
@@ -13,17 +12,6 @@ describe("RTK Query data access", () => {
     // as JSON, which is a worse failure than a 404.
     expect(API_BASE_URL).toMatch(/^https?:\/\//);
     expect(API_BASE_URL.endsWith("/api/v1")).toBe(true);
-    expect(USING_MOCK_DATA).toBe(true);
-  });
-
-  it("issues no network request for an endpoint that is still a fixture", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const store = makeStore();
-
-    await store.dispatch(sentinelApi.endpoints.getOverview.initiate());
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-    fetchSpy.mockRestore();
   });
 
   it("sends the alert queue over HTTP, at the contract's path and parameters", async () => {
@@ -126,21 +114,56 @@ describe("RTK Query data access", () => {
     fetchSpy.mockRestore();
   });
 
-  it("returns a coherent overview snapshot from the fixtures that still back it", async () => {
+  it("asks for a report over an explicit half-open window", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      );
     const store = makeStore();
-    const result = await store.dispatch(sentinelApi.endpoints.getOverview.initiate());
 
-    expect(result.isSuccess).toBe(true);
-    const data = result.data!;
-    expect(data.riskBands.length).toBeGreaterThan(0);
-    for (const slice of data.riskBands) {
-      expect(RISK_BANDS).toContain(slice.riskBand);
-    }
-    expect(data.throughput.length).toBeGreaterThan(0);
-    expect(data.recentAlerts.length).toBeGreaterThan(0);
-    for (const alert of data.recentAlerts) {
-      expect(ALERT_STATUSES).toContain(alert.status);
-    }
+    await store.dispatch(
+      sentinelApi.endpoints.getAlertSummary.initiate({
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-08-02T00:00:00.000Z",
+      }),
+    );
+
+    // Both bounds are required by the contract. A report with an implicit
+    // window is one whose figures cannot be reproduced.
+    const url = String((fetchSpy.mock.calls[0]?.[0] as Request).url);
+    expect(url).toContain("/reports/alert-summary");
+    expect(url).toContain("from=2026-08-01");
+    expect(url).toContain("to=2026-08-02");
+    fetchSpy.mockRestore();
+  });
+
+  it("reads the export as a file rather than as JSON", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("alertReference,status\nALT-0001,NEW\n", {
+        status: 200,
+        headers: { "content-type": "text/csv;charset=UTF-8" },
+      }),
+    );
+    const store = makeStore();
+
+    const result = await store.dispatch(
+      sentinelApi.endpoints.exportAlerts.initiate({
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-08-02T00:00:00.000Z",
+      }),
+    );
+
+    // Through the transport rather than a bare fetch, so it carries the bearer
+    // token and a refusal is the one error shape every screen handles - but the
+    // body is a file, and parsing it as JSON would fail on the first row.
+    //
+    // Asserted on the content rather than with `instanceof Blob`: the Blob the
+    // fetch polyfill produces is not the one this realm declares, and a test
+    // that failed on that would be checking the test environment.
+    const body = "data" in result ? ((await (result.data as Blob).text()) ?? "") : "";
+    expect(body).toContain("alertReference,status");
+    fetchSpy.mockRestore();
   });
 
   it("surfaces a problem document as a typed error rather than throwing", async () => {
@@ -166,10 +189,29 @@ describe("RTK Query data access", () => {
     fetchSpy.mockRestore();
   });
 
-  it("is deterministic: two stores return the same overview", async () => {
-    const first = await makeStore().dispatch(sentinelApi.endpoints.getOverview.initiate());
-    const second = await makeStore().dispatch(sentinelApi.endpoints.getOverview.initiate());
+  it("composes the overview from endpoints that exist, rather than one that does not", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      );
+    const store = makeStore();
 
-    expect(first.data).toEqual(second.data);
+    await store.dispatch(
+      sentinelApi.endpoints.getAlertSummary.initiate({
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-08-02T00:00:00.000Z",
+      }),
+    );
+    await store.dispatch(sentinelApi.endpoints.listAlerts.initiate({ page: 0, size: 8 }));
+
+    // ADR-0014 SS3: an aggregate endpoint would be a second implementation of
+    // risk-band counting beside the report that already does it, and the two
+    // would disagree the first time one changed.
+    const urls = fetchSpy.mock.calls.map((call) => String((call[0] as Request).url));
+    expect(urls.some((url) => url.includes("/reports/alert-summary"))).toBe(true);
+    expect(urls.some((url) => url.includes("/alerts"))).toBe(true);
+    expect(urls.some((url) => url.includes("/overview"))).toBe(false);
+    fetchSpy.mockRestore();
   });
 });

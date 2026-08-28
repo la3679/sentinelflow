@@ -4,16 +4,8 @@ import { RotateCcw } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { HealthChip } from "@/components/chips";
 import { QueryState } from "@/components/data-state";
-import { PageHeader, Panel, StatTile } from "@/components/panel";
+import { PageHeader, Panel } from "@/components/panel";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { formatDateTime } from "@/domain/labels";
 import { useGetSystemHealthQuery } from "@/api/sentinelApi";
 
@@ -24,12 +16,12 @@ export const Route = createFileRoute("/health")({
       {
         name: "description",
         content:
-          "Status of the API, scoring service, Kafka cluster and database, plus consumer lag and dead-letter queue depth.",
+          "Whether the API, its database and the scoring service are answering, asked live rather than read from cached state.",
       },
       { property: "og:title", content: "System health — SentinelFlow" },
       {
         property: "og:description",
-        content: "Component status, consumer lag and dead-letter queue depth for the pipeline.",
+        content: "Whether each part of the stack is answering.",
       },
     ],
   }),
@@ -43,7 +35,7 @@ function HealthPage() {
     <AppShell>
       <PageHeader
         title="System health"
-        description="Reported state of the services behind the console. Values are simulated in this build."
+        description="Each component is asked when you load this page, not read from something's cached opinion."
         actions={
           <Button
             type="button"
@@ -52,7 +44,7 @@ function HealthPage() {
             disabled={query.isFetching}
           >
             <RotateCcw aria-hidden="true" className="size-4" />
-            Refresh
+            Check again
           </Button>
         }
       />
@@ -62,12 +54,12 @@ function HealthPage() {
         error={query.error}
         data={query.data}
         onRetry={() => void query.refetch()}
-        loadingLabel="Loading system health"
-        loadingRows={6}
+        loadingLabel="Checking the stack"
+        loadingRows={4}
       >
         {(data) => (
           <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {data.components.map((component) => (
                 <section
                   key={component.componentId}
@@ -84,65 +76,35 @@ function HealthPage() {
                     <HealthChip state={component.state} />
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">{component.detail}</p>
-                  <p className="tabular mt-2 text-xs text-muted-foreground">
-                    Checked {formatDateTime(component.lastCheckedAt)}
-                  </p>
                 </section>
               ))}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatTile
-                label="Dead-letter depth"
-                value={String(data.pipeline.dlqDepth)}
-                hint={data.pipeline.dlqTopic}
-                emphasis={data.pipeline.dlqDepth > 0}
-              />
-              <StatTile
-                label="Total consumer lag"
-                value={String(
-                  data.pipeline.consumerGroups.reduce((total, g) => total + g.lagMessages, 0),
-                )}
-                hint="Messages behind across all groups"
-              />
-              <StatTile
-                label="Consumer groups"
-                value={String(data.pipeline.consumerGroups.length)}
-                hint="Reporting to the console"
-              />
-              <StatTile
-                label="Snapshot time"
-                value={formatDateTime(data.checkedAt).slice(11)}
-                hint={formatDateTime(data.checkedAt).slice(0, 10)}
-              />
-            </div>
+            <p className="tabular text-xs text-muted-foreground">
+              Checked {formatDateTime(data.checkedAt)}
+            </p>
 
+            {/*
+              What this screen used to show here was fabricated: consumer lag per
+              group and a dead-letter depth that no process had measured. Phase 7
+              brings the metric set, the dashboards and the runbooks together, and
+              a number is worth showing when there is something to do about it.
+            */}
             <Panel
-              title="Consumer lag by group"
-              description="Lag is the number of messages a consumer group is behind on its topic."
-              bodyClassName="overflow-x-auto"
+              title="Pipeline depth and consumer lag"
+              description="Not measured yet, so not shown."
+              bodyClassName="p-4"
             >
-              <Table>
-                <caption className="sr-only">Consumer lag per group and topic</caption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">Consumer group</TableHead>
-                    <TableHead scope="col">Topic</TableHead>
-                    <TableHead scope="col" className="text-right">
-                      Lag (messages)
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.pipeline.consumerGroups.map((group) => (
-                    <TableRow key={group.groupId}>
-                      <TableCell className="tabular">{group.groupId}</TableCell>
-                      <TableCell className="tabular">{group.topic}</TableCell>
-                      <TableCell className="tabular text-right">{group.lagMessages}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <p className="text-sm">
+                Consumer-group lag and dead-letter depth belong to Kafka rather than to this API,
+                and nothing here measures them today.
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                They arrive in Phase 7 with the metric set and the runbooks that say what to do
+                about a number that is climbing. Until then this panel is empty rather than
+                decorative — a figure nobody measured is worse than no figure, because somebody
+                quotes it.
+              </p>
             </Panel>
           </div>
         )}

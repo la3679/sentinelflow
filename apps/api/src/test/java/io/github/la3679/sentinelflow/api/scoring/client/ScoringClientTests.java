@@ -33,6 +33,7 @@ import io.github.la3679.sentinelflow.api.domain.TransactionType;
 import io.github.la3679.sentinelflow.api.resilience.CircuitBreaker;
 import io.github.la3679.sentinelflow.api.scoring.payload.AccountContext;
 import io.github.la3679.sentinelflow.api.scoring.payload.Amount;
+import io.github.la3679.sentinelflow.api.scoring.payload.ModelInfoResponse;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreRequest;
 import io.github.la3679.sentinelflow.api.scoring.payload.TransactionToScore;
 
@@ -71,16 +72,36 @@ class ScoringClientTests {
             }
             """;
 
+    private static final String MODEL_BODY = """
+            {
+              "modelVersion": "1.0.0",
+              "featureVersion": "1.0.0",
+              "algorithm": "gradient-boosting",
+              "trainedAt": "2026-07-19T08:30:00Z",
+              "artifactSha256": "abc123",
+              "datasetFingerprint": "fp-1",
+              "metrics": {
+                "precision": 0.82, "recall": 0.61, "f1": 0.7, "averagePrecision": 0.74,
+                "rocAuc": 0.95, "falsePositiveRate": 0.01, "operatingThreshold": 62.5,
+                "alertVolumeAtThreshold": 120
+              }
+            }
+            """;
+
     private HttpServer server;
     private final AtomicInteger requests = new AtomicInteger();
     private final AtomicReference<String> lastCorrelationHeader = new AtomicReference<>();
     private final AtomicReference<String> lastUpgradeHeader = new AtomicReference<>();
     private final List<Integer> responses = new ArrayList<>();
+    private final AtomicInteger modelRequests = new AtomicInteger();
+    private final List<Integer> modelResponses = new ArrayList<>();
+    private final AtomicReference<String> modelBody = new AtomicReference<>(MODEL_BODY);
 
     @BeforeEach
     void startStub() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/score", this::handle);
+        server.createContext("/v1/model", this::handleModel);
         server.start();
     }
 
@@ -301,8 +322,93 @@ class ScoringClientTests {
     }
 
     // ----------------------------------------------------------------------- //
+    // Model metadata, which is a read on behalf of a screen
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("the loaded model's metadata comes back parsed")
+    void readsTheLoadedModel() {
+        modelResponses.add(200);
+
+        ModelInfoResponse info = client().modelInfo(CORRELATION);
+
+        assertThat(info.modelVersion()).isEqualTo("1.0.0");
+        assertThat(info.algorithm()).isEqualTo("gradient-boosting");
+        assertThat(info.metrics().precision()).isEqualByComparingTo("0.82");
+        assertThat(lastCorrelationHeader.get()).isEqualTo(CORRELATION.toString());
+    }
+
+    @Test
+    @DisplayName("a figure the scoring service adds does not stop the API answering")
+    void toleratesAnUnknownField() {
+        modelBody.set("""
+                {"modelVersion":"1.0.0","featureVersion":"1.0.0","algorithm":"gradient-boosting",
+                 "trainedAt":"2026-07-19T08:30:00Z","artifactSha256":"abc",
+                 "metrics":{"precision":0.82,"recall":0.61,"f1":0.7,"averagePrecision":0.74,
+                            "falsePositiveRate":0.01,"operatingThreshold":62.5},
+                 "somethingNew":42}
+                """);
+        modelResponses.add(200);
+
+        // Unlike the score response, where an unknown field is a contract change
+        // worth noticing: this is metadata for one read-only screen, and a
+        // scoring service that publishes an extra figure must not stop the API
+        // answering a screen that would simply not show it.
+        assertThat(client().modelInfo(CORRELATION).modelVersion()).isEqualTo("1.0.0");
+    }
+
+    @Test
+    @DisplayName("no model loaded is unavailable, not a distinct failure a caller has to handle")
+    void treatsNoModelAsUnavailable() {
+        modelResponses.add(503);
+
+        assertThatThrownBy(() -> client().modelInfo(CORRELATION)).isInstanceOf(ScoringUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("reading the metadata neither opens the breaker nor closes it")
+    void leavesTheBreakerAlone() {
+        ScoringClient client = client();
+        for (int i = 0; i < 8; i++) {
+            modelResponses.add(500);
+        }
+
+        for (int attempt = 0; attempt < 8; attempt++) {
+            assertThatThrownBy(() -> client.modelInfo(CORRELATION)).isInstanceOf(ScoringUnavailableException.class);
+        }
+
+        // Eight failures against a threshold of five. The breaker exists so a
+        // scoring outage costs the consumer nothing per record; a screen
+        // somebody refreshes must not be able to open it, because that would let
+        // a dashboard degrade every assessment.
+        assertThat(client.circuitState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @Test
+    @DisplayName("the metadata read is not retried")
+    void doesNotRetryTheMetadataRead() {
+        modelResponses.add(500);
+
+        assertThatThrownBy(() -> client().modelInfo(CORRELATION)).isInstanceOf(ScoringUnavailableException.class);
+
+        // One read, one timeout, no retry. A screen being refreshed is not worth
+        // three requests to a service that has just said no.
+        assertThat(modelRequests.get()).isEqualTo(1);
+    }
+
+    // ----------------------------------------------------------------------- //
     // Fixtures
     // ----------------------------------------------------------------------- //
+
+    private void handleModel(HttpExchange exchange) throws IOException {
+        modelRequests.incrementAndGet();
+        lastCorrelationHeader.set(exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
+        exchange.getRequestBody().readAllBytes();
+
+        int index = Math.min(modelRequests.get() - 1, modelResponses.size() - 1);
+        int status = modelResponses.isEmpty() ? 200 : modelResponses.get(index);
+        send(exchange, status, status == 200 ? modelBody.get() : problem(status));
+    }
 
     private void handle(HttpExchange exchange) throws IOException {
         requests.incrementAndGet();

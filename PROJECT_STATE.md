@@ -14,11 +14,11 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T19:45Z                                                                                                                                |
+| Last updated UTC     | 2026-08-28T21:30Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 6; every alert and transaction screen reads the API, and four screens are left on fixtures                                        |
+| Overall status       | active — Phase 6; every screen reads the API and `src/mocks/` is deleted                                                                         |
 | Current phase        | Phase 6 — operations frontend (in progress)                                                                                                      |
-| Current task         | the four endpoints the console invents — piece 4 of the migration audit                                                                          |
+| Current task         | closing Phase 6 against its gate; ADR-0015 (SSE versus WebSockets) is the remaining deliverable                                                  |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -26,7 +26,7 @@
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none — [#63](https://github.com/la3679/sentinelflow/pull/63) merged                                                                              |
+| Open PRs             | [#65](https://github.com/la3679/sentinelflow/pull/65) — the four remaining screens                                                               |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -979,6 +979,39 @@ The schema's description of that field was corrected instead, for a different re
 [#62](https://github.com/la3679/sentinelflow/pull/62), and the typed domain with the alert and
 transaction screens as [#63](https://github.com/la3679/sentinelflow/pull/63).
 
+### The four screens the console invented are decided, and none went the same way
+
+[ADR-0014](docs/adr/0014-where-the-console-s-remaining-screens-get-their-data.md) decides all four
+and [#65](https://github.com/la3679/sentinelflow/pull/65) builds them. Deciding them one at a time
+was the point: they went four different ways.
+
+- **`GET /models/active` is composed by the API** from the scoring service's `/v1/model` and its own
+  `RiskPolicyProperties`. The contract had it at Phase 4 with no handler, and building it over
+  `model_registry` would have answered a permanent 404 — that table has never had a row written to
+  it, and the registry of record is the one the scoring service loads from disk. **A scoring outage
+  does not blank the screen**: the policy half is always knowable, and the bands and thresholds are
+  exactly what somebody would be looking for during one.
+- **`GET /system/health` is a small new endpoint** covering what the API can observe: itself,
+  PostgreSQL through the pool, and the scoring service with the breaker's state. Always 200,
+  because "the scoring service is down" is the answer rather than a failure to produce one — an
+  endpoint that returned an error status when a dependency is sick could not be told apart from one
+  that is sick itself.
+- **The overview is composed in the client**, from `GET /reports/alert-summary` and `GET /alerts`.
+  An aggregate endpoint would have been a second implementation of risk-band counting beside the
+  report that already does it. Two requests and a screen that can be half-loaded is the cost, and
+  both are handled.
+- **The reports screen uses the endpoints that already existed**, including
+  `GET /reports/alerts.csv`, which had been tested and unused since Phase 5 and now has its first
+  client.
+
+**Three panels of invented numbers were deleted rather than sourced.** Throughput per hour, scoring
+latency percentiles, and consumer lag with dead-letter depth. Nothing measured any of them and three
+of the four are Prometheus's and Kafka's rather than this API's. The screens name Phase 7 instead.
+
+**`model_registry` stays empty and unread, recorded as debt.** The day something needs to write to
+it, that is a decision about where the model registry of record lives — with a promotion path, an
+audit trail and a rollback story — and it supersedes ADR-0014 §1 rather than extending it.
+
 ### Three endpoints the contract described and nobody had built
 
 `GET /transactions`, `GET /transactions/{id}` and `GET /transactions/{id}/assessment` have been in
@@ -1107,12 +1140,14 @@ renamed, four have no server counterpart at all, and five server endpoints have 
 
 The audit is the authoritative list. The four pieces it identifies:
 
-| Piece                        | State                                                                      |
-| ---------------------------- | -------------------------------------------------------------------------- |
-| Transport and authentication | **done** — [#59](https://github.com/la3679/sentinelflow/pull/59)           |
-| Types and mapping            | **done** — [#63](https://github.com/la3679/sentinelflow/pull/63)           |
-| Two small API additions      | **one of two done** — legal targets merged; the assignee name is undecided |
-| The four invented endpoints  | not started — next; each needs a decision, and the overview matters most   |
+| Piece                        | State                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| Transport and authentication | **done** — [#59](https://github.com/la3679/sentinelflow/pull/59)              |
+| Types and mapping            | **done** — [#63](https://github.com/la3679/sentinelflow/pull/63)              |
+| Two small API additions      | **one of two done** — legal targets merged; the assignee name is undecided    |
+| The four invented endpoints  | **done** — ADR-0014 and [#65](https://github.com/la3679/sentinelflow/pull/65) |
+
+**The audit is closed.** `src/mocks/` is deleted, and `USING_MOCK_DATA` with it.
 
 ### The console offers buttons the server refuses, which is a gate failure
 
@@ -1396,6 +1431,29 @@ available.
 | `main` protected                    | **pass** | Ruleset `21493410`, verified through the rules API                              |
 
 ## Test and verification evidence
+
+### 2026-08-28 — Phase 6, the last four screens
+
+| Check                                 | Result                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `./mvnw verify` (apps/api)            | **PASS** — 209 unit and 289 integration tests, 0 failures, JDK 25.0.4.1+1     |
+| JaCoCo gate (LINE 0.80, BRANCH 0.70)  | **met** — line 0.8953, branch 0.7931, instruction 0.9040                      |
+| `PlatformReadIT`                      | **10 passed** — the two new endpoints, against real PostgreSQL                |
+| `ScoringClientTests`                  | **17 passed** — 5 of them the model-metadata read                             |
+| `bun run verify` (apps/web)           | **PASS** — lint clean, typecheck clean, 37 unit tests in 5 files, build built |
+| `bun run test:e2e` (apps/web)         | **PASS** — 82 tests, desktop and tablet, axe clean on all eight routes        |
+| `bun scripts/dev/check-contracts.mjs` | **PASS**                                                                      |
+| `bun scripts/dev/check-docs.mjs`      | **PASS** — 184 links across 44 files, 0 broken                                |
+| `bun run format:check`                | **PASS**                                                                      |
+
+**The unit-test count fell from 41 to 37 and that is the deletion, not a regression.** The suite
+that asserted the fixture layer's determinism went with the fixture layer; four of its assertions
+had nothing left to describe. The transport test that asserted the overview made _no_ network
+request was inverted rather than deleted, so the change is visible to a reader rather than silent.
+
+**Not run this session:** `make smoke`, the compose stack, and `apps/scoring`'s suite. The scoring
+service was not touched, though the API now reads its `/v1/model` — which is worth exercising
+against the live stack before Phase 6 closes.
 
 ### 2026-08-28 — Phase 6, the transaction endpoints and the typed console
 
@@ -1977,32 +2035,28 @@ None.
 
 ## Next three actions
 
-Phase 6 is under way. The audit, the first of its two API additions, the transport with real
-authentication, the transaction read endpoints and the typed console are merged; nothing is open and
-`main` is green. Two of the migration's four pieces are done.
+Phase 6's migration is complete: all four pieces of the audit are merged or in
+[#65](https://github.com/la3679/sentinelflow/pull/65), every screen reads the API, and
+`src/mocks/` is deleted. What is left is the phase's own gate and its last deliverable.
 
-1. **Decide the four endpoints the console invents**, and record each decision where somebody will
-   find it. The audit sets out what each wants; what has since been established about what exists:
+1. **ADR-0015 — SSE versus WebSockets**, which the implementation plan lists as a Phase 6
+   deliverable and nothing has yet decided. The transaction feed polls today; the ADR is where
+   polling is either defended as sufficient at this volume or superseded. It should be written
+   against what the console now actually does, which is why it comes after the migration rather
+   than before it.
+2. **Exercise the console against the running stack**, not only against the end-to-end stub. Three
+   defects this project has found were invisible to every suite and needed a real request: the
+   Kafka topics nothing created, the h2c upgrade uvicorn refused, and the credentials the seed
+   never wrote. The API now reads the scoring service's `/v1/model` for the model screen, and that
+   call has never been made against the real service. `make up`, `make seed`, then walk the
+   console.
+3. **Close Phase 6 against its gate** — no dead controls, keyboard and accessibility checks, the
+   core end-to-end journey, current screenshots — with the evidence each criterion rests on, the
+   way Phases 2 to 5 were closed.
 
-   - **`GET /overview`** is the landing page and wants three systems' worth of data. Alert counts by
-     status, priority and band are already `GET /reports/alert-summary`. The throughput series has
-     no source at all. Latency percentiles and consumer lag are Prometheus and Kafka, not this API —
-     and Phase 7 is where they arrive with the signals behind them. The likely honest answer is that
-     the overview becomes real for the parts that exist and openly defers the rest, rather than the
-     API growing a dependency on Prometheus a phase early.
-   - **`GET /model-policy`** needs `GET /models/active`, **which is in the contract at Phase 4 and
-     has no handler**. Worse, `model_registry` has never had a row written to it: the registry of
-     record is the one `apps/scoring` serves from disk. So the decision is not "build the endpoint",
-     it is _where the model registry of record lives_ — and that is an ADR.
-   - **`GET /reports`** wants a daily trend and feedback aggregates. `GET /reports/alert-summary`
-     answers counts over one window and nothing else, so this screen is partly real today.
-   - **`GET /health`** wants component states and pipeline lag, which is Phase 7's subject matter.
-
-2. **Then the screens themselves** — the remaining Phase 6 deliverables, and the gate: no dead
-   controls, keyboard and accessibility checks, the core e2e journey, and current screenshots. The
-   alert and transaction screens already meet it; the four above are what is left.
-3. **Then close Phase 6 against its gate**, with the evidence each criterion rests on, the way
-   Phases 2 to 5 were closed.
+**One decision is still open and it is not the console's.** How an assignee's identifier resolves
+to a person. Until it is made, the console can release an alert but cannot give one to anybody, and
+that is stated on the screen rather than papered over.
 
 **One decision is the user's and blocks nothing.** `make reset-demo` then `make seed`, because the
 demo database predates alert creation and holds **zero alerts** — every reporting endpoint honestly

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { ROLE_LABELS } from "@/domain/labels";
 import type { Role } from "@/domain/types";
 import { principalRole, signedOut, useAppDispatch, useSession } from "@/store";
-import { USING_MOCK_DATA } from "@/api/config";
 
 const NAV_ITEMS = [
   { to: "/", label: "Operations overview" },
@@ -24,11 +23,7 @@ export function SyntheticDataBanner() {
       <FlaskConical aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
       <span>
         Educational portfolio demonstration. All transactions, accounts, alerts and scores are
-        fictional synthetic data.{" "}
-        {USING_MOCK_DATA
-          ? "Some screens still read an in-memory fixture rather than the API."
-          : null}{" "}
-        Not affiliated with any bank, financial institution or employer.
+        fictional synthetic data. Not affiliated with any bank, financial institution or employer.
       </span>
     </p>
   );

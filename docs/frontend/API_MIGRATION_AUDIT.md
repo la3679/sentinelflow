@@ -1,13 +1,15 @@
 # API migration audit — what the console asks for, and what the API answers
 
-**Audited:** 2026-08-28 · **Auditor:** Claude · **Opens:** Phase 6 · **Status:** open — pieces 1
-and 2 of 4 done
+**Audited:** 2026-08-28 · **Auditor:** Claude · **Opens:** Phase 6 · **Status:** closed — all four
+pieces done
 
-> **Progress.** Piece 1 (transport and authentication) landed on 2026-08-28, along with the first
-> of piece 3's two API additions (legal targets on the alert). Piece 2 (types and mapping) landed
-> the same day, together with the three transaction read endpoints this audit had wrongly recorded
-> as existing. Piece 4 and the assignee-name decision are open. Each section below still describes
-> what was found; the plan at the end records what is done.
+> **Closed on 2026-08-28.** All four pieces landed the same day: the transport and authentication,
+> the types and mapping with the three transaction read endpoints this audit had wrongly recorded as
+> existing, and the four invented endpoints — decided in
+> [ADR-0014](../adr/0014-where-the-console-s-remaining-screens-get-their-data.md) and built.
+> **`src/mocks/` is deleted**; every screen reads the API. One decision remains open and it is not
+> the console's: how an assignee's identifier resolves to a person. Each section below still
+> describes what was found; the plan at the end records what was done about it.
 
 ## Correction: three of the endpoints in the table below did not exist
 
@@ -60,12 +62,12 @@ need every field renamed; the other nine need more. Five server endpoints have n
 
 **The table above is what was found, and is left as found.** Where each stands after pieces 1 and 2:
 
-| Now                                             | Which                                                                                                                                                              |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Reads the API**                               | login, the alert queue, one alert, its history, its notes, its transition, its assignment, the transaction list, one transaction, its assessment                   |
-| **Still a fixture, and needs a decision first** | `/overview`, `/reports`, `/model-policy`, `/health` — piece 4                                                                                                      |
-| **Deleted rather than migrated**                | the queue's free-text search and risk-band filter, the feed's authorisation-status filter, `ALLOWED_TRANSITIONS`, the client-supplied `actor`, the assignee picker |
-| **A server endpoint with still no client**      | `PUT /alerts/{id}/feedback` and `GET /reports/alerts.csv` — both belong to screens piece 4 has yet to decide                                                       |
+| Now                                        | Which                                                                                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Reads the API**                          | login, the alert queue, one alert, its history, its notes, its transition, its assignment, the transaction list, one transaction, its assessment                   |
+| **Composed or built, and reading the API** | the overview (composed from the alert summary and the queue), reports, model and policy, system health — piece 4                                                   |
+| **Deleted rather than migrated**           | the queue's free-text search and risk-band filter, the feed's authorisation-status filter, `ALLOWED_TRANSITIONS`, the client-supplied `actor`, the assignee picker |
+| **A server endpoint with still no client** | `PUT /alerts/{id}/feedback` alone. The CSV export gained one: the reports screen downloads the window it counts                                                    |
 
 ## The finding that matters most: the console renders controls the server refuses
 
@@ -242,8 +244,35 @@ The migration is four pieces of work, not one, and only the first is what `AGENT
    — **done**, merged as [#57](https://github.com/la3679/sentinelflow/pull/57) — and whatever
    resolves an `assigneeId` to a name, which is still undecided.
 4. **The four invented endpoints** — for each, decide between an API addition and a client-side
-   composition, and record it. The overview screen is the one that matters; it is the landing page.
-   **Open.**
+   composition, and record it. **Done, 2026-08-28**, decided in
+   [ADR-0014](../adr/0014-where-the-console-s-remaining-screens-get-their-data.md) and built. The
+   four went four different ways, which is the point of deciding them one at a time:
+
+   - **`GET /model-policy` became an API composition.** `GET /models/active` was in the contract at
+     Phase 4 with no handler, and building it over `model_registry` would have answered a permanent
+     404: that table has never had a row written to it, and the registry of record is the one the
+     scoring service loads from disk. The API now composes the model half from the scoring service
+     and the policy half — the bands, which alert, at what priority — from its own validated
+     configuration. **A scoring outage does not blank the screen**: the policy half is always
+     knowable, and it is what somebody would be looking for during one.
+   - **`GET /health` became a small API endpoint**, `GET /system/health`, covering what this service
+     can observe: itself, PostgreSQL through the pool, and the scoring service with the state of the
+     breaker in front of it. Always 200, because "the scoring service is down" is the answer rather
+     than a failure to produce one.
+   - **`GET /overview` became a client-side composition** of `GET /reports/alert-summary` and
+     `GET /alerts`. An aggregate endpoint would have been a second implementation of risk-band
+     counting beside the report that already does it, and the two would disagree the first time one
+     changed. The cost is two requests and a screen that can be half-loaded, which the loading and
+     error states already handle.
+   - **`GET /reports` became the endpoint that already existed.** The screen counts a window with
+     `GET /reports/alert-summary` and downloads the same window with `GET /reports/alerts.csv` —
+     which had been tested and unused since Phase 5.
+
+   **Three panels of invented numbers were deleted rather than sourced.** Throughput per hour,
+   scoring latency percentiles, and consumer lag with dead-letter depth: nothing measured any of
+   them, and three of the four belong to Prometheus and Kafka rather than to this API. The screens
+   say what is missing and when it arrives. That is Phase 7's work, and a figure nobody measured is
+   worse than none because somebody quotes it.
 
 **Nothing here is a defect in the Phase 0 frontend.** It was scoped as a presentational foundation
 against fixtures and it is exactly that. The divergence is what always happens when a mock is

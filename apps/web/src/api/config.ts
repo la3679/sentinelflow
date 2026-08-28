@@ -14,14 +14,3 @@
  */
 export const API_BASE_URL: string =
   import.meta.env["VITE_API_BASE_URL"] ?? "http://localhost:8080/api/v1";
-
-/**
- * True for the endpoints still served from deterministic fixtures.
- *
- * The migration is four pieces of work, not one — see
- * `docs/frontend/API_MIGRATION_AUDIT.md`. Transport and authentication are
- * real; four screens still have no server endpoint to call, and one banner
- * cannot honestly describe both halves at once. This says whether *any* of the
- * console still reads a fixture, and it goes when the last one does.
- */
-export const USING_MOCK_DATA = true;

@@ -1,20 +1,14 @@
 import { fetchBaseQuery, type BaseQueryFn } from "@reduxjs/toolkit/query";
 
 import { API_BASE_URL } from "@/api/config";
-import { mockTransport } from "@/mocks/mockTransport";
 import { sessionExpired } from "@/store/sessionSlice";
 
 /**
- * One request descriptor for both halves of a migration in progress.
+ * One request, against `contracts/openapi/sentinelflow-api.yaml`.
  *
- * Every endpoint declares a real path, verb and body against
- * `contracts/openapi/sentinelflow-api.yaml`. `transport: "mock"` marks the ones
- * whose server counterpart does not exist yet — four screens' worth, listed in
- * `docs/frontend/API_MIGRATION_AUDIT.md`. An endpoint without it goes over HTTP.
- *
- * The marker is deliberately per endpoint rather than a global switch: a single
- * flag would mean the console is either entirely real or entirely fake, and it
- * is neither for as long as the migration takes.
+ * Every endpoint declares a real path, verb and body, and every one of them goes
+ * over HTTP. The `transport: "mock"` marker that stood beside this through the
+ * migration is gone with the last fixture it described.
  */
 export interface SentinelRequest {
   /** Path below the API base, starting with a slash. */
@@ -22,8 +16,17 @@ export interface SentinelRequest {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   params?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
-  /** Set only while an endpoint has no server counterpart. */
-  transport?: "mock";
+  /**
+   * How to read a body that is not JSON.
+   *
+   * One endpoint answers `text/csv`: the alert export, which is a file somebody
+   * opens in a spreadsheet rather than a cursor a client pages. It goes through
+   * this transport like everything else so it carries the bearer token, so a
+   * `401` ends the session in the one place that does that, and so a refusal
+   * arrives as the same {@link SentinelError} every screen already handles — a
+   * bare `fetch` beside the store would have none of that.
+   */
+  responseHandler?: (response: Response) => Promise<unknown>;
 }
 
 /**
@@ -150,23 +153,20 @@ const LOGIN_URL = "/auth/login";
  * is a screen that should not have asked, which must not turn "never signed in"
  * into "your session ended".
  *
- * It disappears when the last `transport: "mock"` does, leaving `fetchBaseQuery`
- * behind the error mapping.
  */
 export const sentinelBaseQuery: BaseQueryFn<SentinelRequest, unknown, SentinelError> = async (
   request,
   api,
   extraOptions,
 ) => {
-  if (request.transport === "mock") return mockTransport(request);
-
-  const { url, method, params, body } = request;
+  const { url, method, params, body, responseHandler } = request;
   const result = await http(
     {
       url,
       method: method ?? "GET",
       ...(params ? { params } : {}),
       ...(body === undefined ? {} : { body }),
+      ...(responseHandler ? { responseHandler } : {}),
     },
     api,
     extraOptions,

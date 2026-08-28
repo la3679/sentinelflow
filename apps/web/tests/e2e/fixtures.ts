@@ -61,6 +61,11 @@ export interface ApiStub {
    * alert on — the way a second analyst acting first looks from here.
    */
   conflictOnNextTransition(): void;
+  /**
+   * Answer the model screen the way the API does when scoring is unreachable:
+   * the policy half present, the model half null, and a reason.
+   */
+  loseTheScoringService(): void;
 }
 
 interface Fixtures {
@@ -84,10 +89,14 @@ export const test = base.extend<Fixtures>({
       conflictOnNextTransition() {
         conflictArmed = true;
       },
+      loseTheScoringService() {
+        modelAvailable = false;
+      },
     };
     let loginRefused = false;
     let sessionExpired = false;
     let conflictArmed = false;
+    let modelAvailable = true;
 
     /** The one alert this stub serves, which a transition moves. */
     const alert = {
@@ -146,6 +155,92 @@ export const test = base.extend<Fixtures>({
       ],
       scoringLatencyMs: 42,
       assessedAt: "2026-08-28T08:59:03Z",
+    };
+
+    const alertSummary = {
+      from: "2026-08-21T09:00:00Z",
+      to: "2026-08-28T09:00:00Z",
+      total: 8,
+      open: 6,
+      closed: 2,
+      byStatus: {
+        NEW: 3,
+        IN_REVIEW: 2,
+        ESCALATED: 1,
+        CONFIRMED_SUSPICIOUS: 0,
+        DISMISSED_FALSE_POSITIVE: 0,
+        CLOSED: 2,
+      },
+      byPriority: { LOW: 1, MEDIUM: 3, HIGH: 2, URGENT: 2 },
+      byRiskBand: { LOW: 0, MEDIUM: 1, HIGH: 5, CRITICAL: 2 },
+    };
+
+    const modelMetadata = {
+      modelVersion: "1.0.0",
+      featureVersion: "1.0.0",
+      policyVersion: "1.1.0",
+      algorithm: "gradient-boosting",
+      trainedAt: "2026-07-19T08:30:00Z",
+      artifactSha256: "9f2c1b7a4e6d8c0f3a5b7d9e1c3a5b7d9e1c3a5b7d9e1c3a5b7d9e1c3a5b7d9e",
+      modelAvailable: true,
+      modelUnavailableReason: null as string | null,
+      metrics: {
+        precision: 0.82,
+        recall: 0.61,
+        f1: 0.7,
+        averagePrecision: 0.74,
+        falsePositiveRate: 0.012,
+        operatingThreshold: 62.5,
+      } as object | null,
+      thresholds: [
+        { riskBand: "LOW", minFinalScore: 0, raisesAlert: false, priority: null },
+        { riskBand: "MEDIUM", minFinalScore: 40, raisesAlert: false, priority: null },
+        { riskBand: "HIGH", minFinalScore: 70, raisesAlert: true, priority: "HIGH" },
+        { riskBand: "CRITICAL", minFinalScore: 90, raisesAlert: true, priority: "URGENT" },
+      ],
+      limitations: [
+        "Every figure here describes a synthetic demonstration model. No production or real-world performance is represented.",
+        "A score is not a determination of fraud. It is an ordering signal for human review.",
+        "The model's own operating threshold is a recommendation. What runs is the policy below.",
+        "Thresholds are read-only here.",
+      ],
+    };
+
+    /** The same body with the scoring service unreachable, which is a state the screen must survive. */
+    const withoutTheModel = (full: typeof modelMetadata) => ({
+      ...full,
+      modelVersion: null,
+      featureVersion: null,
+      algorithm: null,
+      trainedAt: null,
+      artifactSha256: null,
+      modelAvailable: false,
+      modelUnavailableReason: "Scoring could not be reached for /v1/model",
+      metrics: null,
+    });
+
+    const systemHealth = {
+      components: [
+        {
+          componentId: "api",
+          name: "Operations API",
+          state: "OPERATIONAL",
+          detail: "Answering requests, which is how you are reading this.",
+        },
+        {
+          componentId: "database",
+          name: "PostgreSQL",
+          state: "OPERATIONAL",
+          detail: "A connection was borrowed and a query answered.",
+        },
+        {
+          componentId: "scoring",
+          name: "Scoring service",
+          state: "OUTAGE",
+          detail: "Not answering. Assessments continue on the rules alone and are marked degraded.",
+        },
+      ],
+      checkedAt: "2026-08-28T09:10:00Z",
     };
 
     const page0 = (content: unknown[]) => ({
@@ -289,6 +384,30 @@ export const test = base.extend<Fixtures>({
 
       if (path.endsWith("/transactions")) {
         await route.fulfill(json(page0([transaction])));
+        return;
+      }
+
+      if (path.endsWith("/reports/alert-summary")) {
+        await route.fulfill(json(alertSummary));
+        return;
+      }
+
+      if (path.endsWith("/reports/alerts.csv")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/csv;charset=UTF-8",
+          body: "alertReference,status,priority\nALT-0001,NEW,URGENT\n",
+        });
+        return;
+      }
+
+      if (path.endsWith("/models/active")) {
+        await route.fulfill(json(modelAvailable ? modelMetadata : withoutTheModel(modelMetadata)));
+        return;
+      }
+
+      if (path.endsWith("/system/health")) {
+        await route.fulfill(json(systemHealth));
         return;
       }
 

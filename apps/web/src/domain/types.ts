@@ -270,82 +270,75 @@ export interface TokenResponse {
   roles: Role[];
 }
 
-// ---------------------------------------------------------------------------
-// Endpoints this console invents, and the fixtures that stand in for them
-//
-// Everything below describes a screen with no server counterpart. Each one
-// needs a decision before it can have one; none of these shapes is a contract.
-// ---------------------------------------------------------------------------
-
-export interface ThroughputPoint {
-  bucketStart: string;
-  scored: number;
-  alerted: number;
-}
-
-export interface RiskBandCount {
-  riskBand: RiskBand;
-  count: number;
-}
-
-export interface StatusCount {
-  status: AlertStatus;
-  count: number;
-}
-
-export interface LatencySummary {
-  p50Ms: number;
-  p95Ms: number;
-  p99Ms: number;
-  windowLabel: string;
-}
-
-export type HealthState = "OPERATIONAL" | "DEGRADED" | "OUTAGE" | "UNKNOWN";
-
-export interface ComponentHealth {
-  componentId: string;
-  name: string;
-  state: HealthState;
-  detail: string;
-  lastCheckedAt: string;
-}
-
-export interface PipelineHealth {
-  consumerGroups: { groupId: string; topic: string; lagMessages: number }[];
-  dlqDepth: number;
-  dlqTopic: string;
-}
-
-export interface OverviewSnapshot {
-  throughput: ThroughputPoint[];
-  riskBands: RiskBandCount[];
-  alertStatuses: StatusCount[];
-  latency: LatencySummary;
-  pipeline: PipelineHealth;
-  recentAlerts: Alert[];
-  generatedAt: string;
-}
-
-export interface ReportsSnapshot {
-  dailyAlertTrend: { date: string; alerts: number; escalated: number }[];
-  riskBands: RiskBandCount[];
-  feedback: { outcome: string; count: number }[];
-  windowLabel: string;
-}
-
-export interface ModelPolicySnapshot {
-  modelVersion: string;
-  featureVersion: string;
+/**
+ * What is scoring, and what this service does with the score.
+ *
+ * Two halves from two owners, composed by the API (ADR-0014 §1). Every field of
+ * the model half is null when the scoring service could not be reached, and the
+ * policy half never is — `modelAvailable` says which case this is rather than
+ * leaving a screen to infer it from a null.
+ */
+export interface ModelMetadata {
+  modelVersion: string | null;
+  featureVersion: string | null;
+  /** This service's own, and always present. */
   policyVersion: string;
-  trainedAt: string;
-  metrics: { key: string; label: string; value: string }[];
-  thresholds: { riskBand: RiskBand; minFinalScore: number; action: string }[];
+  algorithm: string | null;
+  trainedAt: string | null;
+  /** The checksum of the artifact actually loaded, so "which model is running" is answerable. */
+  artifactSha256: string | null;
+  modelAvailable: boolean;
+  modelUnavailableReason: string | null;
+  metrics: ModelMetrics | null;
+  thresholds: PolicyThreshold[];
   limitations: string[];
 }
 
-export interface SystemHealthSnapshot {
-  components: ComponentHealth[];
-  pipeline: PipelineHealth;
+/**
+ * What the model was measured at, on its own synthetic evaluation split.
+ *
+ * **Accuracy is absent**, here and in both contracts. The classes are extremely
+ * imbalanced, so a model that answers "not suspicious" to everything scores well
+ * on it and is worthless — and a figure that exists is one somebody quotes.
+ */
+export interface ModelMetrics {
+  precision: number;
+  recall: number;
+  f1: number;
+  averagePrecision: number;
+  falsePositiveRate: number;
+  /**
+   * The model's own recommended operating point, which is **not** the threshold
+   * that ran: the API applies its own policy to a final score that also folds in
+   * a rule score the model never saw.
+   */
+  operatingThreshold: number;
+}
+
+/** One band, the score it starts at, and what happens to a transaction in it. */
+export interface PolicyThreshold {
+  riskBand: RiskBand;
+  minFinalScore: number;
+  raisesAlert: boolean;
+  /** Null for a band that does not alert. */
+  priority: AlertPriority | null;
+}
+
+export type ComponentState = "OPERATIONAL" | "DEGRADED" | "OUTAGE";
+
+/**
+ * Whether each part of the stack is answering, as the API can see it.
+ *
+ * There is no `UNKNOWN`: a component in this list was asked. Consumer lag and
+ * dead-letter depth are deliberately absent until Phase 7 measures them.
+ */
+export interface SystemHealth {
+  components: {
+    componentId: string;
+    name: string;
+    state: ComponentState;
+    detail: string;
+  }[];
   checkedAt: string;
 }
 

@@ -732,29 +732,81 @@ paths:
     get:
       tags: [model]
       operationId: getActiveModel
-      summary: Get the active model's metadata (Phase 4)
+      summary: What is scoring, and what is done with the score (Phase 6)
       description: |
         **Read-only.** Model activation and policy mutation are deliberately not
         exposed in v1: doing so safely needs authorization, validation, rollback
         and audit behaviour that does not exist yet, and a half-built promotion
         endpoint is worse than none.
+
+        **Two halves from two owners, composed here** ([ADR-0014
+        §1](../../docs/adr/0014-where-the-console-s-remaining-screens-get-their-data.md)).
+        The model half comes from the scoring service, which loads the artifact
+        and is the only thing that can say what is actually running. The policy
+        half — the bands, which of them alert, and at what priority — is this
+        service's, which [ADR-0008
+        §4](../../docs/adr/0008-scoring-service-boundary.md) gives the alerting
+        policy applied at runtime. The console reaches neither directly: this API
+        is the only backend it talks to.
+
+        **Not read from `model_registry`.** That table exists and nothing has ever
+        written to it; the registry of record is the scoring service's own. ADR-0014
+        records the table as debt rather than building an endpoint over an empty one.
+
+        Readable by any authenticated role, `AUDITOR` included.
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
       responses:
         "200":
-          description: Metadata for the active model.
+          description: |
+            The policy, and the model if the scoring service could be reached.
+
+            **200 even when it could not.** The policy half is always knowable and
+            is half of what this endpoint is for; `modelAvailable` says which case
+            the reader is looking at. Answering an error would blank a screen that
+            can still say what the alerting thresholds are — which is exactly what
+            somebody would be looking for during a scoring outage.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelMetadata"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: No model has been promoted yet.
+
+  /system/health:
+    get:
+      tags: [model]
+      operationId: getSystemHealth
+      summary: Whether each part of the stack is answering (Phase 6)
+      description: |
+        Composed by this service from what it can observe: itself, PostgreSQL
+        through the connection pool, and the scoring service with the state of the
+        circuit breaker in front of it.
+
+        **Always 200.** "The scoring service is down" is the answer, not a failure
+        to produce one — an endpoint that returned an error status when a
+        dependency is unhealthy could not be told apart from one that is unhealthy
+        itself.
+
+        **Consumer lag and dead-letter depth are deliberately absent.** They belong
+        to Kafka and Prometheus and arrive in Phase 7 with the metric set and the
+        runbooks that make them actionable. Until then the honest thing to publish
+        is nothing rather than a figure nobody measured.
+
+        **Not `/actuator/health`.** That is on a different base path, is shaped by
+        Spring Boot rather than by this contract, and its details are closed to
+        unauthorised callers. See ADR-0014 §2.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: One entry per component this service can observe.
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: "#/components/schemas/SystemHealth"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
 components:
   securitySchemes:
@@ -1502,33 +1554,110 @@ components:
         Read-only. Includes the limitations of the active model, because a
         metric without its caveats invites a conclusion the metric does not
         support.
+
+        **Two halves from two owners.** Everything about the model is null when
+        the scoring service could not be reached; the policy half never is.
+        `modelAvailable` says which case this is, rather than leaving a reader to
+        infer it from a null.
       properties:
-        modelVersion: { type: string }
-        featureVersion: { type: string }
-        policyVersion: { type: string }
-        status:
+        modelVersion: { type: [string, "null"] }
+        featureVersion: { type: [string, "null"] }
+        policyVersion:
           type: string
-          enum: [CANDIDATE, ACTIVE, RETIRED]
-        trainedAt: { type: string, format: date-time }
-        promotedAt: { type: [string, "null"], format: date-time }
-        metrics:
-          type: object
+          description: This service's own, and always present.
+        algorithm: { type: [string, "null"] }
+        trainedAt: { type: [string, "null"], format: date-time }
+        artifactSha256:
+          type: [string, "null"]
           description: |
-            Evaluation results for imbalanced data. Accuracy is deliberately
-            absent: with this class balance it is close to meaningless and
-            publishing it invites a false conclusion.
-          properties:
-            precision: { type: number, minimum: 0, maximum: 1 }
-            recall: { type: number, minimum: 0, maximum: 1 }
-            prAuc: { type: number, minimum: 0, maximum: 1 }
-            operatingThreshold: { type: number, minimum: 0, maximum: 100 }
-            evaluatedOnRows: { type: integer, minimum: 1 }
-          required: [precision, recall, prAuc, operatingThreshold, evaluatedOnRows]
-          additionalProperties: false
+            The checksum of the artifact actually loaded, which is what makes
+            "which model is running" answerable rather than assumed.
+        modelAvailable:
+          type: boolean
+          description: Whether the scoring service answered. Explicit rather than inferred from a null.
+        modelUnavailableReason:
+          type: [string, "null"]
+          description: Why the model half is missing, when it is. Never an internal detail.
+        metrics:
+          description: |
+            Evaluation results for imbalanced data, or null when the model half is
+            unavailable. Accuracy is deliberately absent: with this class balance
+            it is close to meaningless and publishing it invites a false
+            conclusion.
+          oneOf:
+            - type: object
+              properties:
+                precision: { type: number, minimum: 0, maximum: 1 }
+                recall: { type: number, minimum: 0, maximum: 1 }
+                f1: { type: number, minimum: 0, maximum: 1 }
+                averagePrecision: { type: number, minimum: 0, maximum: 1 }
+                falsePositiveRate: { type: number, minimum: 0, maximum: 1 }
+                operatingThreshold:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  description: |
+                    The model's own recommended operating point, which is **not**
+                    the threshold that ran. This service applies its own policy to
+                    a final score that folds in a rule score the model never saw.
+              required:
+                [precision, recall, f1, averagePrecision, falsePositiveRate, operatingThreshold]
+              additionalProperties: false
+            - type: "null"
+        thresholds:
+          type: array
+          description: |
+            The policy that actually runs, projected from the validated
+            configuration rather than maintained beside it. One entry per band,
+            least severe first.
+          items:
+            type: object
+            properties:
+              riskBand:
+                $ref: "#/components/schemas/RiskBand"
+              minFinalScore: { type: number, minimum: 0, maximum: 100 }
+              raisesAlert: { type: boolean }
+              priority:
+                oneOf:
+                  - $ref: "#/components/schemas/AlertPriority"
+                  - type: "null"
+                description: Null for a band that does not alert. Asking its priority would be a defect.
+            required: [riskBand, minFinalScore, raisesAlert, priority]
+            additionalProperties: false
         limitations:
           type: array
           description: Known limitations, stated plainly rather than omitted.
           items: { type: string }
-      required:
-        [modelVersion, featureVersion, policyVersion, status, trainedAt, metrics, limitations]
+      required: [policyVersion, modelAvailable, thresholds, limitations]
+      additionalProperties: false
+
+    SystemHealth:
+      type: object
+      description: |
+        Whether each part of the stack is answering, as the API can see it. Each
+        component is **asked** rather than read from cached state: a health screen
+        assembled from what something last happened to notice reports a stale
+        "operational", which is worse than no screen because somebody acts on it.
+      properties:
+        components:
+          type: array
+          items:
+            type: object
+            properties:
+              componentId: { type: string }
+              name: { type: string }
+              state:
+                type: string
+                enum: [OPERATIONAL, DEGRADED, OUTAGE]
+                description: |
+                  No `UNKNOWN`. A component in this list was asked, and "we did not
+                  ask" is not a state this API should be able to report about its
+                  own dependencies.
+              detail:
+                type: string
+                description: One sentence a person can act on. Never a dependency's own error text.
+            required: [componentId, name, state, detail]
+            additionalProperties: false
+        checkedAt: { type: string, format: date-time }
+      required: [components, checkedAt]
       additionalProperties: false
