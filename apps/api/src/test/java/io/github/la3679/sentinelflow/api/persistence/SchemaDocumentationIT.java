@@ -96,10 +96,11 @@ class SchemaDocumentationIT extends AbstractPostgresTest {
 
         assertThat(flow)
                 .as("the status banner names the phase the page describes")
-                .contains("Phase 4 status");
+                .contains("Phase 5 status");
         assertThat(flow)
-                .as("alert creation is the part of this flow that does not run yet, and the page "
-                        + "has to say so where a reader will see it")
-                .contains("Alert creation is Phase 5");
+                .as("the page has to name what does not run, where a reader will see it. Alert "
+                        + "creation and the state machine ship in this phase; assignment, notes, "
+                        + "feedback and reporting do not.")
+                .contains("What is not built yet");
     }
 }

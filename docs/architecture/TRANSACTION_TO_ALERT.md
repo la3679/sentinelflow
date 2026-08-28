@@ -3,10 +3,14 @@
 The path a single synthetic transaction takes from arrival to an analyst's queue, and where each
 row in the schema is written along the way.
 
-> **Phase 4 status.** Everything up to and including the persisted risk assessment runs and is
-> tested end to end against a real broker and a real database. **Alert creation is Phase 5**: the
-> band is computed and persisted on every assessment, and nothing reads it yet, so the last two
-> steps below are marked as the design they are built against rather than as behaviour.
+> **Phase 5 status.** Every step below runs, including the last: an assessment that bands at or
+> above the alerting threshold opens an alert, its first history row and its `alert.created` event
+> in the assessment's own transaction, and an analyst moves it through the investigation state
+> machine over an authenticated endpoint. All of it is tested end to end against a real broker and a
+> real database.
+>
+> **What is not built yet:** assignment, notes, analyst feedback, and the reporting endpoints. An
+> alert can be picked up, escalated, dispositioned and closed; it cannot yet be given to somebody.
 >
 > This page was written in Phase 2 and described scoring as a second Kafka consumer publishing
 > `risk.assessed` back to the API. [ADR-0008](../adr/0008-scoring-service-boundary.md) §1 rejected
@@ -26,7 +30,7 @@ sequenceDiagram
     participant Relay as Outbox relay
     participant Kafka as Kafka
     participant Scoring as Scoring<br/>(FastAPI)
-    participant Queue as Alert queue<br/>(Phase 5)
+    participant Queue as Alert queue
 
     Client->>API: POST /api/v1/transactions<br/>idempotencyKey
     activate API
@@ -84,7 +88,7 @@ sequenceDiagram
     deactivate API
 
     rect rgb(245, 245, 245)
-        note over API,Queue: Phase 5. The band is already computed and persisted;<br/>alert creation attaches to it and reopens none of the scoring.
+        note over API,Queue: Only when the band reaches the alerting threshold.<br/>ADR-0011 §4: with no rule firing the score cannot reach it,<br/>so an alert always rests on an indicator an analyst can read.
         API->>DB: INSERT alerts (status = NEW, version = 0)
         API->>DB: INSERT alert_actions (CREATED, actor = system)
         API->>DB: INSERT outbox_events (alert.created)
