@@ -79,6 +79,22 @@ function params(
 export const sentinelApi = createApi({
   reducerPath: "sentinelApi",
   baseQuery: sentinelBaseQuery,
+  /**
+   * Re-read when the operator comes back, and when the network does
+   * (ADR-0015 §1).
+   *
+   * `setupListeners` in `store/index.ts` has armed both events since the store
+   * was written, and until these two flags nothing opted into either — so the
+   * wiring had never caused a request. A console left open on a second monitor
+   * showed whatever it held when it lost focus, which on the alert queue could
+   * be a queue that had moved on without it.
+   *
+   * Cache-level rather than per-endpoint because the argument is the same for
+   * every screen, and because the screens composed from two requests
+   * (ADR-0014 §3) must not re-read one half and keep the other.
+   */
+  refetchOnFocus: true,
+  refetchOnReconnect: true,
   tagTypes: ["Alert", "AlertList", "AlertHistory", "Overview"],
   endpoints: (builder) => ({
     login: builder.mutation<TokenResponse, LoginArgs>({

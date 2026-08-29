@@ -29,6 +29,7 @@ import {
   type AlertPriority,
   type AlertStatus,
 } from "@/domain/types";
+import { refreshWhile } from "@/api/refresh";
 import { useListAlertsQuery } from "@/api/sentinelApi";
 
 export const Route = createFileRoute("/alerts/")({
@@ -52,6 +53,15 @@ export const Route = createFileRoute("/alerts/")({
 
 const PAGE_SIZE = 20;
 
+/**
+ * How often the first page of the queue re-asks (ADR-0015 §1).
+ *
+ * Six times slower than the transaction feed, deliberately. An alert is worked
+ * over minutes, and this list is a work order: rows that re-sort under the
+ * cursor while somebody is choosing one are worse than rows half a minute old.
+ */
+const REFRESH_MS = 30_000;
+
 /** The sentinel the filter selects use for "do not filter", which is not a value the API takes. */
 const ANY = "ANY";
 
@@ -60,19 +70,33 @@ function AlertQueuePage() {
   const [status, setStatus] = useState<AlertStatus | typeof ANY>(ANY);
   const [priority, setPriority] = useState<AlertPriority | typeof ANY>(ANY);
 
-  const query = useListAlertsQuery({
-    page,
-    size: PAGE_SIZE,
-    ...(status === ANY ? {} : { status }),
-    ...(priority === ANY ? {} : { priority }),
-  });
+  const query = useListAlertsQuery(
+    {
+      page,
+      size: PAGE_SIZE,
+      ...(status === ANY ? {} : { status }),
+      ...(priority === ANY ? {} : { priority }),
+    },
+    // Only the first page. A later page is somebody reading rather than
+    // somebody watching, and the queue's order is the server's: a refresh
+    // there would move rows under a cursor for no benefit. Mutations already
+    // invalidate `AlertList`, so this covers the case they cannot — an alert
+    // the pipeline raised, or a transition another analyst made.
+    refreshWhile(page === 0, REFRESH_MS),
+  );
 
   return (
     <AppShell>
       <PageHeader
         title="Alert queue"
-        description="Open work before closed, then by priority, then oldest first — the queue's own order, which the server decides."
+        description={`Open work before closed, then by priority, then oldest first — the queue's own order, which the server decides. The first page re-reads every ${REFRESH_MS / 1000} seconds.`}
       />
+
+      <p className="sr-only" role="status" aria-live="polite">
+        {page === 0
+          ? `The queue re-reads every ${REFRESH_MS / 1000} seconds.`
+          : "The queue is not re-reading while you are on a later page."}
+      </p>
 
       <Panel
         title="Filters"

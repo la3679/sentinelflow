@@ -9,19 +9,35 @@ import { sessionSlice } from "./sessionSlice";
 export { signedIn, signedOut, sessionExpired, isRole, knownRoles } from "./sessionSlice";
 export type { SessionState, SessionStatus, SignedInPayload } from "./sessionSlice";
 
+/**
+ * A store, and nothing global.
+ *
+ * `setupListeners` deliberately is **not** called here. It adds `focus` and
+ * `visibilitychange` listeners to the window, and now that the API opts into
+ * `refetchOnFocus` (ADR-0015 §1) those listeners issue real requests. A factory
+ * that registered them would mean every store a test built kept firing requests
+ * through a `fetch` that test had already restored.
+ *
+ * The application registers them once, below. A test that wants them registers
+ * them itself and holds the teardown.
+ */
 export function makeStore() {
-  const store = configureStore({
+  return configureStore({
     reducer: {
       [sentinelApi.reducerPath]: sentinelApi.reducer,
       session: sessionSlice.reducer,
     },
     middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(sentinelApi.middleware),
   });
-  setupListeners(store.dispatch);
-  return store;
 }
 
 export const store = makeStore();
+
+// Arms the refetch-on-focus and refetch-on-reconnect behaviour ADR-0015 §1
+// decides, once, for the application's own store. Its teardown is discarded
+// because this store lives as long as the document does. `setupListeners`
+// checks for `window` itself, so this is inert during server rendering.
+setupListeners(store.dispatch);
 
 export type AppStore = typeof store;
 export type RootState = ReturnType<AppStore["getState"]>;
