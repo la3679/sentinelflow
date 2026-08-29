@@ -41,6 +41,26 @@ class MigrationIT extends AbstractPostgresTest {
     }
 
     @Test
+    @DisplayName("the system principal is present, with the SYSTEM role")
+    void theSystemPrincipalExists() {
+        // Reference data rather than demo data, and until 2026-08-29 nothing
+        // asserted it. Its absence is invisible everywhere except at the moment
+        // an alert is raised: ingestion still returns 202, health still reports
+        // every component operational, and every transaction.created event is
+        // retried five times and dead-lettered. ReferenceDataVerifier now
+        // refuses to start without it; this is the other half, which is that
+        // the migrations put it there in the first place.
+        List<String> roles = jdbc.queryForList("""
+                SELECT r.code FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                JOIN roles r ON r.id = ur.role_id
+                WHERE u.username = 'system'
+                """, String.class);
+
+        assertThat(roles).containsExactly("SYSTEM");
+    }
+
+    @Test
     @DisplayName("all sixteen domain tables exist")
     void everyDomainTableExists() {
         List<String> tables = jdbc.queryForList("""
