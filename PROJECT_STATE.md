@@ -14,11 +14,11 @@
 
 | Field                | Value                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-28T22:10Z                                                                                                                                |
+| Last updated UTC     | 2026-08-29T01:05Z                                                                                                                                |
 | Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — Phase 6; every screen reads the API and `src/mocks/` is deleted                                                                         |
-| Current phase        | Phase 6 — operations frontend (in progress)                                                                                                      |
-| Current task         | closing Phase 6 against its gate; ADR-0015 (SSE versus WebSockets) is the remaining deliverable                                                  |
+| Overall status       | active — **Phase 6 closed against its gate**; Phase 7 is next                                                                                    |
+| Current phase        | Phase 7 — observability and resilience (not started)                                                                                             |
+| Current task         | opening Phase 7: the metric set, structured logging, trace propagation, dashboards and drills                                                    |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
@@ -26,7 +26,7 @@
 | Local clone verified | **yes**                                                                                                                                          |
 | Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
 | Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none — [#65](https://github.com/la3679/sentinelflow/pull/65) merged                                                                              |
+| Open PRs             | none — [#67](https://github.com/la3679/sentinelflow/pull/67) merged                                                                              |
 | Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
@@ -78,8 +78,8 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 3 — ingestion, outbox, and Kafka**
 - [x] **Phase 4 — synthetic data and scoring**
 - [x] **Phase 5 — alerts and investigations**
-- [ ] **Phase 6 — operations frontend** ← in progress
-- [ ] Phase 7 — observability and resilience
+- [x] **Phase 6 — operations frontend**
+- [ ] **Phase 7 — observability and resilience** ← next
 - [ ] Phase 8 — security and quality hardening
 - [ ] Phase 9 — performance and documentation
 - [ ] Phase 10 — release
@@ -969,15 +969,48 @@ does. Trusting the repository over this file, as `CLAUDE.md` says to.
 The schema's description of that field was corrected instead, for a different reason: it called it
 "the single largest contributor", which is not well defined across two incomparable scales.
 
-## In progress — Phase 6
+## Completed — Phase 6
 
-**Six pull requests merged, nothing open**: the API migration audit as
+**Eight pull requests merged, nothing open**: the API migration audit as
 [#56](https://github.com/la3679/sentinelflow/pull/56), the alert's legal targets as
 [#57](https://github.com/la3679/sentinelflow/pull/57), a state checkpoint as
 [#58](https://github.com/la3679/sentinelflow/pull/58), the transport and authentication as
 [#59](https://github.com/la3679/sentinelflow/pull/59), the transaction read endpoints as
-[#62](https://github.com/la3679/sentinelflow/pull/62), and the typed domain with the alert and
-transaction screens as [#63](https://github.com/la3679/sentinelflow/pull/63).
+[#62](https://github.com/la3679/sentinelflow/pull/62), the typed domain with the alert and
+transaction screens as [#63](https://github.com/la3679/sentinelflow/pull/63), the last four screens
+with `src/mocks/` deleted as [#65](https://github.com/la3679/sentinelflow/pull/65), and the
+live-update decision with the two console defects it found as
+[#67](https://github.com/la3679/sentinelflow/pull/67).
+
+### Live updates are polling, and a stream has three preconditions
+
+[ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) decides the phase's last
+deliverable, and it decides two things rather than the one the build prompt asks about. §8.6 picks
+SSE over WebSockets for the dashboard; it does not say whether this phase should stream at all, and
+that is the larger half.
+
+**It should not, because there is nothing to stream.** `compose.yaml` runs no generator, and
+transactions arrive from `make seed` as a batch, from `make replay` four at a time, and from a
+hand-written post. Between the bursts there is no event stream for a socket to hold open.
+
+**When one is built it is SSE, read with `fetch` rather than `EventSource`.** One-directional
+traffic, inside ADR-0013's CORS model and the bearer header, with reconnection in the protocol.
+`EventSource` cannot set headers, and the two ways round that — a token in the query string and a
+cookie — are forbidden by `CLAUDE.md` and rejected by ADR-0012 §1 respectively. A stream must also
+not outlive the token that authorized it.
+
+**Three preconditions gate building it**, so a later session can tell "not yet" from "forgotten": a
+continuous producer, a fan-out that survives a second API instance, and Phase 7's metrics. The
+second is the one worth remembering — an in-memory emitter registry is correct for exactly one
+instance, and with two the `transaction-risk` group splits its partitions and a browser silently
+misses every event the other instance consumed.
+
+**Writing it found two defects in the console.** The alert queue had no refresh at all: `listAlerts`
+is invalidated only by mutations the same browser makes, so an alert the pipeline raised or a
+transition another analyst made stayed invisible until the page was navigated away from and back.
+And `setupListeners` had been called since the store was written with no endpoint opting into either
+event, so the wiring had never caused a single request. Both fixed, and both new tests fail with the
+flags off — which is how that was confirmed rather than assumed.
 
 ### The four screens the console invented are decided, and none went the same way
 
@@ -1179,6 +1212,59 @@ asserts they are equal.
 - **Two enums describe a product this is not.** `TransactionStatus: AUTHORIZED | DECLINED | …` says a
   payment switch decided something; this system scores and never decides. `AlertPriority: P1–P4`
   against the API's `LOW | MEDIUM | HIGH | URGENT`.
+
+## Acceptance criteria status — Phase 6 gate
+
+The four criteria are `docs/planning/IMPLEMENTATION_PLAN.md`'s. Each row names the evidence, because
+a criterion asserted rather than evidenced is not met.
+
+| Criterion                          | Status   | Evidence                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No dead controls                   | **pass** | `ALLOWED_TRANSITIONS` deleted and every action rendered from the alert's own `legalTargets` ([#63](https://github.com/la3679/sentinelflow/pull/63)); three panels of invented numbers deleted rather than sourced ([#65](https://github.com/la3679/sentinelflow/pull/65)); the queue's filters are exactly `GET /alerts`'s parameters and there is no search box, because the API has no search |
+| Keyboard and accessibility checks  | **pass** | `console.spec.ts` — the skip link is the first tab stop and moves focus to the main landmark, navigation is operable by keyboard, focused controls have a visible indicator; axe (WCAG 2.1 A/AA) on all eight routes at desktop and tablet. 82 tests passed 2026-08-29                                                                                                                          |
+| The core end-to-end journey passes | **pass** | Sign in, work the queue, open an alert, make a transition, and answer a `409` by re-reading and offering the move again — plus the transaction reads, the model and health screens, and the report with its CSV export. Same suite, same run                                                                                                                                                    |
+| Lovable diffs reviewed and merged  | **n/a**  | There are none. Generation was retired in Phase 1 when the console moved to `apps/web/` (ADR-0002), and no `design/lovable-*` branch has existed since. Recorded as not-applicable rather than passed                                                                                                                                                                                           |
+
+**Every deliverable in the plan's Phase 6 list is built:** the typed RTK Query layer with the mock
+fixtures deleted, authentication against the real API, all eight screens, loading/empty/error and
+permission-denied states on every data view, axe and Playwright, current screenshots, and
+[ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md).
+
+### The phase closes with three deviations, stated rather than glossed
+
+1. **No screen-reader pass happened.** Every accessibility check here is automated, and axe finds
+   roughly a third of real issues. A pass with an actual screen reader needs a person using one; it
+   has not happened and is not scheduled. The README now says so in those words rather than
+   describing it as Phase 6 work.
+2. **An alert can be released but not given to anybody.** How an assignee's identifier resolves to a
+   person is still undecided, and the console says so on the screen instead of offering a control
+   that cannot work. That is not a dead control, but it is a deliberate hole in the workflow.
+3. **The authenticated console was not walked by hand in a browser.** What was done instead, against
+   the live stack on 2026-08-29: every screen's endpoints were called directly with a real token,
+   including the two that had never been exercised against the real services, and the console was
+   loaded in a browser far enough to prove the cross-origin path end to end — the preflight answered
+   `200` and a refused sign-in rendered as "The username and password were not accepted." rather
+   than as a network failure, which is the distinction ADR-0013's configuration exists to make.
+   Typing the demo operator's password into the form was not something this session would do; the
+   remaining visual walk is a two-minute job for a person with the credential.
+
+### What running the stack found, and the suites did not
+
+`GET /models/active` had never been called against the real scoring service, which was the point of
+the exercise. It answers, composed from the artifact the service loads from disk and the policy the
+API owns. `GET /system/health` reports all three components operational. The full pipeline works:
+six posted transactions were scored — not degraded — banded HIGH, and raised `ALT-0026` through
+`ALT-0031` with `VELOCITY_5M_HIGH` as the leading factor.
+
+**It also found a defect that no suite could have.** Every `transaction.created` event was being
+dead-lettered after five attempts, because the `system` principal was missing from the local
+database and `AlertRaiser` reads it to attribute an automated action. Ingestion still answered
+`202`, health still reported everything operational, and the alert queue was still honestly empty —
+so nothing anywhere pointed at it. The API now refuses to start against a database missing that row,
+`MigrationIT` asserts the migrations put it there, and Runbook 1 records the generalisation.
+
+**The instruction that caused it was in this file**, and it is corrected below: truncating `users`
+to shrink the seed profile deletes reference data the seed does not write back.
 
 ## Acceptance criteria status — Phase 5 gate
 
@@ -1431,6 +1517,36 @@ available.
 | `main` protected                    | **pass** | Ruleset `21493410`, verified through the rules API                              |
 
 ## Test and verification evidence
+
+### 2026-08-29 — Phase 6 closed: ADR-0015, the live stack, and the row that broke every alert
+
+| Check                                                       | Result                                                              |
+| ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| `./mvnw verify` (apps/api, JDK 25)                          | **PASS** — 226 unit and 290 integration tests, 0 failures           |
+| JaCoCo gate                                                 | **met** — line 0.8955, branch 0.7931                                |
+| `bun run lint` (apps/web)                                   | **PASS** — 0 errors, 26 pre-existing `react-refresh` warnings       |
+| `bun run typecheck` (apps/web)                              | **PASS**                                                            |
+| `bun run test` (apps/web)                                   | **PASS** — 41 tests in 5 files, up from 37                          |
+| `bun run test:coverage` (apps/web)                          | 26.79% statements, 18.61% branches, 19.81% functions, 26.93% lines  |
+| `bun run test:e2e`                                          | **PASS** — 82 tests, axe clean on all eight routes at two viewports |
+| `bun run build` (apps/web)                                  | **PASS**                                                            |
+| `format:check` · `check-docs.mjs`                           | **PASS** — 204 links across 46 files, 0 broken                      |
+| CI on [#67](https://github.com/la3679/sentinelflow/pull/67) | **PASS** — all ten required checks, on head `e058f84`               |
+
+**Against the running stack**, after `docker compose up -d --build` rebuilt every image:
+
+| Call                                  | Result                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `POST /auth/login`                    | `200`, token issued for `analyst.one`                                                           |
+| `GET /models/active`                  | `200`, `modelAvailable: true` — the first time this reached the real scoring service            |
+| `GET /system/health`                  | `200`, all three components `OPERATIONAL`                                                       |
+| `POST /transactions` ×6               | `202` each; scored rather than degraded, banded HIGH, raising `ALT-0026`–`ALT-0031`             |
+| Console sign-in from `localhost:5173` | CORS preflight `200`, refused sign-in rendered as a `401` message rather than a network failure |
+
+**The first attempt at those six transactions failed**, and that is the finding: every event was
+retried five times and dead-lettered on an `IllegalStateException` while ingestion answered `202`
+and health reported everything operational. The `system` principal was missing from the local
+database. Fixed at the source with a startup refusal — see "What running the stack found" above.
 
 ### 2026-08-28 — Phase 6, the last four screens
 
@@ -2035,32 +2151,39 @@ None.
 
 ## Next three actions
 
-Phase 6's migration is complete: all four pieces of the audit are merged, every screen reads the
-API, and `src/mocks/` is deleted. Nothing is open and `main` is green. What is left is the phase's own gate and its last deliverable.
+**Phase 6 is closed against its gate**, with the evidence for each criterion recorded above and the
+three deviations stated rather than glossed. Nothing is open and `main` is green. Phase 7 is next,
+and its subject is the one this build keeps running into: three defects in a row have been invisible
+to every suite and visible only to somebody watching the stack.
 
-1. **ADR-0015 — SSE versus WebSockets**, which the implementation plan lists as a Phase 6
-   deliverable and nothing has yet decided. The transaction feed polls today; the ADR is where
-   polling is either defended as sufficient at this volume or superseded. It should be written
-   against what the console now actually does, which is why it comes after the migration rather
-   than before it.
-2. **Exercise the console against the running stack**, not only against the end-to-end stub. Three
-   defects this project has found were invisible to every suite and needed a real request: the
-   Kafka topics nothing created, the h2c upgrade uvicorn refused, and the credentials the seed
-   never wrote. The API now reads the scoring service's `/v1/model` for the model screen, and that
-   call has never been made against the real service. `make up`, `make seed`, then walk the
-   console.
-3. **Close Phase 6 against its gate** — no dead controls, keyboard and accessibility checks, the
-   core end-to-end journey, current screenshots — with the evidence each criterion rests on, the
-   way Phases 2 to 5 were closed.
+1. **The metric set, low-cardinality, across API, outbox, Kafka, scoring and alerts.** This is what
+   the three deleted console panels are waiting on — throughput, scoring latency percentiles,
+   consumer lag and dead-letter depth are named on the screens as Phase 7's. It is also
+   [ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) §4's third precondition
+   for replacing polling with a stream.
+2. **Structured JSON logging with redaction tests, and W3C trace propagation across HTTP and
+   Kafka.** The gate is that one transaction can be followed end to end, and the pieces that make
+   that possible are already half there: `CorrelationIdFilter` puts an identifier on every request
+   and every problem document carries it, but nothing propagates a trace across the Kafka hop.
+3. **Version-controlled Grafana dashboards and the failure drills**, then the runbooks each
+   dashboard makes usable. `docs/operations/RUNBOOKS.md` has four already, written before the
+   signals they describe existed; Phase 7 is where they stop being aspirational.
+
+**The observability ADR needs a number allocated when it is written.** The implementation plan used
+to pin it to ADR-0013, which Phase 6 took for the CORS decision; the plan now says so instead of
+naming a number that is already used.
 
 **One decision is still open and it is not the console's.** How an assignee's identifier resolves
 to a person. Until it is made, the console can release an alert but cannot give one to anybody, and
 that is stated on the screen rather than papered over.
 
-**One decision is the user's and blocks nothing.** `make reset-demo` then `make seed`, because the
-demo database predates alert creation and holds **zero alerts** — every reporting endpoint honestly
-returns nothing. `make reset-demo` deletes the Prometheus and Grafana volumes as well as PostgreSQL
-and gates itself behind an interactive confirmation, which is a control worth respecting.
+**The zero-alert database is explained, and it was not what the last session thought.** It was not
+that the database predated alert creation: **every alert raise was failing**, because the `system`
+principal was missing and `AlertRaiser` reads it to attribute the action. Restoring that one row on
+2026-08-29 and posting six transactions produced `ALT-0026` onward, all scored rather than degraded,
+so the reporting endpoints have real data now. `make reset-demo` remains available and remains the
+user's call — it deletes the Prometheus and Grafana volumes as well as PostgreSQL and gates itself
+behind an interactive confirmation, which is a control worth respecting.
 
 ### What an earlier session found by running the stack rather than the suites
 
@@ -2085,11 +2208,20 @@ Runbook 4 has the full sequence.
 ### Before resuming, note the local database is on the LOCAL profile
 
 The evaluation run needed it: DEMO produces a holdout with three positives, below the floor. The
-stack currently holds 20,707 generated transactions. `make seed` is a no-op against it; to go back to
-a smaller profile, stop the API, truncate `users, user_roles, customers, accounts, merchants,
-transactions, outbox_events, processed_events CASCADE`, and reseed. **Truncating without `users`
-fails startup** on `users_username_unique` — the party seed is idempotent against a database it
-seeded, not against one where half its tables were cleared.
+stack currently holds 20,707 generated transactions plus a handful posted by hand on 2026-08-29.
+`make seed` is a no-op against it.
+
+**Do not truncate `users` to shrink the profile.** An earlier version of this note told a future
+session to truncate `users, user_roles, customers, accounts, merchants, transactions, outbox_events,
+processed_events CASCADE` and reseed, and that instruction is what broke this database. `users` holds
+the `system` principal, which **V1 inserts as reference data and the seed does not write** — the seed
+writes the four demo operators and nothing else. Truncating it therefore deletes a row nothing puts
+back, and the API now refuses to start against a database missing it (`ReferenceDataVerifier`).
+
+To go back to a smaller profile, use `make reset-demo` and reseed, which recreates the database and
+re-runs the migrations. If the tables must be cleared in place instead, leave `users` and `user_roles`
+alone and truncate only `customers, accounts, merchants, transactions, outbox_events,
+processed_events CASCADE`.
 
 **The local demo database carries the scars of the h2c defect.** 7,260 transactions are `FAILED` and
 13,455 assessments are `degraded`, because they were processed while every scoring call was being

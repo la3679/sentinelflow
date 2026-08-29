@@ -28,7 +28,7 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phases 0 to 5 complete, Phase 6 in progress
+## Current status — Phases 0 to 6 complete, Phase 7 next
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
@@ -41,8 +41,8 @@ finished system as though it were running.
 | 3     | Transaction ingestion, transactional outbox, Kafka | **complete** |
 | 4     | Synthetic data generation and risk scoring         | **complete** |
 | 5     | Alert lifecycle, investigations, audit             | **complete** |
-| 6     | Operations console wired to the real API           | in progress  |
-| 7     | Observability and resilience                       | not started  |
+| 6     | Operations console wired to the real API           | **complete** |
+| 7     | Observability and resilience                       | next         |
 | 8     | Security and release-quality hardening             | not started  |
 | 9     | Performance, documentation, clean-clone check      | not started  |
 | 10    | v1.0.0 release                                     | not started  |
@@ -472,7 +472,11 @@ Both coverage gates are ratchets — measured, then set below the measurement, r
 change genuinely raises coverage, and never lowered to go green. `apps/api` is at LINE 0.80 and
 BRANCH 0.70, raised on 2026-08-27 from 0.70 and 0.60 after the assessment workflow measured 85.7%
 and 76.9%; `apps/scoring` is at 90% of statements, set when the feature pipeline gave it a baseline
-that meant something. `apps/web` has no threshold yet; it gets one in Phase 6.
+that meant something. `apps/web` is at 25% of statements and 17% of branches, set on 2026-08-29
+below a measured 26.79% and 18.61%. **That number is not a claim that the console is a quarter
+tested**: most of its behaviour is asserted by Playwright against a real browser, because focus
+visibility, keyboard operation, contrast and axe cannot be checked in jsdom. The gate exists to stop
+the unit layer silently shrinking.
 
 **No latency, throughput, or false-positive figure is claimed anywhere in this repository.** None
 has been measured. Phase 9 measures them and reports the method alongside the result.
@@ -539,8 +543,11 @@ Controls that exist today, not aspirations:
   control authorizes nothing.
 - **The local stack is not a deployment target.** It binds to your machine, holds only synthetic
   data, and has never been hardened for exposure. Do not put it on a network you do not control.
-- **Screen-reader behaviour is unverified.** axe finds roughly a third of real accessibility
-  issues; a manual pass is Phase 6.
+- **Screen-reader behaviour is unverified, and Phase 6 closed without verifying it.** axe finds
+  roughly a third of real accessibility issues, and every automated check this repository has —
+  axe on eight routes at two viewports, keyboard operation, focus visibility — is one of the
+  cheaper two-thirds. A pass with an actual screen reader needs a person using one; it has not
+  happened, it is not scheduled, and nothing here should be read as saying otherwise.
 
 ## Development workflow
 
