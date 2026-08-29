@@ -18,7 +18,7 @@
 | Updated by           | Claude                                                                                                                                           |
 | Overall status       | active — **Phase 6 closed against its gate**; Phase 7 is next                                                                                    |
 | Current phase        | Phase 7 — observability and resilience (not started)                                                                                             |
-| Current task         | opening Phase 7: the metric set, structured logging, trace propagation, dashboards and drills                                                    |
+| Current task         | **none in progress.** Phase 6 is closed and merged; Phase 7 has not been started — the session stopped there at the user's request               |
 | GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
 | Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
 | Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
