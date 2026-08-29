@@ -171,7 +171,8 @@ attempts fail as expected · API documented.
 - Loading, empty, error, and permission-denied states everywhere
 - Accessibility tests (axe) and Playwright end-to-end journeys
 - Current screenshots with synthetic data
-- ADR-0015 SSE versus WebSockets
+- [ADR-0015](../adr/0015-live-updates-polling-and-server-sent-events.md) live updates: bounded
+  polling now, SSE when there is a stream to carry
 
 **Gate** — no dead controls · keyboard and accessibility checks pass · the core end-to-end journey
 passes · Lovable diffs reviewed and merged safely.
@@ -189,7 +190,8 @@ passes · Lovable diffs reviewed and merged safely.
 - Resilience drills for scoring-service and Kafka failure
 - Runbooks for API down, scoring down, consumer lag, outbox backlog, DLQ growth, connection
   saturation, high error rate, slow report query, model artifact load failure
-- ADR-0013 observability approach
+- An ADR for the observability approach — number allocated when it is written, because 0013 and
+  0014 were taken by decisions this plan did not anticipate
 
 **Gate** — one transaction trace can be followed end to end · dashboards load with data ·
 redaction tests pass · a documented failure drill succeeds.
@@ -224,7 +226,8 @@ secret scan clean · workflows reviewed · threat controls traceable to tests an
 - Clean-clone verification of every README command
 - Demo walkthrough and screenshots
 - Link, badge, and screenshot audit
-- ADR-0014 deployment and local-first strategy
+- An ADR for the deployment and local-first strategy — number allocated when it is written, for the
+  same reason
 
 **Gate** — every README command works · diagrams match the code · no placeholders or broken links ·
 actual test and performance evidence committed.
