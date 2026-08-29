@@ -32,6 +32,7 @@ import {
   RISK_BAND_LABELS,
 } from "@/domain/labels";
 import { RISK_BANDS, type RiskBand } from "@/domain/types";
+import { refreshWhile } from "@/api/refresh";
 import { useListTransactionsQuery } from "@/api/sentinelApi";
 
 export const Route = createFileRoute("/transactions/live")({
@@ -82,7 +83,7 @@ function LiveTransactionsPage() {
     // window being advanced over a fixture. Paused rather than throttled when
     // the operator asks, because a feed that keeps moving under a cursor is
     // unreadable while somebody is trying to read a row.
-    live && page === 0 ? { pollingInterval: REFRESH_MS } : {},
+    refreshWhile(live && page === 0, REFRESH_MS),
   );
 
   return (

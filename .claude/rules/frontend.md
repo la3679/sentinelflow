@@ -19,10 +19,15 @@ comment saying why. `as` casts are a smell — narrow with a type guard instead.
 - **RTK Query owns server state.** Do not add a second data-fetching library.
 - **Redux owns client state that outlives a component.** Component state owns
   everything else. Not every value belongs in a store.
-- `src/mocks/` is temporary. It exists so the console runs with no backend, and
-  it is deleted once the typed client is wired. The migration is replacing
-  `mockBaseQuery` with `fetchBaseQuery({ baseUrl: API_BASE_URL })` — keep it
-  that small by never letting mock knowledge leak into a component.
+- **`src/mocks/` is gone and does not come back.** Every screen reads the API
+  through `src/api/transport.ts`. Where the API cannot answer something, the
+  screen says so and names the phase that measures it — a fixture added to make
+  a screen look finished is the thing this rule exists to stop.
+- **A screen stays current by polling, not by streaming** (ADR-0015). The cache
+  re-reads on focus and on reconnect; two screens add an interval, each a named
+  constant beside its query, applied through `refreshWhile` so that a feed
+  nobody is watching does not poll. A third interval is a reason to reopen
+  ADR-0015 rather than to add one.
 - No browser storage for session or authorization state. There is a test that
   enforces this.
 

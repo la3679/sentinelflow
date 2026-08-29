@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { API_BASE_URL } from "@/api/config";
+import { refreshWhile } from "@/api/refresh";
 import { sentinelApi } from "@/api/sentinelApi";
-import { makeStore } from "@/store";
+import { makeStore, store } from "@/store";
 
 describe("RTK Query data access", () => {
   it("points at the API's own origin, not at a path on the console's", () => {
@@ -213,5 +214,92 @@ describe("RTK Query data access", () => {
     expect(urls.some((url) => url.includes("/alerts"))).toBe(true);
     expect(urls.some((url) => url.includes("/overview"))).toBe(false);
     fetchSpy.mockRestore();
+  });
+});
+
+describe("staying current without a stream (ADR-0015)", () => {
+  // Restored even when an expectation fails. `vi.spyOn` returns the spy that is
+  // already installed rather than a fresh one, so a test that threw before its
+  // own `mockRestore` would hand its call count to the next test and let it
+  // pass on someone else's request.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function stubbedPage(): ReturnType<typeof vi.spyOn> {
+    return vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          content: [],
+          page: { page: 0, size: 20, totalElements: 0, totalPages: 0 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+  }
+
+  /**
+   * Subscribes the application's own store — not a fresh one.
+   *
+   * `setupListeners` guards itself with a module-level flag and registers the
+   * window listeners exactly once per process, which the application does at
+   * import time. A second call from a test is a no-op that returns a no-op
+   * teardown, so a test store would never see the event and would prove nothing
+   * about a real focus.
+   */
+  function subscribeToQueue(size: number) {
+    // Returned unawaited: an `async` helper would unwrap the thenable and hand
+    // back the query result, losing the `unsubscribe` the caller has to call.
+    return store.dispatch(sentinelApi.endpoints.listAlerts.initiate({ page: 0, size }));
+  }
+
+  it("re-reads when the operator comes back to the window", async () => {
+    const fetchSpy = stubbedPage();
+    const subscription = subscribeToQueue(21);
+    await subscription;
+    try {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      // The gap this closes: an alert the pipeline raised, or a transition made
+      // by a second analyst, is invisible to a console that only invalidates on
+      // its own mutations. The listener has been registered since the store was
+      // written and no endpoint opted into it, so this event caused no request
+      // at all until `refetchOnFocus`.
+      window.dispatchEvent(new Event("focus"));
+      await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+    } finally {
+      subscription.unsubscribe();
+    }
+  });
+
+  it("re-reads when the network comes back, rather than keeping what it had", async () => {
+    const fetchSpy = stubbedPage();
+    const subscription = subscribeToQueue(22);
+    await subscription;
+    try {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      window.dispatchEvent(new Event("online"));
+      await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+    } finally {
+      subscription.unsubscribe();
+    }
+  });
+
+  it("registers no window listener merely by building a store", () => {
+    // The factory must stay free of global state: a store built by a test that
+    // armed the listeners would keep issuing requests through a `fetch` that
+    // test had already restored, in whatever test ran next.
+    const addListener = vi.spyOn(window, "addEventListener");
+    makeStore();
+    expect(addListener).not.toHaveBeenCalled();
+  });
+
+  it("passes no polling key at all when nobody is watching", () => {
+    // Not a zero and not an undefined. RTK Query merges subscription options
+    // across every subscriber to a cache entry, so "not polling" has to be an
+    // absence to survive the merge.
+    expect(refreshWhile(true, 5_000)).toEqual({ pollingInterval: 5_000 });
+    expect(Object.hasOwn(refreshWhile(false, 5_000), "pollingInterval")).toBe(false);
   });
 });

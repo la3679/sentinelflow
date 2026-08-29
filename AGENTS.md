@@ -69,6 +69,21 @@ whatever it points at must list the console's origin in
 `SENTINELFLOW_CORS_ALLOWED_ORIGINS`. Vite inlines it at build time, so changing
 it means rebuilding.
 
+## How the console stays current
+
+**Polling, not a stream** ([ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md)).
+The cache re-reads on window focus and on reconnect, the transaction feed re-asks
+every five seconds and the alert queue every thirty, and both stop on any page
+but the first. `src/api/refresh.ts` holds that last rule so it is not copied into
+each screen.
+
+**Do not add an SSE or WebSocket endpoint to make a screen feel live.** ADR-0015
+§4 names three things that must be true first — a producer that runs
+continuously, a fan-out that survives a second API instance, and Phase 7's
+metrics — and §2 and §3 decide the transport and how it authenticates when they
+are. Nothing produces transactions continuously today, so there is nothing to
+stream between the bursts.
+
 ## Conventions
 
 - State and data access: Redux Toolkit + RTK Query. Do not introduce another
