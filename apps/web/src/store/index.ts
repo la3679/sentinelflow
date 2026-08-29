@@ -18,8 +18,10 @@ export type { SessionState, SessionStatus, SignedInPayload } from "./sessionSlic
  * that registered them would mean every store a test built kept firing requests
  * through a `fetch` that test had already restored.
  *
- * The application registers them once, below. A test that wants them registers
- * them itself and holds the teardown.
+ * The application registers them once, below, and that is the only
+ * registration there is: `setupListeners` guards itself with a module-level
+ * flag and refuses a second one, so a test cannot arm its own store and must
+ * exercise this one.
  */
 export function makeStore() {
   return configureStore({

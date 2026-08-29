@@ -2,14 +2,14 @@
  * When a screen re-asks the API on an interval, and when it stops.
  *
  * ADR-0015 decides that Phase 6's live updates are bounded polling rather than
- * a stream, and §5 of it puts three rules on every interval: the number is a
- * named constant beside the query it drives, the endpoint underneath is paged
- * with a server-enforced maximum, and **a feed nobody is watching does not
- * poll**.
+ * a stream, and §5 of it puts four rules on every interval. Three are local to
+ * the screen that polls — the number is a named constant beside its query, the
+ * endpoint underneath is paged with a server-enforced maximum, and reports,
+ * aggregates and exports are never polled at all.
  *
- * The last of those is the one that is easy to get subtly wrong in each screen
- * separately, so it lives here rather than as a condition copied into every
- * route.
+ * The fourth is this module: **a feed nobody is watching does not poll**. It
+ * lives here rather than as a condition copied into every route, because it is
+ * the one that is easy to get subtly wrong in each of them separately.
  */
 
 /**
