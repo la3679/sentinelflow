@@ -32,6 +32,26 @@ export default defineConfig({
         "src/server.ts",
         "src/start.ts",
       ],
+      // A ratchet, set below the measurement it was taken from and never
+      // lowered to go green - the same rule apps/api and apps/scoring follow.
+      //
+      // WHAT THIS NUMBER IS AND IS NOT. Measured at 26.79% of statements on
+      // 2026-08-29 (`bun run test:coverage`, 41 tests). It is low because most
+      // of this console's behaviour is asserted by Playwright against a real
+      // browser rather than by Vitest against jsdom: focus visibility, keyboard
+      // operation, contrast and axe cannot be checked in a unit test, and the
+      // route components that make up most of these lines are exercised there.
+      //
+      // So this gate is not a claim that the console is 26% tested. It stops
+      // the unit layer silently shrinking - a deleted transport or store test
+      // takes the number below the floor and fails the run, which is the only
+      // job a threshold at this level can honestly do.
+      thresholds: {
+        statements: 25,
+        branches: 17,
+        functions: 18,
+        lines: 25,
+      },
     },
   },
 });
