@@ -28,7 +28,7 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phases 0 to 5 complete, Phase 6 in progress
+## Current status — Phases 0 to 6 complete, Phase 7 next
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
@@ -41,8 +41,8 @@ finished system as though it were running.
 | 3     | Transaction ingestion, transactional outbox, Kafka | **complete** |
 | 4     | Synthetic data generation and risk scoring         | **complete** |
 | 5     | Alert lifecycle, investigations, audit             | **complete** |
-| 6     | Operations console wired to the real API           | in progress  |
-| 7     | Observability and resilience                       | not started  |
+| 6     | Operations console wired to the real API           | **complete** |
+| 7     | Observability and resilience                       | next         |
 | 8     | Security and release-quality hardening             | not started  |
 | 9     | Performance, documentation, clean-clone check      | not started  |
 | 10    | v1.0.0 release                                     | not started  |
@@ -179,8 +179,8 @@ an assessment to the rules rather than losing it
 The API is the only backend the console talks to; scoring is reached through the API and never
 directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See
 [ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md). The console-to-API link is drawn
-solid because it carries real traffic — sign-in — but it is the newest and the least complete: the
-other screens are still on fixtures, as the status section above says.
+solid because it carries real traffic, and every screen now uses it: `apps/web/src/mocks/` was
+deleted with the last of them in Phase 6.
 
 ### Local deployment
 
@@ -229,7 +229,7 @@ Chosen with a reason, and recorded. Every version below is pinned and justified 
 | **Python 3.13 + FastAPI + scikit-learn** | The model belongs in the scientific stack. 3.13 exactly, because numpy needs ≥3.12 and joblib declares support only through 3.13.            |
 | **uv**                                   | Provisions the interpreter and locks the tree, so the reference machine's system Python 3.11 is irrelevant.                                  |
 | **React 19 + TanStack Router**           | Lovable's generated foundation, adopted after audit rather than rewritten. [ADR-0009](docs/adr/0009-frontend-component-library.md).          |
-| **Redux Toolkit + RTK Query**            | One data layer. The mock adapter swaps for a real base query in one place.                                                                   |
+| **Redux Toolkit + RTK Query**            | One data layer, over one transport that attaches the token and maps every RFC 9457 body to one error shape.                                  |
 | **shadcn/ui on Radix**                   | Radix supplies the focus management, keyboard interaction and ARIA semantics WCAG 2.2 AA needs. MIT, no paid tier.                           |
 | **Bun**                                  | One package manager, one lockfile, one workspace root.                                                                                       |
 | **Prometheus + Grafana**                 | Scraping and dashboards without an account or an egress dependency.                                                                          |
@@ -472,7 +472,11 @@ Both coverage gates are ratchets — measured, then set below the measurement, r
 change genuinely raises coverage, and never lowered to go green. `apps/api` is at LINE 0.80 and
 BRANCH 0.70, raised on 2026-08-27 from 0.70 and 0.60 after the assessment workflow measured 85.7%
 and 76.9%; `apps/scoring` is at 90% of statements, set when the feature pipeline gave it a baseline
-that meant something. `apps/web` has no threshold yet; it gets one in Phase 6.
+that meant something. `apps/web` is at 25% of statements and 17% of branches, set on 2026-08-29
+below a measured 26.79% and 18.61%. **That number is not a claim that the console is a quarter
+tested**: most of its behaviour is asserted by Playwright against a real browser, because focus
+visibility, keyboard operation, contrast and axe cannot be checked in jsdom. The gate exists to stop
+the unit layer silently shrinking.
 
 **No latency, throughput, or false-positive figure is claimed anywhere in this repository.** None
 has been measured. Phase 9 measures them and reports the method alongside the result.
@@ -539,8 +543,11 @@ Controls that exist today, not aspirations:
   control authorizes nothing.
 - **The local stack is not a deployment target.** It binds to your machine, holds only synthetic
   data, and has never been hardened for exposure. Do not put it on a network you do not control.
-- **Screen-reader behaviour is unverified.** axe finds roughly a third of real accessibility
-  issues; a manual pass is Phase 6.
+- **Screen-reader behaviour is unverified, and Phase 6 closed without verifying it.** axe finds
+  roughly a third of real accessibility issues, and every automated check this repository has —
+  axe on eight routes at two viewports, keyboard operation, focus visibility — is one of the
+  cheaper two-thirds. A pass with an actual screen reader needs a person using one; it has not
+  happened, it is not scheduled, and nothing here should be read as saying otherwise.
 
 ## Development workflow
 

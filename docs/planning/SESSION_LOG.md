@@ -2385,3 +2385,79 @@ deliverable and which should be written against what the console now does rather
 going to; then exercising the console against the running stack, because the API's new call to the
 scoring service's `/v1/model` has never been made against the real service; then closing Phase 6
 against its gate.
+
+---
+
+## 2026-08-29 — Phase 6 closed: ADR-0015, the live stack, and the row that broke every alert
+
+| Field           | Value                                                                                                                               |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-28T23:55Z / 2026-08-29T01:20Z                                                                                               |
+| Starting SHA    | `c0d4201` on `main`                                                                                                                 |
+| Ending SHA      | recorded by the merge of the branch this session opened; `main` was green at every push                                             |
+| Objective       | Continue from "Next three actions": decide ADR-0015, exercise the console against the running stack, close Phase 6 against its gate |
+
+### Work completed
+
+**ADR-0015, merged as [#67](https://github.com/la3679/sentinelflow/pull/67).** The build prompt's
+§8.6 picks SSE over WebSockets and does not say whether to stream at all; both halves are decided,
+against what the console does rather than what it was going to. Phase 6 ships bounded polling
+because nothing produces transactions continuously; when a stream is built it is SSE read with
+`fetch`, and three preconditions gate building it.
+
+**Two console defects the ADR found while establishing its own facts.** The alert queue had no
+refresh at all, and `setupListeners` had been wired since the store was written with nothing opted
+into it. Both fixed, with tests that were checked against an inverted implementation.
+
+**The console exercised against the running stack**, which is the item that has repeatedly been
+worth more than any suite. `GET /models/active` reached the real scoring service for the first time.
+`GET /system/health` answered. Six posted transactions were scored, banded, and raised alerts.
+
+**One defect no suite could have found.** Every `transaction.created` event was being dead-lettered
+after five attempts because the `system` principal was missing from the local database — deleted by
+an earlier session's `TRUNCATE users`, following an instruction in `PROJECT_STATE.md` itself. The
+API now refuses to start without it, `MigrationIT` asserts the migrations write it, Runbook 1
+records the generalisation, and the instruction that caused it is corrected.
+
+**Phase 6 closed against its gate**, with the evidence per criterion and three deviations stated.
+
+### Things worth keeping
+
+- **An ADR about live updates written before the console talked to the API would have been about an
+  imagined system.** Every fact ADR-0015 rests on — one screen polls, the queue does not refresh,
+  nothing produces continuously, the token is a header with a 30-minute expiry — is a property of
+  what was built, and three of them were surprises to the session that wrote it.
+- **The most expensive shape a failure can take is a per-message error inside a consumer.** Five
+  retries deep, on records that would fail identically for ever, with every health signal green.
+  Checking the same condition once at startup turns an afternoon of consumer logs into a refusal to
+  start with the repair in the message.
+- **A `RETRY_EXHAUSTED` class does not mean the failure is transient.** It means a handler threw
+  something that was not marked non-retryable. When every record fails with the same exception type,
+  the class is wrong and the message is right.
+- **A state file can carry a landmine.** The truncate instruction was written by a session solving a
+  real problem and it destroyed reference data the seed does not write back. What made it dangerous
+  was that it named `users` in a list of tables that otherwise held only generated data.
+- **`setupListeners` guards itself with a module-level flag**, so a second call registers nothing.
+  A test that armed its own store would have proved nothing about a real focus event, and would have
+  passed anyway — which is why the two refetch tests exercise the application's own store and were
+  checked against an inverted implementation before being believed.
+- **A coverage threshold can be honest and nearly vacuous at the same time**, and it is better to
+  say so in the config than to let 25% be read as a claim. What gates this console is Playwright.
+
+### Verification
+
+| Check                              | Result                                                    |
+| ---------------------------------- | --------------------------------------------------------- |
+| `./mvnw verify` (apps/api, JDK 25) | **PASS** — 226 unit and 290 integration tests, 0 failures |
+| JaCoCo gate                        | **met** — line 0.8955, branch 0.7931                      |
+| `bun run test` (apps/web)          | **PASS** — 41 tests in 5 files                            |
+| `bun run test:e2e`                 | **PASS** — 82 tests, axe clean on eight routes            |
+| `format:check` · `check-docs.mjs`  | **PASS** — 204 links across 46 files, 0 broken            |
+| CI on #67                          | **PASS** — all ten required checks                        |
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: Phase 7. The metric set first, because three deleted console panels
+and ADR-0015's third precondition are both waiting on it; then structured logging with redaction and
+trace propagation across the Kafka hop; then the dashboards and the failure drills that make the
+four existing runbooks stop being aspirational.

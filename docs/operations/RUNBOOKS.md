@@ -65,6 +65,15 @@ infer:
 A rising `RETRY_EXHAUSTED` count is an outage. A rising `SCHEMA_VALIDATION_FAILED` count is a
 release problem. They are not the same incident and must not be triaged the same way.
 
+**`RETRY_EXHAUSTED` on _every_ record, with the same `exceptionType` on each, is not a dependency
+being down.** It is a permanent condition wearing a transient class, because a handler that throws a
+plain exception is retried before anyone asks whether retrying could ever help. On 2026-08-29 that
+was one missing reference row — the `system` principal, absent from a database whose `users` table
+had been truncated — and every `transaction.created` event was retried five times and dead-lettered
+while ingestion kept answering `202` and system health kept reporting every component operational.
+The API now refuses to start against a database missing that row, so this exact case cannot recur;
+the shape of it can. Read `sanitisedMessage` on a dead-lettered record before assuming an outage.
+
 ### Diagnostics
 
 Break the count down before doing anything else. The class is the diagnosis:
