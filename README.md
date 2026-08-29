@@ -179,8 +179,8 @@ an assessment to the rules rather than losing it
 The API is the only backend the console talks to; scoring is reached through the API and never
 directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See
 [ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md). The console-to-API link is drawn
-solid because it carries real traffic — sign-in — but it is the newest and the least complete: the
-other screens are still on fixtures, as the status section above says.
+solid because it carries real traffic, and every screen now uses it: `apps/web/src/mocks/` was
+deleted with the last of them in Phase 6.
 
 ### Local deployment
 
@@ -229,7 +229,7 @@ Chosen with a reason, and recorded. Every version below is pinned and justified 
 | **Python 3.13 + FastAPI + scikit-learn** | The model belongs in the scientific stack. 3.13 exactly, because numpy needs ≥3.12 and joblib declares support only through 3.13.            |
 | **uv**                                   | Provisions the interpreter and locks the tree, so the reference machine's system Python 3.11 is irrelevant.                                  |
 | **React 19 + TanStack Router**           | Lovable's generated foundation, adopted after audit rather than rewritten. [ADR-0009](docs/adr/0009-frontend-component-library.md).          |
-| **Redux Toolkit + RTK Query**            | One data layer. The mock adapter swaps for a real base query in one place.                                                                   |
+| **Redux Toolkit + RTK Query**            | One data layer, over one transport that attaches the token and maps every RFC 9457 body to one error shape.                                  |
 | **shadcn/ui on Radix**                   | Radix supplies the focus management, keyboard interaction and ARIA semantics WCAG 2.2 AA needs. MIT, no paid tier.                           |
 | **Bun**                                  | One package manager, one lockfile, one workspace root.                                                                                       |
 | **Prometheus + Grafana**                 | Scraping and dashboards without an account or an egress dependency.                                                                          |
