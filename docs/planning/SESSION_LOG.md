@@ -2455,6 +2455,28 @@ records the generalisation, and the instruction that caused it is corrected.
 | `format:check` · `check-docs.mjs`  | **PASS** — 204 links across 46 files, 0 broken            |
 | CI on #67                          | **PASS** — all ten required checks                        |
 
+### Where this session stopped, and why
+
+**At the Phase 6 boundary, on the user's instruction**, with weekly usage at 95%. Phase 7 was
+surveyed and not started: no branch, no commit, no dependency added. What the survey established is
+recorded below so the next session does not repeat it.
+
+- **The metric baseline is larger than "not started" suggests.** Twenty-six `sentinelflow.*` meters
+  already exist across the outbox, the consumer, the scoring client, risk assessment, alerts and
+  login. What §18.2 of the build prompt asks for and this does not have: transaction ingestion
+  result and latency, Kafka consumer lag, and database pool figures. SSE connection count is
+  not-applicable by [ADR-0015](../adr/0015-live-updates-polling-and-server-sent-events.md).
+- **The envelope already has a `traceId` field and nothing writes to it.** `event-envelope.v1.json`
+  requires it, `OutboxEvent` and `AuditLogEntry` carry the column, and every event on the local
+  stack has `"traceId": null`. Trace propagation has a landing place waiting for it.
+- **Correlation already flows end to end**: `CorrelationIdFilter` validates or generates a UUIDv7,
+  puts it in the MDC, echoes it in a response header and writes it onto the outbox row.
+- **Spring Boot 4.1.1 ships structured logging** (ECS, GELF, Logstash, or a custom
+  `StructuredLogFormatter`) with no extra dependency, so §18.3's JSON logs need no new library.
+  Micrometer Tracing 1.7.1 and OpenTelemetry 1.62.0 are managed by the Boot BOM, so the tracing
+  bridge needs no version pin either — but adding it is a dependency decision that belongs in the
+  observability ADR rather than ahead of it.
+
 ### Next actions
 
 Recorded in `PROJECT_STATE.md`: Phase 7. The metric set first, because three deleted console panels
