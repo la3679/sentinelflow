@@ -166,6 +166,25 @@ sentinelflow:
     # dead-lettered and the partition moves on.
     max-attempts: 5
 
+  observability:
+    kafka:
+      # Consumer lag and dead-letter depth, read from the broker with an admin
+      # client (ADR-0016 section 6). On by default and off in the test contexts
+      # that need the schema and no Kafka, exactly like the consumer above: a
+      # scheduled task retrying an address that does not resolve turns an
+      # unrelated suite into a wall of connection warnings.
+      enabled: ${SENTINELFLOW_OBSERVABILITY_KAFKA_ENABLED:true}
+      # Matched to prometheus.yml's scrape_interval. Reading faster produces
+      # values nothing collects; reading slower means a scrape sometimes lands
+      # on a fresh figure and sometimes on one a full interval old, which is a
+      # sawtooth on a graph that should be flat.
+      refresh-interval: ${SENTINELFLOW_OBSERVABILITY_KAFKA_REFRESH_INTERVAL:15s}
+      # The ceiling on one round of admin calls. This runs on the scheduler, not
+      # on a request thread, so it cannot hurt a caller - but without a bound a
+      # slow broker leaves rounds overlapping and a gauge minutes out of date
+      # presented as current.
+      timeout: ${SENTINELFLOW_OBSERVABILITY_KAFKA_TIMEOUT:5s}
+
   scoring:
     context:
       # How much account history crosses the scoring boundary (ADR-0008), and

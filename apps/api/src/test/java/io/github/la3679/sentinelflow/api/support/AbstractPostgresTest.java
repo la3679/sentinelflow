@@ -41,6 +41,12 @@ import org.springframework.test.context.TestPropertySource;
             // than retrying - so every schema test would fail on a Kafka error.
             // A subclass that starts a broker turns it back on; its own
             // @TestPropertySource wins over this one.
-            "sentinelflow.consumer.enabled=false"
+            "sentinelflow.consumer.enabled=false",
+            // Same reason, one step further along: the broker readings are a
+            // scheduled admin call, and a scheduler retrying an address that
+            // does not resolve fills an unrelated suite's output with
+            // connection warnings every fifteen seconds. A subclass that starts
+            // a broker turns it back on.
+            "sentinelflow.observability.kafka.enabled=false"
         })
 public abstract class AbstractPostgresTest {}
