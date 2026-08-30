@@ -84,7 +84,14 @@ import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
             // Nothing is listening for OTLP on this network, and an exporter
             // retrying a connection it cannot make would fill the output with
             // stack traces about a collector this suite never wanted.
-            "management.otlp.tracing.export.enabled=false"
+            //
+            // management.tracing.export.otlp, not management.otlp.tracing:
+            // the second is the pre-4.1 spelling, it still appears in the
+            // configuration metadata, and it binds nothing. Setting it here
+            // would leave the exporter on and this suite would pass anyway,
+            // which is how the same mistake stayed invisible in
+            // application.yaml until the stack was run.
+            "management.tracing.export.otlp.enabled=false"
         })
 class TraceContextPropagationIT extends AbstractPostgresTest {
 

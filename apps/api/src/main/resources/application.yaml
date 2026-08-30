@@ -469,20 +469,43 @@ management:
       enabled: true
     readinessstate:
       enabled: true
-  tracing:
-    sampling:
-      # Every trace, locally, and that is a statement about this traffic rather
-      # than a default nobody thought about (ADR-0016 section 5). This stack
-      # produces transactions in bursts from `make seed` and `make replay` and
-      # is otherwise idle: sampling one in ten of a four-record burst gives a
-      # trace view that is empty when somebody looks at it. The first number to
-      # change if this ever runs anywhere continuous.
-      probability: ${SENTINELFLOW_TRACING_SAMPLE_RATE:1.0}
-
   otlp:
-    tracing:
-      endpoint: ${SENTINELFLOW_OTLP_ENDPOINT:http://otel-collector:4318/v1/traces}
+    metrics:
       export:
+        # OFF, and this is a correction rather than a preference.
+        #
+        # spring-boot-starter-opentelemetry puts micrometer-registry-otlp on the
+        # classpath, and Boot then auto-configures an OTLP *metrics* registry
+        # alongside the Prometheus one. It defaults to localhost:4318, which is
+        # nothing inside this container, so every push failed with a stack trace
+        # on a timer - visible within a minute of first running the stack with
+        # tracing in it, and invisible to every test.
+        #
+        # Pointing it at the collector instead would be worse than leaving it
+        # broken: metrics are Prometheus's in this system (ADR-0016 section 1),
+        # and a second registry publishing the same meters is a second place the
+        # same rate can be computed and disagree.
+        enabled: false
+
+  # Where spans go, under the property names Spring Boot 4.1 actually binds.
+  #
+  # NOT management.otlp.tracing.*, which is the pre-4.1 spelling. Those keys
+  # still appear in the configuration metadata with no description and no
+  # default, so a typo-free-looking configuration written against them binds
+  # nothing: the exporter is never given an endpoint, no span leaves the
+  # process, and nothing logs a word about it. Found by posting a transaction
+  # to the running stack, watching the trace id propagate correctly all the way
+  # to the scoring service's logs, and then finding Tempo's
+  # tempo_distributor_spans_received_total absent entirely.
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${SENTINELFLOW_OTLP_ENDPOINT:http://otel-collector:4318/v1/traces}
+
+  tracing:
+    export:
+      otlp:
         # Off unless something is listening. The exporter retries a connection
         # it cannot make, so a developer running the API outside compose would
         # otherwise get a periodic stack trace about a collector they never
@@ -492,6 +515,14 @@ management:
         # these two: spans are still created, so trace and span ids reach the
         # MDC and every log line carries them even when nothing is collecting.
         enabled: ${SENTINELFLOW_OTLP_EXPORT_ENABLED:false}
+    sampling:
+      # Every trace, locally, and that is a statement about this traffic rather
+      # than a default nobody thought about (ADR-0016 section 5). This stack
+      # produces transactions in bursts from `make seed` and `make replay` and
+      # is otherwise idle: sampling one in ten of a four-record burst gives a
+      # trace view that is empty when somebody looks at it. The first number to
+      # change if this ever runs anywhere continuous.
+      probability: ${SENTINELFLOW_TRACING_SAMPLE_RATE:1.0}
 
   metrics:
     tags:

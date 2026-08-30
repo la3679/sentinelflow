@@ -350,12 +350,14 @@ services:
     volumes:
       - ./infra/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - tempo-data:/var/tempo
-    healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:3200/ready || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+    # NO HEALTHCHECK, for the reason the collector below has none: the image is
+    # distroless. It has no /bin/sh, so a CMD-SHELL probe fails with "stat
+    # /bin/sh: no such file or directory" and the container is reported
+    # unhealthy while Tempo is running perfectly - which is what happened the
+    # first time this stack was started with tracing in it.
+    #
+    # `curl http://localhost:${TEMPO_PORT:-3200}/ready` from the host is the
+    # check, and it answers 503 with a reason until the ingester has settled.
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.142.0
@@ -371,19 +373,22 @@ services:
     expose:
       - "4318"
     depends_on:
+      # started, not healthy: Tempo cannot report health from inside a
+      # distroless image, and the collector does not need it to be ready
+      # anyway. Its exporter retries, so a Tempo that is still replaying its
+      # write-ahead log costs a few retried batches rather than a failed start.
       tempo:
-        condition: service_healthy
-    # NO HEALTHCHECK, deliberately, and this is the one service here without
-    # one. The collector image is distroless: no shell, no wget, no curl, so
-    # every probe that could be written in this file tests something other than
-    # what it claims. `--help` proves the binary exists and says nothing about
-    # whether the receiver is listening; a green check that means "the file
-    # system has a binary in it" is worse than a blank column, because the
-    # column is read as evidence.
+        condition: service_started
+    # NO HEALTHCHECK, for the same reason Tempo has none. This image is
+    # distroless too: no shell, no wget, no curl, so every probe that could be
+    # written here tests something other than what it claims. `--help` proves
+    # the binary exists and says nothing about whether the receiver is
+    # listening, and a green check meaning "the filesystem has a binary in it"
+    # is worse than a blank column because the column gets read as evidence.
     #
-    # Nothing depends on it being healthy, so the check would inform a person
-    # and nothing else. `docker compose logs otel-collector` is what that person
-    # should read - it says how many spans it accepted and exported.
+    # Nothing depends on either of them being healthy, so a check would inform
+    # a person and nothing else. `docker compose logs otel-collector` is what
+    # that person should read: it says how many spans it accepted and exported.
 
   prometheus:
     image: prom/prometheus:v3.14.0
