@@ -78,8 +78,29 @@ public record TransactionCreatedPayload(
      */
     public record AmountPayload(String value, String currency) {
 
+        /** The currency alone; an amount is forbidden in a log at every level (ADR-0016 §4). */
+        @Override
+        public String toString() {
+            return "AmountPayload[" + currency + " redacted]";
+        }
+
         public static AmountPayload of(Money money) {
             return new AmountPayload(money.toPlainString(), money.currency());
         }
+    }
+
+    /**
+     * What this event may be described as in a log.
+     *
+     * <p>The payload is the most likely thing in the messaging path to be handed whole to a logger —
+     * it is what a consumer has in hand when something goes wrong — and it carries an amount, a
+     * device handle and the caller's idempotency key. The references stay, because "which
+     * transaction" is the question a log line about a failed event exists to answer.
+     */
+    @Override
+    public String toString() {
+        return "TransactionCreatedPayload[" + transactionReference + " account=" + accountReference + " merchant="
+                + merchantReference + " type=" + type + " channel=" + channel + " source=" + ingestionSource
+                + " amount, device and key redacted]";
     }
 }

@@ -13,6 +13,8 @@ from typing import Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from sentinelflow_scoring.log import FORMATS as LOG_FORMATS
+
 
 class Settings(BaseSettings):
     """Settings for the scoring service.
@@ -37,6 +39,16 @@ class Settings(BaseSettings):
     )
     port: int = Field(default=8000, ge=1, le=65535, description="HTTP port.")
     log_level: str = Field(default="INFO", description="Root log level.")
+    # console by default and json in the container, which is the same split the
+    # API makes and for the same reason (ADR-0016 section 4): a log line is only
+    # structured if something reads it, and a person reading a traceback should
+    # not be reading escaped JSON. Validated here rather than at first use, so a
+    # typo stops the process instead of silently leaving the service logging in
+    # a format nothing was configured to parse.
+    log_format: str = Field(
+        default="console",
+        description="Log rendering: console for a terminal, json for a collector.",
+    )
 
     # Set by CI and by the container image build so a running instance can be
     # traced back to what produced it.
@@ -66,6 +78,16 @@ class Settings(BaseSettings):
             "Pin the registry entry by version instead of discovering it. Needs model_name."
         ),
     )
+
+    @model_validator(mode="after")
+    def _log_format_is_known(self) -> Self:
+        if self.log_format not in LOG_FORMATS:
+            raise ValueError(
+                f"SENTINELFLOW_SCORING_LOG_FORMAT must be one of {', '.join(LOG_FORMATS)}; "
+                f"{self.log_format!r} would leave the service logging in a format nothing was "
+                "configured to read."
+            )
+        return self
 
     @model_validator(mode="after")
     def _pin_is_complete(self) -> Self:

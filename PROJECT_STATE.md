@@ -8,7 +8,9 @@
 1. Read this file completely.
 2. Run the verification commands in "Session startup commands".
 3. Confirm branch, HEAD, and remote before editing.
-4. Continue from "Next three actions"; do not restart completed phases.
+4. Read **"Required before v1 — carried forward"**. It holds work that is committed rather than
+   optional, and two items no session may ever mark complete on a person's behalf.
+5. Continue from "Next three actions"; do not restart completed phases.
 
 ## Snapshot
 
@@ -2145,9 +2147,70 @@ each would have broken a recorded decision: Temurin 25 to 26 (not an LTS, ADR-00
 `.github/dependabot.yml` now carries ignore rules naming each decision, so none will be proposed
 again.
 
+## Required before v1 — carried forward, and not optional
+
+Everything in this section is **committed work that must land before the Phase 10 release**, not a
+wish list. A session that reaches Phase 10 with any of these open has not finished. Each one is here
+because it was deliberately deferred with a reason, and a deferral nobody records becomes a thing
+nobody does.
+
+### 1. Real operator identity, so an alert can be given to a named analyst
+
+**Status: not started. Required before v1. Owner: whichever phase reaches it first, and Phase 10
+cannot ship without it.**
+
+Today the console can release an alert and cannot give one to anybody. `assigneeId` is a UUID,
+nothing resolves it to a person, and the screen says so rather than offering a control that cannot
+work (Phase 6 gate, deviation 2). That is honest and it is still a hole in the core workflow of a
+fraud-operations console.
+
+What "done" means here, and every clause is binding:
+
+- **The smallest architecturally correct identity flow, and no smaller.** A real lookup of real
+  operators — the ones the seed already creates in `users` — reached through the API.
+- **No hardcoded UUIDs anywhere**, in the console, in a fixture used by a shipped screen, or in a
+  contract example that a reader would take for a real identifier. **No fake or placeholder users**
+  invented to make a picker look populated: the operators that exist are the operators that appear.
+- **Server-side authorization stays authoritative.** Role handling in the console is a
+  user-experience affordance and never a security boundary (`.claude/rules/frontend.md`). Whatever
+  the picker offers, the API decides — an assignment to somebody who may not hold alerts is refused
+  by the server, and there is a test that proves it rather than a disabled button that implies it.
+- **Contracts and API updated as needed**, in the same change as the producers, consumers, tests and
+  docs (`CLAUDE.md`, "Follow the contracts"). If an operator lookup endpoint is the answer, it is
+  paged and bounded like every other list endpoint.
+- **Real assignment UX in the console**: a picker that resolves names, an assignee column that
+  renders a person rather than a UUID, and the four states every data view owes — loading, empty,
+  error-with-retry, and bounded.
+- **Optimistic concurrency and conflict handling.** Alerts already carry a version and the API
+  already answers `409`; the assignment path must use it and the console must handle a lost race by
+  telling the operator what happened, not by overwriting silently.
+- **Tests at every level that has one**: unit, API integration against real PostgreSQL, and a
+  Playwright end-to-end journey that assigns an alert and sees it assigned.
+- **Documentation**: the ADR that records the decision (a new number, allocated when it is written),
+  the README's screen description, and the removal of the "not decided" copy from the screen and
+  from this file.
+- **Verified against the real stack**, not only against Testcontainers — the lesson of the three
+  defects recorded above is that those are not the same system.
+
+### 2. Two human-verification items that no session may mark complete
+
+Neither of these can be done by an agent, and **neither may be reported as done, inferred from an
+automated result, or quietly dropped from a gate.** They are listed as outstanding human tasks until
+a person says otherwise:
+
+- **A screen-reader pass.** axe finds roughly a third of real accessibility issues. Every
+  accessibility check in this repository is automated, so the screen-reader pass has **not** happened
+  and no automated run is evidence that it did.
+- **A manual authenticated walkthrough of the console in a browser.** What was done instead on
+  2026-08-29 is recorded under the Phase 6 gate: every screen's endpoints called directly with a real
+  token, and the cross-origin path proven to a refused sign-in. Typing the demo operator's password
+  into the form is a person's job. The remaining visual walk is a two-minute task for whoever holds
+  the credential.
+
 ## Blockers and required user input
 
-None.
+None. The two human-verification items above are not blockers — the build continues around them —
+but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
@@ -2175,7 +2238,9 @@ naming a number that is already used.
 
 **One decision is still open and it is not the console's.** How an assignee's identifier resolves
 to a person. Until it is made, the console can release an alert but cannot give one to anybody, and
-that is stated on the screen rather than papered over.
+that is stated on the screen rather than papered over. **It is no longer optional:** "Required
+before v1 — carried forward" §1 fixes what "done" means for it, and Phase 10 cannot ship with it
+open.
 
 **The zero-alert database is explained, and it was not what the last session thought.** It was not
 that the database predated alert creation: **every alert raise was failing**, because the `system`

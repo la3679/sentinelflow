@@ -32,4 +32,12 @@ public record RecentTransaction(
         String deviceReference,
         String originCountry,
         TransactionChannel channel,
-        TransactionType type) {}
+        TransactionType type) {
+
+    /** Merchant, channel and when. Never the amount or the device (ADR-0016 §4). */
+    @Override
+    public String toString() {
+        return "RecentTransaction[merchant=" + merchantReference + " channel=" + channel + " at=" + occurredAt
+                + " amount and device redacted]";
+    }
+}

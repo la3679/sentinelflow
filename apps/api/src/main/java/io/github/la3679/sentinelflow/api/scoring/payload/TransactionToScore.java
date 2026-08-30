@@ -50,4 +50,18 @@ public record TransactionToScore(
                 transaction.getDeviceReference(),
                 transaction.getOccurredAt());
     }
+
+    /**
+     * Identifiers and classification. Never the amount, never the device handle.
+     *
+     * <p>ADR-0016 §4's split: an account or merchant reference is how an operator finds the thing
+     * they were paged about and already appears in this API's own responses, while an amount and a
+     * device handle are the parts worth withholding.
+     */
+    @Override
+    public String toString() {
+        return "TransactionToScore[" + transactionId + " account=" + accountReference + " merchant="
+                + merchantReference + " type=" + type + " channel=" + channel
+                + " amount and device redacted]";
+    }
 }

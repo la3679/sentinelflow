@@ -476,6 +476,25 @@ management:
         http.server.requests: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s
 
 logging:
+  # JSON in a container, human-readable text on a developer's terminal
+  # (ADR-0016 section 4). The container sets LOGGING_STRUCTURED_FORMAT_CONSOLE
+  # to `ecs` in compose.yaml; nothing is set here, because Boot treats an
+  # unset value as "the ordinary pattern encoder" and an empty string as a
+  # format name it cannot resolve.
+  #
+  # ecs rather than logstash or gelf: it is a published schema with names for
+  # the fields this application already has - a correlation id in the MDC, a
+  # logger, a level, an exception - so a collector has somewhere to put them
+  # without a mapping written by hand.
+  #
+  # The format decides how a line is rendered. It decides nothing about what a
+  # line may contain: that is the call site's job, and LogRedactionIT is what
+  # holds it to it.
+  structured:
+    ecs:
+      service:
+        name: sentinelflow-api
+        version: ${SENTINELFLOW_GIT_SHA:unknown}
   level:
     root: INFO
     io.github.la3679.sentinelflow: INFO
