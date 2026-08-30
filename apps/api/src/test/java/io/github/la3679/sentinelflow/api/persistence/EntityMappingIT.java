@@ -33,6 +33,7 @@ import io.github.la3679.sentinelflow.api.domain.RiskBand;
 import io.github.la3679.sentinelflow.api.domain.RiskTier;
 import io.github.la3679.sentinelflow.api.domain.TransactionChannel;
 import io.github.la3679.sentinelflow.api.domain.TransactionType;
+import io.github.la3679.sentinelflow.api.observability.TraceStamp;
 import io.github.la3679.sentinelflow.api.persistence.entity.Account;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
 import io.github.la3679.sentinelflow.api.persistence.entity.Customer;
@@ -372,7 +373,7 @@ class EntityMappingIT extends AbstractPostgresTest {
                 "ACC-000001",
                 "{}",
                 UUID.randomUUID(),
-                null,
+                TraceStamp.absent(),
                 Instant.now());
         entityManager.persist(event);
         entityManager.flush();

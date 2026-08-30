@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.github.la3679.sentinelflow.api.domain.EventType;
 import io.github.la3679.sentinelflow.api.domain.IngestionSource;
 import io.github.la3679.sentinelflow.api.messaging.payload.TransactionCreatedPayload;
+import io.github.la3679.sentinelflow.api.observability.CurrentTrace;
 import io.github.la3679.sentinelflow.api.persistence.entity.Account;
 import io.github.la3679.sentinelflow.api.persistence.entity.Merchant;
 import io.github.la3679.sentinelflow.api.persistence.entity.OutboxEvent;
@@ -51,13 +52,16 @@ public class TransactionWriter {
     private final MerchantRepository merchants;
     private final OutboxEventRepository outbox;
     private final ObjectMapper objectMapper;
+    private final CurrentTrace currentTrace;
 
     public TransactionWriter(
             TransactionRepository transactions,
             AccountRepository accounts,
             MerchantRepository merchants,
             OutboxEventRepository outbox,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            CurrentTrace currentTrace) {
+        this.currentTrace = currentTrace;
         this.transactions = transactions;
         this.accounts = accounts;
         this.merchants = merchants;
@@ -168,10 +172,11 @@ public class TransactionWriter {
                 account.getAccountReference(),
                 serialise(TransactionCreatedPayload.of(transaction, account, merchant)),
                 correlationId,
-                // Trace context arrives with OpenTelemetry in Phase 7. Null
-                // rather than a fabricated identifier: the column is nullable
-                // precisely so this can be honest.
-                null,
+                // The trace this row came from, so the consumer's work hangs
+                // off the request that caused it rather than off the relay that
+                // happened to publish it (V11). Absent outside a trace, which
+                // is what the seed and any scheduled path get.
+                currentTrace.stamp(),
                 transaction.getOccurredAt());
     }
 

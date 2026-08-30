@@ -45,8 +45,8 @@ class RiskAssessmentServiceTests {
     private static final UUID TRANSACTION = UUID.randomUUID();
     private static final Instant ASSESSED_AT = Instant.parse("2026-08-27T02:30:00Z");
 
-    private final RiskAssessmentService service =
-            new RiskAssessmentService(null, null, null, policy(), null, null, null, null, new SimpleMeterRegistry());
+    private final RiskAssessmentService service = new RiskAssessmentService(
+            null, null, null, policy(), null, null, null, null, new SimpleMeterRegistry(), null);
 
     // ----------------------------------------------------------------------- //
     // The scored shape

@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.messaging;
 
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
@@ -38,6 +40,15 @@ public class KafkaEventPublisher implements EventPublisher {
      */
     private static final long SEND_TIMEOUT_SECONDS = 30;
 
+    /**
+     * The W3C trace-context header, spelled the way the specification spells it.
+     *
+     * <p>Lower case and not {@code X-} prefixed. Spring Kafka's listener-side propagation looks for
+     * exactly this name, so a capitalised variant would be written, carried, and silently ignored —
+     * a trace that stops at the broker for a reason nothing reports.
+     */
+    private static final String TRACEPARENT_HEADER = "traceparent";
+
     private final KafkaTemplate<String, String> kafka;
     private final ObjectMapper objectMapper;
 
@@ -52,7 +63,7 @@ public class KafkaEventPublisher implements EventPublisher {
         String body = serialise(event);
 
         try {
-            kafka.send(topic, event.getPartitionKey(), body).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            kafka.send(record(topic, event, body)).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             // Restore the flag rather than swallowing it: something is shutting
             // this thread down, and the relay's caller needs to see that.
@@ -73,6 +84,30 @@ public class KafkaEventPublisher implements EventPublisher {
             // closed port.
             throw new EventPublicationException("Could not publish to " + topic, e);
         }
+    }
+
+    /**
+     * The record, with the originating request's trace context replayed onto it.
+     *
+     * <p><strong>The stored traceparent, never the relay thread's own.</strong> This method runs on
+     * a scheduler, seconds after the request that caused the event has finished and its span has
+     * closed. Publishing under the scheduler's context would produce a second trace with nothing
+     * joining it to the first, so a transaction would be followable through ingestion and followable
+     * again from here, and never followable end to end — which is the whole thing Phase 7's gate
+     * asks for. Replaying the stored value makes the consumer's work, and the scoring call it
+     * causes, descendants of the API request.
+     *
+     * <p>Absent for a row written outside any trace — the seed, a scheduled path — and then no
+     * header is written at all. An empty or fabricated one would be worse: the consumer would either
+     * fail to parse it or start a trace that points nowhere.
+     */
+    private ProducerRecord<String, String> record(String topic, OutboxEvent event, String body) {
+        ProducerRecord<String, String> record = new ProducerRecord<>(topic, event.getPartitionKey(), body);
+        String traceParent = event.getTraceParent();
+        if (traceParent != null) {
+            record.headers().add(TRACEPARENT_HEADER, traceParent.getBytes(StandardCharsets.UTF_8));
+        }
+        return record;
     }
 
     private String serialise(OutboxEvent event) {

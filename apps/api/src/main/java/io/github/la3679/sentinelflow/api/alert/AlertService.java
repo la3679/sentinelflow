@@ -25,6 +25,7 @@ import io.github.la3679.sentinelflow.api.domain.FeedbackLabel;
 import io.github.la3679.sentinelflow.api.domain.RoleCode;
 import io.github.la3679.sentinelflow.api.domain.UserStatus;
 import io.github.la3679.sentinelflow.api.messaging.payload.AlertUpdatedPayload;
+import io.github.la3679.sentinelflow.api.observability.CurrentTrace;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
 import io.github.la3679.sentinelflow.api.persistence.entity.AlertAction;
 import io.github.la3679.sentinelflow.api.persistence.entity.AnalystFeedback;
@@ -104,6 +105,7 @@ public class AlertService {
     private final UserRepository users;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meters;
+    private final CurrentTrace currentTrace;
 
     public AlertService(
             AlertRepository alerts,
@@ -112,7 +114,9 @@ public class AlertService {
             AnalystFeedbackRepository feedback,
             UserRepository users,
             ObjectMapper objectMapper,
-            MeterRegistry meters) {
+            MeterRegistry meters,
+            CurrentTrace currentTrace) {
+        this.currentTrace = currentTrace;
         this.alerts = alerts;
         this.actions = actions;
         this.outbox = outbox;
@@ -436,8 +440,11 @@ public class AlertService {
                 alert.getId().toString(),
                 serialise(AlertUpdatedPayload.of(alert, changeType, previousStatus, previousAssignee, actor, at)),
                 correlationId,
-                // Trace context arrives with OpenTelemetry in Phase 7.
-                null,
+                // The trace this row came from, so the consumer's work hangs
+                // off the request that caused it rather than off the relay that
+                // happened to publish it (V11). Absent outside a trace, which
+                // is what the seed and any scheduled path get.
+                currentTrace.stamp(),
                 at);
     }
 
