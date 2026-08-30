@@ -442,6 +442,19 @@ management:
   metrics:
     tags:
       application: sentinelflow-api
+    distribution:
+      # Buckets for the HTTP timer, so a dashboard can compute a percentile with
+      # histogram_quantile (ADR-0016 section 3). Deliberately NOT
+      # percentiles-histogram, which would publish Micrometer's full default
+      # bucket set - roughly seventy series for every uri, method and status
+      # combination this API serves. These eight boundaries are the ones an
+      # operator reads a web request against, and they cost eight.
+      #
+      # Not percentiles either: a percentile computed inside one process cannot
+      # be averaged, summed or re-windowed afterwards, so it answers only the
+      # question the process was already asked.
+      slo:
+        http.server.requests: 10ms,25ms,50ms,100ms,250ms,500ms,1s,2s
 
 logging:
   level:
