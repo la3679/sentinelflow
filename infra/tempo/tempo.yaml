@@ -1,0 +1,46 @@
+# Tempo, where a trace ends up and where Grafana reads it from.
+#
+# Single-binary, local-filesystem, no object store. That is the whole
+# configuration and it is the right one for this project: everything here runs
+# on one developer machine on synthetic data, and a distributed deployment would
+# be four more containers demonstrating an operational skill this repository
+# demonstrates elsewhere.
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        # gRPC only, and only from the collector on this network. Nothing else
+        # writes to Tempo: the applications export to the collector, which is
+        # what makes the backend swappable (ADR-0016 section 5).
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  # Short, because this is a demo that is started, used and stopped. A long
+  # window means a trace taken minutes ago is still in memory rather than
+  # queryable, which reads as "tracing is broken" to somebody trying it out.
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    # A week, matching Prometheus's retention in infra/prometheus/prometheus.yml.
+    # Two retention windows that disagree make a dashboard where the graph has
+    # data and the trace link is dead, which is worse than either window alone.
+    block_retention: 168h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+usage_report:
+  # No outbound calls from a local-first stack, the same rule the Grafana
+  # service applies to its own analytics and update checks.
+  reporting_enabled: false

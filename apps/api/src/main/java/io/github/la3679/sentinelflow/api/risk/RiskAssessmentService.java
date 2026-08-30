@@ -20,6 +20,7 @@ import io.github.la3679.sentinelflow.api.domain.ReasonCode;
 import io.github.la3679.sentinelflow.api.domain.ReasonSource;
 import io.github.la3679.sentinelflow.api.domain.RiskBand;
 import io.github.la3679.sentinelflow.api.messaging.payload.RiskAssessedPayload;
+import io.github.la3679.sentinelflow.api.observability.CurrentTrace;
 import io.github.la3679.sentinelflow.api.persistence.entity.OutboxEvent;
 import io.github.la3679.sentinelflow.api.persistence.entity.RiskAssessment;
 import io.github.la3679.sentinelflow.api.persistence.entity.TransactionRecord;
@@ -137,6 +138,7 @@ public class RiskAssessmentService {
     private final OutboxEventRepository outbox;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meters;
+    private final CurrentTrace currentTrace;
 
     public RiskAssessmentService(
             AccountContextAssembler assembler,
@@ -147,7 +149,9 @@ public class RiskAssessmentService {
             AlertRaiser alertRaiser,
             OutboxEventRepository outbox,
             ObjectMapper objectMapper,
-            MeterRegistry meters) {
+            MeterRegistry meters,
+            CurrentTrace currentTrace) {
+        this.currentTrace = currentTrace;
         this.assembler = assembler;
         this.rules = rules;
         this.scoring = scoring;
@@ -367,10 +371,11 @@ public class RiskAssessmentService {
                 request.transaction().accountReference(),
                 serialise(RiskAssessedPayload.of(assessment, accountId)),
                 correlationId,
-                // Trace context arrives with OpenTelemetry in Phase 7. Null
-                // rather than a fabricated identifier: the column is nullable
-                // precisely so this can be honest.
-                null,
+                // The trace this row came from, so the consumer's work hangs
+                // off the request that caused it rather than off the relay that
+                // happened to publish it (V11). Absent outside a trace, which
+                // is what the seed and any scheduled path get.
+                currentTrace.stamp(),
                 assessment.getAssessedAt());
     }
 

@@ -138,14 +138,19 @@ class TransactionCreatedConsumerIT extends AbstractPostgresTest {
         UUID transactionId = fixtures.insertTransaction();
         UUID eventId = publish(envelope(eventId(), transactionId));
 
-        await().atMost(TIMEOUT).until(() -> handler.deliveries() == 1);
+        // The ledger row, not the delivery counter. The handler increments that
+        // counter on entry, so it is true before the surrounding transaction
+        // has committed - waiting on it and then reading the ledger is a race
+        // this suite lost on a slower runner once the listener started
+        // creating an observation per record.
+        await().atMost(TIMEOUT).until(() -> ledgerRows(eventId) == 1);
+        assertThat(handler.deliveries()).isEqualTo(1);
 
         TransactionCreatedPayload delivered = handler.lastPayload();
         assertThat(delivered.transactionId()).isEqualTo(transactionId);
         // The amount survived as a decimal string rather than becoming a double
         // somewhere in the round trip (ADR-0007).
         assertThat(delivered.amount().value()).isEqualTo("42.5000");
-        assertThat(ledgerRows(eventId)).isEqualTo(1);
     }
 
     @Test
@@ -162,6 +167,8 @@ class TransactionCreatedConsumerIT extends AbstractPostgresTest {
         // second effect. Held long enough that "not yet" cannot pass for "never".
         await().pollDelay(Duration.ofSeconds(2)).atMost(TIMEOUT).until(() -> handler.deliveries() == 1);
 
+        // Committed by now: the poll delay above is two seconds, which is well
+        // past the window the counter races the transaction in.
         assertThat(ledgerRows(eventId)).isEqualTo(1);
     }
 
@@ -283,8 +290,10 @@ class TransactionCreatedConsumerIT extends AbstractPostgresTest {
         kafka.send(TransactionCreatedConsumer.TOPIC, "ACC-poison", "{ this is not json");
         UUID eventId = publish(envelope(eventId(), transactionId));
 
-        await().atMost(TIMEOUT).until(() -> handler.deliveries() == 1);
-        assertThat(ledgerRows(eventId)).isEqualTo(1);
+        // The durable outcome rather than the counter, for the reason given in
+        // deliversToHandlers: the counter is true before the commit is.
+        await().atMost(TIMEOUT).until(() -> ledgerRows(eventId) == 1);
+        assertThat(handler.deliveries()).isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ helpers

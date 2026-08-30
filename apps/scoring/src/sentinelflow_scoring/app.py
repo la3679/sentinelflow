@@ -46,6 +46,7 @@ from sentinelflow_scoring.serving.schema import (
     Readiness,
     ScoreResponse,
 )
+from sentinelflow_scoring.trace import TRACEPARENT_HEADER, parse_traceparent
 
 logger = structlog.get_logger(__name__)
 
@@ -137,6 +138,18 @@ def _register_middleware(app: FastAPI) -> None:
     ) -> Response:
         correlation_id = _correlation_id(request.headers.get(CORRELATION_HEADER))
         structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
+
+        # The caller's trace, when there is one this build can read. Bound
+        # separately from the correlation id because they answer different
+        # questions and come from different places: the correlation id is
+        # chosen by the caller and appears in problem documents, the trace id
+        # is chosen by a tracer and is what joins this service's lines to the
+        # API's spans. Neither replaces the other (ADR-0016 section 5).
+        trace = parse_traceparent(request.headers.get(TRACEPARENT_HEADER))
+        if trace is not None:
+            structlog.contextvars.bind_contextvars(
+                trace_id=trace.trace_id, parent_span_id=trace.span_id
+            )
         try:
             response = await call_next(request)
         finally:

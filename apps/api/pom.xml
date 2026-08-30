@@ -108,6 +108,33 @@
     </dependency>
 
     <!--
+      Tracing (ADR-0016 section 5).
+
+      spring-boot-starter-opentelemetry, NOT micrometer-tracing-bridge-otel on
+      its own. The bridge turns Micrometer's Observation API - which Spring
+      Boot, Spring Web and Spring Kafka already instrument - into OpenTelemetry
+      spans, and that artifact is all the bridging code. It is not the
+      autoconfiguration.
+
+      In Spring Boot 4 the autoconfiguration lives in its own module, exactly
+      as Flyway's does a few dependencies below, and the failure mode is the
+      same shape and just as quiet: the bridge on the classpath with nothing
+      wiring it produces no Tracer bean, so every span is absent, every trace
+      identifier is null, and nothing errors. TraceContextPropagationIT caught
+      it by finding a null trace_parent on a row that should have carried one -
+      three tests were green while the feature did nothing at all.
+
+      The starter brings the bridge, the SDK, the OTLP exporter and the
+      autoconfiguration that connects them, at versions the Boot BOM has
+      already reconciled. micrometer-tracing and the OpenTelemetry SDK release
+      on their own schedules and have disagreed before.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-opentelemetry</artifactId>
+    </dependency>
+
+    <!--
       Persistence. Flyway owns the schema and Hibernate only validates it
       against the mappings (ADR-0007), so these three always move together:
       the driver, the migration tool, and the ORM that checks the result.
@@ -174,6 +201,17 @@
     <!-- MockMvc request post-processors and the annotations that put a
          principal on a test request, so an authorization rule can be asserted
          without every test performing a login first. -->
+    <!--
+      SimpleTracer, for asserting what CurrentTrace stamps on an outbox row
+      without standing up an OpenTelemetry SDK and an exporter. Test scope: it
+      is a fake, and a fake on the runtime classpath is a fake something can
+      accidentally use.
+    -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-tracing-test</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-test</artifactId>

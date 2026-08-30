@@ -21,3 +21,25 @@ datasources:
       # Grafana requests a step finer than the data and draws gaps.
       timeInterval: 15s
       httpMethod: POST
+
+  - name: Tempo
+    type: tempo
+    uid: sentinelflow-tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # Turns the exemplar and log-line trace ids into links. Without it a trace
+      # id in a log is a string somebody copies into a search box by hand, which
+      # is the difference between tracing being used and tracing being present.
+      tracesToLogsV2:
+        datasourceUid: sentinelflow-prometheus
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+      # The service graph and span metrics are deliberately not enabled. Both
+      # need the collector to generate metrics from spans, which is a second
+      # source of numbers the dashboards already read from Prometheus - and two
+      # places computing the same rate is exactly what ADR-0016 section 1 warns
+      # about.
+      serviceMap:
+        datasourceUid: sentinelflow-prometheus

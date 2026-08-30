@@ -17,6 +17,7 @@ import org.hibernate.type.SqlTypes;
 import io.github.la3679.sentinelflow.api.domain.AggregateType;
 import io.github.la3679.sentinelflow.api.domain.EventType;
 import io.github.la3679.sentinelflow.api.domain.OutboxStatus;
+import io.github.la3679.sentinelflow.api.observability.TraceStamp;
 
 /**
  * An event waiting to be published, written in the same commit as the change it describes.
@@ -84,6 +85,16 @@ public class OutboxEvent extends AbstractEntity {
     @Column(name = "trace_id", length = 32, updatable = false)
     private String traceId;
 
+    /**
+     * The W3C traceparent of the request that caused this event.
+     *
+     * <p>Stored beside the trace id rather than derived from it, because continuing a trace needs
+     * the parent span as well — see {@code V11__outbox_trace_parent.sql} for why the outbox is the
+     * one place in this system that has to carry it.
+     */
+    @Column(name = "trace_parent", length = 55, updatable = false)
+    private String traceParent;
+
     @Column(name = "occurred_at", nullable = false, updatable = false)
     private Instant occurredAt;
 
@@ -104,7 +115,7 @@ public class OutboxEvent extends AbstractEntity {
             String partitionKey,
             String payload,
             UUID correlationId,
-            String traceId,
+            TraceStamp trace,
             Instant occurredAt) {
         // The aggregate an event is about is a property of its type, not a
         // separate decision a caller can get wrong.
@@ -115,7 +126,10 @@ public class OutboxEvent extends AbstractEntity {
         this.partitionKey = partitionKey;
         this.payload = payload;
         this.correlationId = correlationId;
-        this.traceId = traceId;
+        // One value rather than two parameters, so a caller cannot write a row
+        // the database would refuse for disagreeing with itself.
+        this.traceId = trace.traceId();
+        this.traceParent = trace.traceParent();
         this.occurredAt = occurredAt;
         this.status = OutboxStatus.PENDING;
         this.attemptCount = 0;
@@ -196,6 +210,11 @@ public class OutboxEvent extends AbstractEntity {
 
     public String getTraceId() {
         return traceId;
+    }
+
+    /** The traceparent to replay onto the record at publication, or null if there was no trace. */
+    public String getTraceParent() {
+        return traceParent;
     }
 
     public Instant getOccurredAt() {
