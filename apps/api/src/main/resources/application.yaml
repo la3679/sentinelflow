@@ -113,6 +113,17 @@ spring:
       # partial failure either re-delivers records that succeeded or commits
       # past records that did not.
       ack-mode: record
+      # Reads the traceparent the relay replayed onto the record and continues
+      # that trace, so handling a transaction.created is a child of the API
+      # request that ingested the transaction rather than a trace of its own
+      # (ADR-0016 section 5).
+      #
+      # Only the listener side. The producer side stays off deliberately:
+      # KafkaEventPublisher writes the header itself from the value stored on
+      # the outbox row, and template observation would overwrite that with the
+      # scheduler thread's context - which is exactly the second, disconnected
+      # trace this arrangement exists to avoid.
+      observation-enabled: true
 
   flyway:
     enabled: true
@@ -458,6 +469,30 @@ management:
       enabled: true
     readinessstate:
       enabled: true
+  tracing:
+    sampling:
+      # Every trace, locally, and that is a statement about this traffic rather
+      # than a default nobody thought about (ADR-0016 section 5). This stack
+      # produces transactions in bursts from `make seed` and `make replay` and
+      # is otherwise idle: sampling one in ten of a four-record burst gives a
+      # trace view that is empty when somebody looks at it. The first number to
+      # change if this ever runs anywhere continuous.
+      probability: ${SENTINELFLOW_TRACING_SAMPLE_RATE:1.0}
+
+  otlp:
+    tracing:
+      endpoint: ${SENTINELFLOW_OTLP_ENDPOINT:http://otel-collector:4318/v1/traces}
+      export:
+        # Off unless something is listening. The exporter retries a connection
+        # it cannot make, so a developer running the API outside compose would
+        # otherwise get a periodic stack trace about a collector they never
+        # asked for. compose.yaml turns it on, where the collector exists.
+        #
+        # Tracing itself stays on either way, which is the point of splitting
+        # these two: spans are still created, so trace and span ids reach the
+        # MDC and every log line carries them even when nothing is collecting.
+        enabled: ${SENTINELFLOW_OTLP_EXPORT_ENABLED:false}
+
   metrics:
     tags:
       application: sentinelflow-api

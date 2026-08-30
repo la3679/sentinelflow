@@ -232,6 +232,20 @@ services:
       # Stamped into every line's service.version, so a log can be traced back
       # to what produced it. Same variable the scoring service uses.
       SENTINELFLOW_GIT_SHA: ${SENTINELFLOW_GIT_SHA:-unknown}
+      # Traces go to the collector, which forwards to Tempo (ADR-0016 section
+      # 5). Export is off by default in application.yaml and turned on here,
+      # because a developer running the API outside compose has no collector
+      # and would otherwise collect a periodic stack trace about one.
+      #
+      # Deliberately NOT a depends_on: a tracing backend that is down must not
+      # stop the pipeline. The exporter retries in the background and the
+      # application does not notice.
+      SENTINELFLOW_OTLP_EXPORT_ENABLED: ${SENTINELFLOW_OTLP_EXPORT_ENABLED:-true}
+      SENTINELFLOW_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      # Every trace. A statement about this traffic rather than a default: the
+      # stack is idle between bursts, and sampling a tenth of a four-record
+      # replay gives a trace view that is empty when somebody looks at it.
+      SENTINELFLOW_TRACING_SAMPLE_RATE: ${SENTINELFLOW_TRACING_SAMPLE_RATE:-1.0}
       # The labelled training export (ADR-0010 section 1). Off unless set, for
       # the same reason as the seed. `make export-dataset` sets it for one
       # recreate of this service and then puts it back.
@@ -314,6 +328,63 @@ services:
   # -------------------------------------------------------------------------
   # Observability
   # -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # Tracing
+  #
+  # Neither of these gates anything. ADR-0016 section 5 makes that a rule rather
+  # than an oversight: a tracing backend that is down must not stop the
+  # pipeline, so no application depends_on them and the API's exporter is
+  # configured to fail quietly. A stack with these two stopped ingests, scores
+  # and alerts exactly as before, and loses only the ability to see itself.
+  # -------------------------------------------------------------------------
+  tempo:
+    image: grafana/tempo:2.9.1
+    container_name: sentinelflow-tempo
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/tempo/tempo.yaml
+    ports:
+      # The query API, which Grafana reads through. Published so a trace can be
+      # fetched with curl when a dashboard is the thing under suspicion.
+      - "${TEMPO_PORT:-3200}:3200"
+    volumes:
+      - ./infra/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:3200/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.142.0
+    container_name: sentinelflow-otel-collector
+    restart: unless-stopped
+    command:
+      - --config=/etc/otel/collector.yaml
+    volumes:
+      - ./infra/otel/collector.yaml:/etc/otel/collector.yaml:ro
+    # No published port. Nothing outside this network sends it spans, and an
+    # unauthenticated trace-ingest endpoint on the host is a write surface for
+    # no gain.
+    expose:
+      - "4318"
+    depends_on:
+      tempo:
+        condition: service_healthy
+    # NO HEALTHCHECK, deliberately, and this is the one service here without
+    # one. The collector image is distroless: no shell, no wget, no curl, so
+    # every probe that could be written in this file tests something other than
+    # what it claims. `--help` proves the binary exists and says nothing about
+    # whether the receiver is listening; a green check that means "the file
+    # system has a binary in it" is worse than a blank column, because the
+    # column is read as evidence.
+    #
+    # Nothing depends on it being healthy, so the check would inform a person
+    # and nothing else. `docker compose logs otel-collector` is what that person
+    # should read - it says how many spans it accepted and exported.
+
   prometheus:
     image: prom/prometheus:v3.14.0
     container_name: sentinelflow-prometheus
@@ -375,3 +446,4 @@ volumes:
   kafka-data:
   prometheus-data:
   grafana-data:
+  tempo-data:

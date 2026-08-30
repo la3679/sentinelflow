@@ -1,0 +1,62 @@
+# OpenTelemetry Collector for the local SentinelFlow stack.
+#
+# Phase 1 deliberately left this out, with the reason recorded in the plan:
+# nothing exported traces, and a collector that receives nothing is decoration
+# rather than infrastructure. Phase 7 is when something does.
+#
+# WHY A COLLECTOR AT ALL, when the API could export OTLP straight to Tempo. It
+# is the seam that keeps the application ignorant of where traces are stored
+# (ADR-0016 section 5). Swapping the backend, adding a second one, sampling
+# differently or dropping an attribute becomes a change to this file rather than
+# a change to a service's configuration and a rebuild of its image.
+
+receivers:
+  otlp:
+    protocols:
+      # HTTP only. The API exports over OTLP/HTTP on 4318, and a gRPC listener
+      # nothing connects to is a published port with no reader - which is the
+      # same "decoration rather than infrastructure" this file's header is
+      # about, one layer down.
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Bounded, because this runs on a laptop beside a database, a broker and three
+  # applications. Without a batcher every span is its own export request; with
+  # an unbounded queue a backend that stops answering becomes a collector that
+  # consumes memory until something is killed.
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+  memory_limiter:
+    check_interval: 1s
+    # Below the container's own limit, so the collector refuses work and says so
+    # rather than being killed by the runtime with no record of why.
+    limit_mib: 192
+    spike_limit_mib: 48
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      # A local compose network carrying synthetic traces. Not a decision that
+      # travels: anywhere real this is TLS with a verified certificate, and the
+      # threat model in Phase 8 is where that gets written down.
+      insecure: true
+
+service:
+  # The collector's own logs, at info, in the stack's format. It is the one
+  # component here that reports on the others, so a collector failing silently
+  # is the worst possible way for this to break.
+  telemetry:
+    logs:
+      level: info
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      # memory_limiter first, deliberately: a limiter after a batcher protects
+      # nothing, because the batcher has already accepted and held the data.
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo]

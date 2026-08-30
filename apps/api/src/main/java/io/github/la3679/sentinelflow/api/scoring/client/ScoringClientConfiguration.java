@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClient;
 import io.github.la3679.sentinelflow.api.resilience.CircuitBreaker;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 
 /**
  * The one outbound HTTP client this application makes, and the breaker in front of it.
@@ -87,11 +88,26 @@ public class ScoringClientConfiguration {
         return factory;
     }
 
+    /**
+     * The client, instrumented so the scoring call joins the trace that caused it.
+     *
+     * <p><strong>The observation registry has to be handed over explicitly.</strong> Spring Boot
+     * instruments the {@code RestClient.Builder} bean it provides, and this client deliberately does
+     * not use that builder — the timeouts here are one dependency's decision (ADR-0008 §3) and
+     * putting them on the application-wide builder would apply a two-second read budget to whatever
+     * this service calls next. The cost of that choice is that instrumentation does not arrive for
+     * free, and forgetting this line is invisible: every request still works, and the trace simply
+     * stops at the API with the slowest hop in the pipeline missing from it.
+     *
+     * <p>With it, the {@code traceparent} header goes out on every scoring call and the service's
+     * own log lines carry the same trace id as the ingestion that caused them.
+     */
     @Bean
-    RestClient scoringRestClient(ScoringClientProperties properties) {
+    RestClient scoringRestClient(ScoringClientProperties properties, ObservationRegistry observations) {
         return RestClient.builder()
                 .baseUrl(properties.baseUrl().toString())
                 .requestFactory(requestFactory(properties))
+                .observationRegistry(observations)
                 .build();
     }
 
