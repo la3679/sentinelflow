@@ -28,6 +28,8 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 
 import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 
 /**
  * Ingestion over HTTP, against the real schema.
@@ -47,6 +49,9 @@ class TransactionIngestionIT extends AbstractPostgresTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private MeterRegistry meters;
 
     private RestTestClient client;
     private String accountReference;
@@ -256,6 +261,56 @@ class TransactionIngestionIT extends AbstractPostgresTest {
         // generator indefinitely.
         assertThat(problem).contains("idempotency-conflict").contains("\"status\":409");
         assertThat(problem).doesNotContain("Exception").doesNotContain("io.github");
+    }
+
+    @Test
+    @DisplayName("all three ingestion outcomes are counted, and none of them by account")
+    void countsEveryIngestionOutcome() {
+        double createdBefore = ingested("created");
+        double replayedBefore = ingested("replayed");
+        double conflictBefore = ingested("conflict");
+
+        String key = "counted-" + SchemaFixtures.next6();
+        // One body across the first two requests. occurredAt is part of the
+        // payload comparison, so a fresh Instant.now() per call makes the second
+        // a genuinely different submission and the replay becomes a conflict -
+        // which is correct behaviour and the wrong thing to be counting here.
+        Map<String, Object> submission = body(key, "12.00");
+        Map<String, Object> different = new HashMap<>(submission);
+        different.put("amount", Map.of("value", "77.00", "currency", "GBP"));
+
+        post().body(submission).exchange().expectStatus().isAccepted();
+        post().body(submission).exchange().expectStatus().isOk();
+        post().body(different).exchange().expectStatus().isEqualTo(409);
+
+        assertThat(ingested("created") - createdBefore).isEqualTo(1);
+        assertThat(ingested("replayed") - replayedBefore)
+                .as("a retry storm has to be visible as a replay rate rather than as throughput "
+                        + "that looks flat while the database works")
+                .isEqualTo(1);
+        assertThat(ingested("conflict") - conflictBefore)
+                .as("a caller whose key generator has broken should show up here rather than in a " + "support ticket")
+                .isEqualTo(1);
+
+        assertThat(meters.getMeters())
+                .filteredOn(meter -> meter.getId().getName().equals("sentinelflow.transactions.ingested"))
+                .isNotEmpty()
+                .allSatisfy(meter -> assertThat(meter.getId().getTags())
+                        .as("ADR-0016 section 2: an account or a merchant here would be one series "
+                                + "per party, holding an identifier in a label")
+                        // `application` is the common tag every meter in this
+                        // service carries, from management.metrics.tags - one
+                        // constant value, and the thing that tells two services'
+                        // series apart in one Prometheus.
+                        .allSatisfy(tag -> assertThat(tag.getKey()).isIn("source", "outcome", "application")));
+    }
+
+    private double ingested(String outcome) {
+        Counter counter = meters.find("sentinelflow.transactions.ingested")
+                .tag("source", "API")
+                .tag("outcome", outcome)
+                .counter();
+        return counter == null ? 0 : counter.count();
     }
 
     @Test

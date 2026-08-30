@@ -3,6 +3,7 @@ package io.github.la3679.sentinelflow.api.scoring.client;
 
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +19,9 @@ import io.github.la3679.sentinelflow.api.resilience.FullJitterBackOff;
 import io.github.la3679.sentinelflow.api.scoring.payload.ModelInfoResponse;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreRequest;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreResponse;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 
 /**
  * Calls {@code POST /v1/score}, inside the budget ADR-0008 §3 fixed.
@@ -52,6 +56,10 @@ import io.github.la3679.sentinelflow.api.scoring.payload.ScoreResponse;
  * same number as the {@code inferenceDurationMs} the service reports about itself — the difference
  * between the two is the network and the retries, and having both is what lets an operator tell a
  * slow model from a slow link without guessing.
+ *
+ * <p>The same measurement is recorded twice, on purpose (ADR-0016 §"Consequences"): once onto the
+ * event payload, where it answers "why is <em>this</em> assessment degraded", and once into a
+ * histogram, where it answers "is scoring slow today". Only the second one can be graphed.
  */
 @Component
 public class ScoringClient {
@@ -65,15 +73,101 @@ public class ScoringClient {
     /** What the breaker guards, for logging. Never a URL: a base URL is deployment detail. */
     static final String BREAKER_NAME = "scoring";
 
+    /** The metric names, here rather than inline so the tests assert against the shipped strings. */
+    static final String CALLS_METRIC = "sentinelflow.scoring.calls";
+
+    static final String DURATION_METRIC = "sentinelflow.scoring.call.duration";
+
+    /**
+     * The complete outcome domain, and the whole label space of both metrics above: four values on
+     * the counter, three on the timer. Closed, fixed here, and derived from nothing in a request —
+     * which is ADR-0016 §2's rule.
+     *
+     * <p>{@code breaker_open} is a counter value with no timer beside it deliberately. A call the
+     * breaker refused took no measurable time, and folding a stream of zeroes into the latency
+     * histogram would make an outage look like the fastest scoring the system has ever done.
+     */
+    private static final String OUTCOME_SCORED = "scored";
+
+    private static final String OUTCOME_UNAVAILABLE = "unavailable";
+    private static final String OUTCOME_REJECTED = "rejected";
+    private static final String OUTCOME_BREAKER_OPEN = "breaker_open";
+
+    /**
+     * Bucket boundaries, in milliseconds, for the caller-side latency histogram.
+     *
+     * <p>Explicit rather than Micrometer's defaults, for the reason the scoring service gives for
+     * declaring its own: this call is budgeted at a two-second read timeout and expected to answer
+     * in single-digit milliseconds, so the default buckets put every healthy observation in the
+     * first one and measure nothing. The top of the range is past the worst case a caller can wait —
+     * two retries at a two-second timeout plus backoff — so a timed-out call lands in a bucket
+     * rather than only in {@code +Inf}.
+     */
+    private static final Duration[] LATENCY_BUCKETS = {
+        Duration.ofMillis(5),
+        Duration.ofMillis(10),
+        Duration.ofMillis(25),
+        Duration.ofMillis(50),
+        Duration.ofMillis(100),
+        Duration.ofMillis(250),
+        Duration.ofMillis(500),
+        Duration.ofSeconds(1),
+        Duration.ofSeconds(2),
+        Duration.ofSeconds(5),
+        Duration.ofSeconds(10)
+    };
+
     private final RestClient restClient;
     private final ScoringClientProperties properties;
     private final CircuitBreaker breaker;
 
+    // Registered once at construction rather than looked up per call. Micrometer
+    // caches a builder lookup, but this is the inside of a Kafka consumer's
+    // record loop and a map lookup per outcome per record is work with no
+    // reader.
+    private final Counter scored;
+    private final Counter unavailable;
+    private final Counter rejected;
+    private final Counter breakerOpen;
+    private final Timer scoredDuration;
+    private final Timer unavailableDuration;
+    private final Timer rejectedDuration;
+
     public ScoringClient(
-            RestClient scoringRestClient, ScoringClientProperties properties, CircuitBreaker scoringCircuitBreaker) {
+            RestClient scoringRestClient,
+            ScoringClientProperties properties,
+            CircuitBreaker scoringCircuitBreaker,
+            MeterRegistry meters) {
         this.restClient = scoringRestClient;
         this.properties = properties;
         this.breaker = scoringCircuitBreaker;
+
+        this.scored = calls(meters, OUTCOME_SCORED);
+        this.unavailable = calls(meters, OUTCOME_UNAVAILABLE);
+        this.rejected = calls(meters, OUTCOME_REJECTED);
+        this.breakerOpen = calls(meters, OUTCOME_BREAKER_OPEN);
+        this.scoredDuration = duration(meters, OUTCOME_SCORED);
+        this.unavailableDuration = duration(meters, OUTCOME_UNAVAILABLE);
+        this.rejectedDuration = duration(meters, OUTCOME_REJECTED);
+    }
+
+    private static Counter calls(MeterRegistry meters, String outcome) {
+        return Counter.builder(CALLS_METRIC)
+                .tag("outcome", outcome)
+                .description("Scoring calls this application made, by how each one ended")
+                .register(meters);
+    }
+
+    private static Timer duration(MeterRegistry meters, String outcome) {
+        return Timer.builder(DURATION_METRIC)
+                .tag("outcome", outcome)
+                .description("Wall-clock time a scoring call cost this application, including retries")
+                // Buckets, never publishPercentiles: a percentile computed here
+                // cannot be aggregated across instances or re-windowed, so the
+                // dashboards compute theirs with histogram_quantile over these
+                // (ADR-0016 section 3).
+                .serviceLevelObjectives(LATENCY_BUCKETS)
+                .register(meters);
     }
 
     /**
@@ -94,6 +188,7 @@ public class ScoringClient {
             // and repeating it per record is the noise the breaker exists to
             // avoid.
             log.debug("Scoring breaker is open; degrading without an attempt");
+            breakerOpen.increment();
             throw new ScoringUnavailableException("The scoring circuit breaker is open after "
                     + properties.circuitBreakerFailureThreshold() + " consecutive failures; no call was attempted");
         }
@@ -103,11 +198,19 @@ public class ScoringClient {
         try {
             ScoreResponse response = attemptWithRetries(request, correlationId);
             healthy = true;
+            record(scored, scoredDuration, started);
             return new ScoringResult(response, elapsedMillis(started));
-        } catch (ScoringRejectedException rejected) {
+        } catch (ScoringRejectedException rejectedException) {
             // Answered, and answered correctly. The dependency is not sick.
             healthy = true;
-            throw rejected;
+            record(rejected, rejectedDuration, started);
+            throw rejectedException;
+        } catch (ScoringUnavailableException unavailableException) {
+            // Caught only to measure it. Rethrown unchanged, because the caller
+            // degrading to rules is the behaviour and this class does not decide
+            // it.
+            record(unavailable, unavailableDuration, started);
+            throw unavailableException;
         } finally {
             // Exactly one outcome per allowed request, in a finally, because a
             // half-open probe that never reports leaves the breaker shut.
@@ -117,6 +220,11 @@ public class ScoringClient {
                 breaker.recordFailure();
             }
         }
+    }
+
+    private static void record(Counter counter, Timer timer, long startedNanos) {
+        counter.increment();
+        timer.record(System.nanoTime() - startedNanos, TimeUnit.NANOSECONDS);
     }
 
     private ScoreResponse attemptWithRetries(ScoreRequest request, UUID correlationId) {

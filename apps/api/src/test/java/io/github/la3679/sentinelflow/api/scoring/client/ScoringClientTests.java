@@ -36,6 +36,9 @@ import io.github.la3679.sentinelflow.api.scoring.payload.Amount;
 import io.github.la3679.sentinelflow.api.scoring.payload.ModelInfoResponse;
 import io.github.la3679.sentinelflow.api.scoring.payload.ScoreRequest;
 import io.github.la3679.sentinelflow.api.scoring.payload.TransactionToScore;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
  * The client against a real socket.
@@ -89,6 +92,16 @@ class ScoringClientTests {
             """;
 
     private HttpServer server;
+
+    /**
+     * The registry every client in this class is built against.
+     *
+     * <p>A real {@link SimpleMeterRegistry} rather than a mock: what the metric assertions need to
+     * know is the value a scrape would report, and a verified interaction with a mocked registry
+     * would pass just as happily against a counter registered under the wrong name.
+     */
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+
     private final AtomicInteger requests = new AtomicInteger();
     private final AtomicReference<String> lastCorrelationHeader = new AtomicReference<>();
     private final AtomicReference<String> lastUpgradeHeader = new AtomicReference<>();
@@ -322,6 +335,101 @@ class ScoringClientTests {
     }
 
     // ----------------------------------------------------------------------- //
+    // What a scrape sees
+    // ----------------------------------------------------------------------- //
+
+    @Test
+    @DisplayName("each of the four outcomes is counted under its own name")
+    void countsEveryOutcomeSeparately() {
+        ScoringClient client = client();
+
+        respondWith(200);
+        client.score(request(), CORRELATION);
+
+        respondWith(422);
+        assertThatThrownBy(() -> client.score(request(), CORRELATION)).isInstanceOf(ScoringRejectedException.class);
+
+        // Five failing calls open the breaker; the sixth is refused without an
+        // attempt, which is the fourth outcome.
+        for (int call = 0; call < 5; call++) {
+            respondWith(503, 503, 503);
+            assertThatThrownBy(() -> client.score(request(), CORRELATION))
+                    .isInstanceOf(ScoringUnavailableException.class);
+        }
+        assertThatThrownBy(() -> client.score(request(), CORRELATION))
+                .isInstanceOf(ScoringUnavailableException.class)
+                .hasMessageContaining("no call was attempted");
+
+        assertThat(calls("scored")).isEqualTo(1);
+        assertThat(calls("rejected")).isEqualTo(1);
+        assertThat(calls("unavailable"))
+                .as("one per call that spent its whole budget, not one per HTTP attempt")
+                .isEqualTo(5);
+        assertThat(calls("breaker_open")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a call the breaker refused is counted but never timed")
+    void doesNotPutRefusedCallsInTheLatencyHistogram() {
+        respondWith(503);
+        ScoringClient client = client();
+
+        for (int call = 0; call < 5; call++) {
+            assertThatThrownBy(() -> client.score(request(), CORRELATION))
+                    .isInstanceOf(ScoringUnavailableException.class);
+        }
+        assertThat(client.circuitState()).isEqualTo(CircuitBreaker.State.OPEN);
+
+        long timedBefore = timed("unavailable");
+        assertThatThrownBy(() -> client.score(request(), CORRELATION))
+                .isInstanceOf(ScoringUnavailableException.class)
+                .hasMessageContaining("no call was attempted");
+
+        assertThat(calls("breaker_open")).isEqualTo(1);
+        assertThat(timed("unavailable"))
+                .as("a refused call takes no measurable time, and folding those zeroes into the "
+                        + "histogram would make an outage look like the fastest scoring ever seen")
+                .isEqualTo(timedBefore);
+    }
+
+    @Test
+    @DisplayName("the latency histogram carries the caller's whole call, retries included")
+    void timesTheWholeCallRatherThanOneAttempt() {
+        respondWith(503, 503, 200);
+        ScoringClient client = client();
+
+        client.score(request(), CORRELATION);
+
+        Timer timer = meters.find(ScoringClient.DURATION_METRIC)
+                .tag("outcome", "scored")
+                .timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.count()).isEqualTo(1);
+        assertThat(timer.totalTime(java.util.concurrent.TimeUnit.NANOSECONDS))
+                .as("three attempts and two backoffs, so the recorded time is the call rather "
+                        + "than the last request in it")
+                .isPositive();
+    }
+
+    @Test
+    @DisplayName("no metric carries anything taken from the request")
+    void keepsTheLabelSpaceClosed() {
+        respondWith(200);
+        client().score(request(), CORRELATION);
+
+        assertThat(meters.getMeters())
+                .filteredOn(meter -> meter.getId().getName().startsWith("sentinelflow.scoring"))
+                .isNotEmpty()
+                .allSatisfy(meter -> assertThat(meter.getId().getTags())
+                        .as("ADR-0016 section 2: a label value comes from a closed set fixed in "
+                                + "code, never from a request, a payload or a row")
+                        // `le` is Micrometer's own bucket-boundary tag, and its
+                        // values are the boundaries declared in ScoringClient -
+                        // which is as closed a set as `outcome` is.
+                        .allSatisfy(tag -> assertThat(tag.getKey()).isIn("outcome", "le")));
+    }
+
+    // ----------------------------------------------------------------------- //
     // Model metadata, which is a read on behalf of a screen
     // ----------------------------------------------------------------------- //
 
@@ -463,7 +571,23 @@ class ScoringClientTests {
                         ScoringClient.BREAKER_NAME,
                         properties.circuitBreakerFailureThreshold(),
                         properties.circuitBreakerOpenDuration(),
-                        Clock.systemUTC()));
+                        Clock.systemUTC()),
+                meters);
+    }
+
+    /** How many calls the counter recorded for one outcome. */
+    private double calls(String outcome) {
+        Counter counter =
+                meters.find(ScoringClient.CALLS_METRIC).tag("outcome", outcome).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    /** How many observations the latency histogram holds for one outcome. */
+    private long timed(String outcome) {
+        Timer timer = meters.find(ScoringClient.DURATION_METRIC)
+                .tag("outcome", outcome)
+                .timer();
+        return timer == null ? 0 : timer.count();
     }
 
     /** A tweak applied to the defaults, so each test states only what it changes. */

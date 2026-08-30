@@ -190,8 +190,8 @@ passes · Lovable diffs reviewed and merged safely.
 - Resilience drills for scoring-service and Kafka failure
 - Runbooks for API down, scoring down, consumer lag, outbox backlog, DLQ growth, connection
   saturation, high error rate, slow report query, model artifact load failure
-- An ADR for the observability approach — number allocated when it is written, because 0013 and
-  0014 were taken by decisions this plan did not anticipate
+- [ADR-0016](../adr/0016-observability-signals-and-their-boundaries.md) observability: what each
+  signal answers, and what none of them may carry
 
 **Gate** — one transaction trace can be followed end to end · dashboards load with data ·
 redaction tests pass · a documented failure drill succeeds.

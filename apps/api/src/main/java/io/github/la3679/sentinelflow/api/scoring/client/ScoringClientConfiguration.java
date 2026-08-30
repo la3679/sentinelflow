@@ -10,6 +10,8 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import io.github.la3679.sentinelflow.api.resilience.CircuitBreaker;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 
 /**
  * The one outbound HTTP client this application makes, and the breaker in front of it.
@@ -36,6 +38,9 @@ import io.github.la3679.sentinelflow.api.resilience.CircuitBreaker;
  */
 @Configuration
 public class ScoringClientConfiguration {
+
+    /** The breaker gauge's name, here so the test asserts against the shipped string. */
+    static final String BREAKER_STATE_METRIC = "sentinelflow.scoring.breaker.state";
 
     /**
      * The request factory carrying ADR-0008 §3's connect and read timeouts.
@@ -97,13 +102,28 @@ public class ScoringClientConfiguration {
      * takes a clock so a test can drive its open window without sleeping thirty seconds, and
      * introducing a shared bean for one collaborator would be a decision about every date in this
      * application taken for the sake of one timer.
+     *
+     * <p>The breaker is published as three gauges rather than as one number. An operator's question
+     * is "is scoring cut off right now", and a single gauge encoding {@code CLOSED=0, OPEN=2} answers
+     * it only for somebody who remembers the encoding — every dashboard panel and every alert rule
+     * would carry the legend in a comment. One series per state, each 0 or 1, is three series
+     * instead of one and reads as {@code sentinelflow_scoring_breaker_state{state="OPEN"} == 1}.
      */
     @Bean
-    CircuitBreaker scoringCircuitBreaker(ScoringClientProperties properties) {
-        return new CircuitBreaker(
+    CircuitBreaker scoringCircuitBreaker(ScoringClientProperties properties, MeterRegistry meters) {
+        CircuitBreaker breaker = new CircuitBreaker(
                 ScoringClient.BREAKER_NAME,
                 properties.circuitBreakerFailureThreshold(),
                 properties.circuitBreakerOpenDuration(),
                 Clock.systemUTC());
+
+        for (CircuitBreaker.State state : CircuitBreaker.State.values()) {
+            Gauge.builder(BREAKER_STATE_METRIC, breaker, observed -> observed.state() == state ? 1 : 0)
+                    .tag("breaker", breaker.name())
+                    .tag("state", state.name())
+                    .description("1 on the state the circuit breaker in front of scoring is currently in, 0 otherwise")
+                    .register(meters);
+        }
+        return breaker;
     }
 }
