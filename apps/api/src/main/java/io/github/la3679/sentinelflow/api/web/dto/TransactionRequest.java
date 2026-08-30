@@ -59,4 +59,23 @@ public record TransactionRequest(
         @Pattern(regexp = "^DEV-[0-9a-f]{12}$", message = "must look like DEV-4f2a91c0be73, or be omitted")
         String deviceReference,
 
-        @NotNull(message = "must be present") Instant occurredAt) {}
+        @NotNull(message = "must be present") Instant occurredAt) {
+
+    /**
+     * What ingestion is allowed to say about a request it is holding.
+     *
+     * <p>The reference, the type and the channel are what an operator needs to find the thing; the
+     * amount, the device handle and the caller-chosen idempotency key are the three things ADR-0016
+     * §4 forbids at every level. A record prints all ten components by default, so this override is
+     * what stands between one careless {@code log.debug("{}", request)} and a disclosure.
+     *
+     * <p>The idempotency key is here for a second reason as well: it is caller-controlled text, and
+     * caller-controlled text in a log is the injection surface {@code CorrelationIdFilter} already
+     * refuses to reflect.
+     */
+    @Override
+    public String toString() {
+        return "TransactionRequest[account=" + accountReference + " merchant=" + merchantReference + " type=" + type
+                + " channel=" + channel + " amount, device and key redacted]";
+    }
+}

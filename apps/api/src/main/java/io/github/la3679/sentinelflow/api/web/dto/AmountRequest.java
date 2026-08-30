@@ -42,4 +42,17 @@ public record AmountRequest(
     public Money toMoney() {
         return Money.of(value, currency);
     }
+
+    /**
+     * The currency and the fact that there was a value. Never the value.
+     *
+     * <p>A record's generated {@code toString} prints every component, so one {@code log.debug("{}",
+     * request)} anywhere would put a transaction amount in the log — which ADR-0016 §4 forbids at
+     * every level. The rule is that a call site passes named fields rather than an object; this is
+     * what makes breaking the rule harmless rather than a disclosure.
+     */
+    @Override
+    public String toString() {
+        return "AmountRequest[" + currency + " redacted]";
+    }
 }

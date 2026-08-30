@@ -24,4 +24,10 @@ public record Amount(String value, String currency) {
     public static Amount of(Money money) {
         return new Amount(money.toPlainString(), money.currency());
     }
+
+    /** The currency alone. An amount is forbidden in a log at every level (ADR-0016 §4). */
+    @Override
+    public String toString() {
+        return "Amount[" + currency + " redacted]";
+    }
 }

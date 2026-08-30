@@ -35,4 +35,19 @@ public record AccountContext(
         Instant accountOpenedAt,
         Amount currentBalance,
         List<RecentTransaction> recentTransactions,
-        boolean truncated) {}
+        boolean truncated) {
+
+    /**
+     * The shape of the context, never its contents.
+     *
+     * <p>This record holds a balance and a list of an account's recent transactions — the single
+     * largest concentration of forbidden fields in the application. How many there were and whether
+     * the list was truncated is what a person debugging the scoring path actually asks.
+     */
+    @Override
+    public String toString() {
+        return "AccountContext[version=" + contextVersion + " window=" + lookbackWindowSeconds + "s recent="
+                + (recentTransactions == null ? 0 : recentTransactions.size()) + " truncated=" + truncated
+                + " balance and history redacted]";
+    }
+}

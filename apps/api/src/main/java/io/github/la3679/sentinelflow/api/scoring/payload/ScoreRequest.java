@@ -14,4 +14,17 @@ package io.github.la3679.sentinelflow.api.scoring.payload;
  * halves of the comparison would come from the training representation and would agree with each
  * other while disagreeing with production.
  */
-public record ScoreRequest(TransactionToScore transaction, AccountContext accountContext) {}
+public record ScoreRequest(TransactionToScore transaction, AccountContext accountContext) {
+
+    /**
+     * Delegates to two components that redact themselves.
+     *
+     * <p>Written out rather than left to the record's generated version, because the generated one
+     * would be correct today only by accident: it calls {@code toString} on both components, and it
+     * would silently start printing a raw field the day a third component is added.
+     */
+    @Override
+    public String toString() {
+        return "ScoreRequest[" + transaction + " " + accountContext + "]";
+    }
+}
