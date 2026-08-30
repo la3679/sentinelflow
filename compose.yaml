@@ -172,6 +172,11 @@ services:
     environment:
       SENTINELFLOW_SCORING_PORT: "8000"
       SENTINELFLOW_SCORING_LOG_LEVEL: ${SCORING_LOG_LEVEL:-INFO}
+      # JSON here and human-readable text on a developer's terminal, which is
+      # the default this overrides (ADR-0016 section 4). A log line is only
+      # structured if whatever reads it can find the fields, and nothing reads
+      # a terminal but a person.
+      SENTINELFLOW_SCORING_LOG_FORMAT: ${SCORING_LOG_FORMAT:-json}
       SENTINELFLOW_SCORING_GIT_SHA: ${SENTINELFLOW_GIT_SHA:-unknown}
     ports:
       - "${SCORING_PORT:-8000}:8000"
@@ -218,6 +223,15 @@ services:
       # nothing to anybody who cannot already reach this machine's loopback
       # interface. The entries are the console below and the Vite dev server.
       SENTINELFLOW_CORS_ALLOWED_ORIGINS: ${SENTINELFLOW_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174}
+      # Structured JSON logs in the container, the ordinary pattern encoder on
+      # a developer's terminal (ADR-0016 section 4). Set here rather than in
+      # application.yaml because Boot reads an unset property as "no structured
+      # format" and an empty string as a format name it cannot resolve, so
+      # there is no value that means "plain" to write in the file.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ${API_LOG_FORMAT:-ecs}
+      # Stamped into every line's service.version, so a log can be traced back
+      # to what produced it. Same variable the scoring service uses.
+      SENTINELFLOW_GIT_SHA: ${SENTINELFLOW_GIT_SHA:-unknown}
       # The labelled training export (ADR-0010 section 1). Off unless set, for
       # the same reason as the seed. `make export-dataset` sets it for one
       # recreate of this service and then puts it back.

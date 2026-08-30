@@ -36,6 +36,7 @@ from pydantic import BaseModel
 from sentinelflow_scoring import __version__
 from sentinelflow_scoring.config import Settings, load_settings
 from sentinelflow_scoring.features.schema import ScoreRequest
+from sentinelflow_scoring.log import configure_logging
 from sentinelflow_scoring.serving import metrics as collectors
 from sentinelflow_scoring.serving.model import ActiveModel, load_active
 from sentinelflow_scoring.serving.schema import (
@@ -87,6 +88,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     resolved = settings if settings is not None else load_settings()
 
+    # Before anything else logs. load_active below writes the line that says
+    # which model was chosen, and a line written before the renderer is chosen is
+    # a line in whatever format structlog happened to default to.
+    configure_logging(resolved.log_level, resolved.log_format)
+
     app = FastAPI(
         title="SentinelFlow scoring service",
         version=__version__,
@@ -113,6 +119,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "scoring service configured",
         version=__version__,
         port=resolved.port,
+        log_format=resolved.log_format,
         model_loaded=active is not None,
     )
     return app
