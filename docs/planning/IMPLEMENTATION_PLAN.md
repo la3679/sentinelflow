@@ -240,6 +240,13 @@ actual test and performance evidence committed.
 
 - All pull requests merged safely; `main` CI green
 - `main` ruleset active
+- **Real operator identity, closing the assignment hole Phase 6 deferred** — the smallest
+  architecturally correct lookup that lets an alert be given to a named analyst, with no hardcoded
+  identifiers and no invented users, server-side authorization still authoritative, contracts and
+  console updated together, optimistic concurrency handled, tests and an end-to-end journey, and
+  verification against the real stack rather than only Testcontainers. `PROJECT_STATE.md`,
+  "Required before v1 — carried forward" §1 holds the binding definition of done. An ADR records the
+  decision; its number is allocated when it is written.
 - `v1.0.0` if every v1 criterion is genuinely met, otherwise an honest prerelease
 - Changelog and release notes with features, setup, migrations, security notes, known limitations,
   and evidence links
@@ -247,8 +254,13 @@ actual test and performance evidence committed.
 - Optional free Lovable preview, clearly labelled as UI-only if it is
 - Final handoff report
 
-**Gate** — clean `main` · remote SHA verified · all required CI green · the tag points at verified
-code · no false claims anywhere.
+**Gate** — clean `main` · remote SHA verified · all required CI green · an alert can be assigned to a
+named operator · the tag points at verified code · no false claims anywhere.
+
+**Two items this gate does not cover, and no phase may claim.** A screen-reader pass and a manual
+authenticated walkthrough of the console both need a person. They stay listed as outstanding human
+verification in `PROJECT_STATE.md` §"Required before v1" until somebody does them; an automated run
+is never evidence that either happened.
 
 ---
 
