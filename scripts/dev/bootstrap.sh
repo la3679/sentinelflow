@@ -111,7 +111,16 @@ fi
 
 if [ -f .env ]; then
     missing=""
-    for key in POSTGRES_PASSWORD GRAFANA_ADMIN_PASSWORD SENTINELFLOW_JWT_SECRET \n               SENTINELFLOW_DEMO_OPERATOR_PASSWORD; do
+    # One key per line rather than a wrapped list. The wrapped version carried a
+    # literal backslash-n, which the shell splits into a word named `n` - so
+    # every run against an existing .env reported a missing secret called "n"
+    # and exited 1. A continuation that is not a continuation is invisible until
+    # something reads the output.
+    required_secrets="POSTGRES_PASSWORD
+GRAFANA_ADMIN_PASSWORD
+SENTINELFLOW_JWT_SECRET
+SENTINELFLOW_DEMO_OPERATOR_PASSWORD"
+    for key in $required_secrets; do
         if ! grep -qE "^${key}=.+" .env; then
             missing="${missing} ${key}"
         fi
