@@ -117,6 +117,15 @@ with the rate limits and payload bounds that belong beside it, and that is
 the API can submit a synthetic transaction. It is recorded in `PROJECT_STATE.md` under known issues,
 and the demo stack binds to localhost.
 
+> **Correction, 2026-08-31.** That last clause was not true when it was written. `compose.yaml`
+> published every port as `"HOST:CONTAINER"`, which Docker binds to `0.0.0.0`; `docker port
+sentinelflow-postgres` reported `0.0.0.0:5432` on the running stack. "Anything that can reach the
+> API" therefore meant anything on the same network, not anything on the machine — and PostgreSQL,
+> Kafka and Grafana were published the same way. Fixed rather than reworded: every port now binds to
+> `${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}`, so the sentence above is true, and exposing the stack is
+> a deliberate act. The argument this section makes for leaving ingestion open rests on that
+> containment, so it was worth making real before Phase 8 relies on it.
+
 Also unprotected, and correctly: `/actuator/health/*` (a liveness probe cannot hold a token) and
 `POST /api/v1/auth/login` itself.
 

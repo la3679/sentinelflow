@@ -2321,8 +2321,10 @@ checks.
 - **`POST /api/v1/transactions` is unauthenticated**, deliberately and temporarily (ADR-0012 §5).
   Operator endpoints require a bearer token; ingestion does not, because it is a machine-to-machine
   surface that needs its own credential rather than an operator's password. Until Phase 8 gives it
-  one, anything that can reach the API can submit a synthetic transaction. The demo stack binds to
-  localhost.
+  one, anything that can reach the API can submit a synthetic transaction. **The stack now binds to
+  loopback, and did not before 2026-08-31**: every port was published on `0.0.0.0`, verified with
+  `docker port`, so "anything that can reach the API" meant anything on the same network. ADR-0012 §5
+  carries the dated correction; `SENTINELFLOW_BIND_ADDRESS` is the deliberate way out.
 - **A token cannot be revoked before it expires.** Thirty minutes is the whole of how long a
   withdrawn role keeps working. That is the cost of statelessness and it is accepted rather than
   overlooked; a revocation list is Phase 8's if the demo ever needs one.
