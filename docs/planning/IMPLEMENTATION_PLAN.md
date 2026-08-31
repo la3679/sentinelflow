@@ -53,8 +53,9 @@ verified · no secrets · initial preview builds · state file holds the exact r
 
 **Deliberately deferred, with the phase that delivers it**
 
-- The **OpenTelemetry Collector** is not in `compose.yaml`. Nothing exports traces until Phase 7,
-  and a collector that receives nothing is decoration rather than infrastructure.
+- ~~The **OpenTelemetry Collector** is not in `compose.yaml`.~~ **Delivered in Phase 7**, alongside
+  Tempo, once something exported to it. The reason it waited stands: a collector that receives
+  nothing is decoration rather than infrastructure.
 - `make seed`, `make replay` and `make test-integration` exist, are listed by `make help`, and
   **fail with the phase that delivers them** rather than silently succeeding.
 
@@ -195,6 +196,11 @@ passes · Lovable diffs reviewed and merged safely.
 
 **Gate** — one transaction trace can be followed end to end · dashboards load with data ·
 redaction tests pass · a documented failure drill succeeds.
+
+**Status: four of six deliverables merged** as PRs #70 to #73. The metric set, structured logging
+with redaction, trace propagation and the dashboards are done; the resilience drills and the runbooks
+are not. Two gate criteria are met with evidence, one is partly met and one has not been attempted —
+`PROJECT_STATE.md` §"Acceptance criteria status — Phase 7 gate" holds the row-by-row position.
 
 ---
 

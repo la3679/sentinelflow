@@ -2483,3 +2483,101 @@ Recorded in `PROJECT_STATE.md`: Phase 7. The metric set first, because three del
 and ADR-0015's third precondition are both waiting on it; then structured logging with redaction and
 trace propagation across the Kafka hop; then the dashboards and the failure drills that make the
 four existing runbooks stop being aspirational.
+
+---
+
+## 2026-08-30 — Phase 7: four deliverables, and eight defects only the running stack could show
+
+| Field           | Value                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-30T21:55Z / 2026-08-31T00:20Z                                                                                  |
+| Starting SHA    | `ccbe2a8` on `main`                                                                                                    |
+| Ending SHA      | `fa015ab` on `main`                                                                                                    |
+| Objective       | Begin Phase 7: the observability ADR, the metric set, structured logging with redaction, trace propagation, dashboards |
+
+### Work completed
+
+Four of Phase 7's six deliverables, merged as PRs
+[#70](https://github.com/la3679/sentinelflow/pull/70) through
+[#73](https://github.com/la3679/sentinelflow/pull/73), each with all ten required checks green.
+`PROJECT_STATE.md` carries the detail; this records what the session learned rather than repeating
+it.
+
+**[ADR-0016](../adr/0016-observability-signals-and-their-boundaries.md)** fixes what each signal
+answers before any of it was built: metrics say whether the system is healthy and may carry only
+closed enumerations, traces say where one transaction went, logs say what happened in words. Its §4
+was rewritten once during the session, before any code depended on it — the first draft's redaction
+list would have outlawed logging an account reference, which is the field an operator uses to find
+the thing they were paged about. The split that survived is what an investigation needs against what
+a disclosure would cost.
+
+### The pattern this phase exists for, repeated eight times
+
+Every one of these was invisible to a green suite. The phase was named for that failure mode before
+any of them were found, which is the only satisfying thing about the list.
+
+1. **`micrometer-tracing-bridge-otel` alone produced no `Tracer` bean.** Boot 4 moved the
+   autoconfiguration into its own module, exactly as it did with Flyway in Phase 2. Three tests were
+   green while tracing did nothing at all.
+2. **`management.otlp.tracing.*` binds nothing in Boot 4.1.** It is the pre-4.1 spelling, still
+   present in the configuration metadata with no description and no default. Propagation worked
+   perfectly throughout, so every test passed while no span ever left the process — found by querying
+   Tempo and getting a 404, then finding `tempo_distributor_spans_received_total` absent entirely.
+3. **The OpenTelemetry starter auto-configured a second metrics registry** pointed at
+   `localhost:4318`, failing with a stack trace on a timer inside the container.
+4. **Tempo and the collector cannot be healthchecked**: both images are distroless, and the probe
+   failed with `stat /bin/sh: no such file or directory` while Tempo ran perfectly — which then
+   blocked the collector that depended on it being healthy.
+5. **Five metric series did not exist until something rare happened.** Alert counters, ingestion
+   conflicts and consumer outcomes. An absent series and a zero look identical on a graph and
+   completely different in an alert rule, so a rule reading "conflicts above zero" never fires on the
+   service it was written for.
+6. **The outbox publication timer had no buckets**, so ADR-0016 §3's "Prometheus computes the
+   percentiles" was impossible for it and the panel returned nothing.
+7. **A dashboard query of this session's own** named `CONFIRMED_FRAUD` and `FALSE_POSITIVE`, which
+   are not statuses this system has.
+8. **A pre-existing race in `TransactionCreatedConsumerIT`** that CI failed and two local runs
+   passed: the test handler increments its counter on entry, so waiting on it and then reading the
+   ledger races the commit. Enabling listener observation widened the window enough to make a latent
+   flake a red build.
+
+Two more were found by tests behaving correctly, and both are recorded in the code rather than worked
+around: Spring's own `RestClient` logs the body it is about to send at `DEBUG`, so the first
+`LogRedactionIT` was catching its own harness; and `StreamHandler` binds its stream at construction
+while pytest swaps its capture buffer between phases, so three redaction assertions passed against an
+empty string — the worst possible way for a redaction test to be green.
+
+### What was checked, and how
+
+- **One trace end to end**, on the running stack: `c591f5172d73068c9f55902c1777d29d`, seven spans,
+  root at the HTTP ingest with the Kafka consumer beneath it and the scoring call beneath that.
+- **48 dashboard panel queries** run directly against Prometheus: 0 empty, 0 malformed, against an
+  API restarted less than a minute earlier. Running the queries rather than looking at the dashboard
+  is what turned "five panels are blank" into five fixed defects.
+- 232 API unit tests, the full 303-test Testcontainers suite, 186 scoring tests, `ruff` and
+  `mypy --strict` clean.
+
+### Deliberately not done
+
+- **No alert rules.** `rule_files: []` still, with its reason: a rule with no runbook is a pager
+  nobody knows how to answer. They belong with the runbooks, which are the next action.
+- **The scoring service emits no spans.** It reads `traceparent` and puts the ids on its log lines
+  instead. Emitting spans means three runtime dependencies to add one server span inside a hop the
+  caller already measures, and `apps/scoring/src/sentinelflow_scoring/trace.py` argues the boundary
+  and says where the decision changes.
+- **The Phase 7 gate is not claimed.** Two criteria met with evidence, one partly met, one not
+  attempted. The gate table says which.
+
+### One instruction recorded during the session
+
+The user asked that the Phase 6 assignee-identity limitation be carried forward as required pre-v1
+work rather than left as a note. `PROJECT_STATE.md` now has a "Required before v1 — carried forward"
+section with a binding definition of done, the resume instructions point at it, and Phase 10's gate
+in the implementation plan requires it. The same section records the two items no session may mark
+complete on a person's behalf: the screen-reader pass and the manual authenticated browser
+walkthrough.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: the resilience drills as tests rather than a document, then the nine
+runbooks the drills give real content to, then close the Phase 7 gate honestly and start Phase 8.

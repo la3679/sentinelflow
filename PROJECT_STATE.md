@@ -14,22 +14,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-29T01:05Z                                                                                                                                |
-| Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — **Phase 6 closed against its gate**; Phase 7 is next                                                                                    |
-| Current phase        | Phase 7 — observability and resilience (not started)                                                                                             |
-| Current task         | **none in progress.** Phase 6 is closed and merged; Phase 7 has not been started — the session stopped there at the user's request               |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `main`                                                                                                                                           |
-| Local clone verified | **yes**                                                                                                                                          |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none — [#67](https://github.com/la3679/sentinelflow/pull/67) merged                                                                              |
-| Latest release       | none                                                                                                                                             |
+| Field                | Value                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-08-31T00:15Z                                                                                                                                                                     |
+| Updated by           | Claude                                                                                                                                                                                |
+| Overall status       | active — **Phase 7 is four deliverables into six**, all merged to `main`                                                                                                              |
+| Current phase        | Phase 7 — observability and resilience (in progress)                                                                                                                                  |
+| Current task         | **none in progress.** Metrics, structured logging with redaction, trace propagation and the dashboards are merged. Resilience drills and the runbooks are what remain before the gate |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                              |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                  |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                    |
+| Working branch       | `main`                                                                                                                                                                                |
+| Local clone verified | **yes**                                                                                                                                                                               |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                      |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                  |
+| Open PRs             | none — [#70](https://github.com/la3679/sentinelflow/pull/70) through [#73](https://github.com/la3679/sentinelflow/pull/73) merged                                                     |
+| Latest release       | none                                                                                                                                                                                  |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -81,7 +81,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 4 — synthetic data and scoring**
 - [x] **Phase 5 — alerts and investigations**
 - [x] **Phase 6 — operations frontend**
-- [ ] **Phase 7 — observability and resilience** ← next
+- [ ] **Phase 7 — observability and resilience** ← in progress: four of six deliverables merged
 - [ ] Phase 8 — security and quality hardening
 - [ ] Phase 9 — performance and documentation
 - [ ] Phase 10 — release
@@ -971,6 +971,111 @@ does. Trusting the repository over this file, as `CLAUDE.md` says to.
 The schema's description of that field was corrected instead, for a different reason: it called it
 "the single largest contributor", which is not well defined across two incomparable scales.
 
+## In progress — Phase 7, merged as PRs [#70](https://github.com/la3679/sentinelflow/pull/70) through [#73](https://github.com/la3679/sentinelflow/pull/73)
+
+**Four of six deliverables are on `main`.** [ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md)
+fixes what each signal answers and what none of them may carry; the metric set, structured logging
+with redaction, W3C trace propagation and five Grafana dashboards are merged. **Resilience drills and
+the runbooks are what remain**, and the phase gate is not claimed until they land — see "Next three
+actions".
+
+### The metric set (PR [#70](https://github.com/la3679/sentinelflow/pull/70))
+
+Eleven application metrics became a set that answers the four questions the deleted console panels
+named. The scoring client counts every call by outcome and times the three that made one;
+`breaker_open` is counted and deliberately **not** timed, because a refused call takes no measurable
+time and folding those zeroes into the histogram would make an outage look like the fastest scoring
+the system has ever done. The breaker is three gauges, one per state, rather than one gauge with an
+encoding every panel would have to carry in a comment.
+
+Ingestion counts all three outcomes, so a retry storm reads as a replay rate rather than as
+throughput that looks flat while the database works.
+
+**Consumer lag and dead-letter depth are measured by the API with a Kafka admin client**, weighed in
+ADR-0016 §6 against a `kafka-exporter` container. A broker that stops answering **holds the last
+reading** rather than reporting zero — zero is what a healthy pipeline reports, so an alert rule
+would say everything was fine throughout an outage.
+
+Buckets everywhere, never client-side percentiles (ADR-0016 §3).
+
+### Structured logging and redaction (PR [#71](https://github.com/la3679/sentinelflow/pull/71))
+
+`structlog` had been a declared dependency of the scoring service since Phase 4 with every log call
+going through it — and **nothing ever called `structlog.configure`**, so it rendered with console
+defaults. The API ran Logback's default pattern encoder. Both now emit JSON in their containers and
+human-readable text on a terminal.
+
+The redaction rule is that a log line is built from named fields at the call site. Eight records that
+would have printed an amount, a device handle or an idempotency key through a generated `toString`
+now print identifiers and classification and say what they withheld. Account and merchant references
+stay: they are how an operator finds the thing they were paged about.
+
+Two findings recorded in the code rather than worked around:
+
+- **Spring's own `RestClient` logs the body it is about to send at `DEBUG`**, so the first version of
+  `LogRedactionIT` was catching its own harness. It posts with the JDK's client now.
+- **`StreamHandler` binds its stream at construction and pytest swaps its capture buffer between
+  phases**, so three redaction assertions passed against an empty string until that was understood —
+  the worst possible way for a redaction test to be green.
+
+### Trace propagation (PR [#72](https://github.com/la3679/sentinelflow/pull/72))
+
+V6 left `outbox_events.trace_id` nullable and `TransactionWriter` said why it was null. It is
+populated now, and `V11` adds the `trace_parent` the outbox needs to carry a trace across its own
+delay — continuing a trace needs the parent span id, which a trace id alone does not have. A check
+constraint requires the two columns to agree.
+
+The listener continues the trace from the record header. **Producer-side observation stays off
+deliberately**: the publisher writes the header itself from the stored value, and template
+observation would overwrite it with the scheduler thread's context, reintroducing the second
+disconnected trace the whole arrangement exists to prevent.
+
+**Four defects, and only one was catchable by a test:**
+
+1. **`micrometer-tracing-bridge-otel` alone produced no `Tracer` bean at all.** Boot 4 moved the
+   autoconfiguration into its own module, exactly as it did with Flyway. Three tests were green while
+   the feature did nothing; an integration test looking at a database row found it.
+2. **`management.otlp.tracing.*` is the pre-4.1 spelling and binds nothing.** Those keys are still in
+   the configuration metadata with no description and no default. Propagation worked perfectly the
+   whole time, so every assertion passed while Tempo had never received a span. The names that work
+   are `management.opentelemetry.tracing.export.otlp.endpoint` and
+   `management.tracing.export.otlp.enabled`.
+3. **The OpenTelemetry starter auto-configured a second metrics registry** pointed at
+   `localhost:4318`, failing with a stack trace on a timer. Off now: metrics are Prometheus's, and
+   two registries publishing the same meters is two places the same rate can disagree.
+4. **Tempo and the collector cannot be healthchecked at all** — both images are distroless, and the
+   probe failed with `stat /bin/sh: no such file or directory` while Tempo ran perfectly. Neither has
+   one now, and both say why.
+
+### The dashboards, and the five defects they found (PR [#73](https://github.com/la3679/sentinelflow/pull/73))
+
+Five dashboards, provisioned from files with `allowUiUpdates: false` so a dashboard tuned during an
+incident cannot be the only copy.
+
+Building them was the best test the metric set has had. **Every panel query was run against the live
+Prometheus and eight came back empty**, of which five were application defects: the alert counters
+did not exist until an alert was raised, ingestion conflicts likewise, consumer outcomes vanished on
+every restart, and the outbox publication timer had no buckets at all — so a p95 over it was not
+merely wrong but impossible. The fifth was a query of this session's own naming `CONFIRMED_FRAUD` and
+`FALSE_POSITIVE`, which are not statuses this system has.
+
+The first three are one defect with one fix, and it is a decision this repository had already made:
+`apps/scoring/serving/metrics.py` has initialised its counter series since Phase 4. It had simply
+never been applied anywhere else.
+
+### Evidence, from runs that happened
+
+| Claim                         | Evidence                                                                                                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API unit tests                | 232 tests, 0 failures — `./mvnw -B verify -DskipITs -Djacoco.skip=true`, 2026-08-30                                                                                             |
+| Full Testcontainers suite     | 303 tests, 0 failures on the tracing branch after `MigrationIT` was updated for V11                                                                                             |
+| Scoring suite                 | 186 passed, `ruff` and `mypy --strict` clean over 46 source files                                                                                                               |
+| **One trace, end to end**     | Trace `c591f5172d73068c9f55902c1777d29d`: seven spans, `http post /api/v1/transactions` at the root, `transaction.created.v1 process` beneath it, the scoring call beneath that |
+| **Dashboards load with data** | **48 panel queries, 0 empty, 0 malformed**, against an API restarted less than a minute earlier                                                                                 |
+| Spans reaching the backend    | `tempo_distributor_spans_received_total` 148                                                                                                                                    |
+| Cross-service log join        | The scoring service's line for that transaction carries the same `trace_id`, `correlation_id` and `transaction_id`                                                              |
+| CI                            | All ten required checks green on #70, #71, #72 and #73                                                                                                                          |
+
 ## Completed — Phase 6
 
 **Eight pull requests merged, nothing open**: the API migration audit as
@@ -1214,6 +1319,23 @@ asserts they are equal.
 - **Two enums describe a product this is not.** `TransactionStatus: AUTHORIZED | DECLINED | …` says a
   payment switch decided something; this system scores and never decides. `AlertPriority: P1–P4`
   against the API's `LOW | MEDIUM | HIGH | URGENT`.
+
+## Acceptance criteria status — Phase 7 gate
+
+**Not closed.** Two of the four criteria are met with recorded evidence, one is partly met, and one
+has not been attempted. The four are `docs/planning/IMPLEMENTATION_PLAN.md`'s.
+
+| Criterion                                        | Status            | Evidence, or what is missing                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| One transaction trace can be followed end to end | **met**           | Trace `c591f5172d73068c9f55902c1777d29d` on the running stack, 2026-08-30: seven spans in one trace, `http post /api/v1/transactions` at the root, `transaction.created.v1 process` beneath it — the consumer continuing across the outbox — and the scoring call beneath that. The scoring service's own log line for that transaction carries the same trace id.                               |
+| Dashboards load with data                        | **met**           | All 48 panel queries run against the live Prometheus: 0 empty, 0 malformed, against an API restarted less than a minute earlier. Grafana lists all five as provisioned.                                                                                                                                                                                                                          |
+| Redaction tests pass                             | **partly met**    | `LogRedactionIT` (4) and `tests/test_log_redaction.py` (5) pass, driving real requests and asserting over real captured output at `DEBUG`. **What is not covered:** the API's assertion runs with the application's own package and Spring Web at `DEBUG`, not the whole framework, and neither suite exercises the alert or reporting paths. Both are worth widening before this is called met. |
+| A documented failure drill succeeds              | **not attempted** | No drill has been written or run. This is action 1 in "Next three actions", and it is the criterion that most needs doing: the scoring and Kafka failure paths are the two the system is explicitly designed to survive, and neither has ever been deliberately exercised.                                                                                                                       |
+
+**Two deliverables from the plan are also outstanding**, and they are the same two: the resilience
+drills, and the nine runbooks the drills give real content to. `infra/prometheus/prometheus.yml`
+still carries `rule_files: []` deliberately — a rule with no runbook is a pager nobody knows how to
+answer — so alert rules land with the runbooks rather than before them.
 
 ## Acceptance criteria status — Phase 6 gate
 
@@ -2214,27 +2336,56 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 6 is closed against its gate**, with the evidence for each criterion recorded above and the
-three deviations stated rather than glossed. Nothing is open and `main` is green. Phase 7 is next,
-and its subject is the one this build keeps running into: three defects in a row have been invisible
-to every suite and visible only to somebody watching the stack.
+**Phase 7 is four deliverables into six.** ADR-0016, the metric set, structured logging with
+redaction, trace propagation and five dashboards are merged as
+[#70](https://github.com/la3679/sentinelflow/pull/70) through
+[#73](https://github.com/la3679/sentinelflow/pull/73); nothing is open and `main` is green. **Do not
+claim the Phase 7 gate yet** — two of its four criteria are met with recorded evidence and two are
+not, which is set out under "Acceptance criteria status — Phase 7 gate" below.
 
-1. **The metric set, low-cardinality, across API, outbox, Kafka, scoring and alerts.** This is what
-   the three deleted console panels are waiting on — throughput, scoring latency percentiles,
-   consumer lag and dead-letter depth are named on the screens as Phase 7's. It is also
-   [ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) §4's third precondition
-   for replacing polling with a stream.
-2. **Structured JSON logging with redaction tests, and W3C trace propagation across HTTP and
-   Kafka.** The gate is that one transaction can be followed end to end, and the pieces that make
-   that possible are already half there: `CorrelationIdFilter` puts an identifier on every request
-   and every problem document carries it, but nothing propagates a trace across the Kafka hop.
-3. **Version-controlled Grafana dashboards and the failure drills**, then the runbooks each
-   dashboard makes usable. `docs/operations/RUNBOOKS.md` has four already, written before the
-   signals they describe existed; Phase 7 is where they stop being aspirational.
+1. **The resilience drills, as tests rather than as a document.** Two failures the system is designed
+   to survive and neither has ever been exercised deliberately: the scoring service going away, and
+   the broker going away. The scoring drill has most of its scaffolding already — `ScoringClientTests`
+   drives a stub through timeouts and a 503 and asserts the breaker opens — but nothing asserts the
+   _system-level_ consequence, which is that assessments keep being written, degraded, at full
+   throughput, and that they stop being degraded when scoring returns. The Kafka drill is the harder
+   and more valuable one: stop the broker mid-run, assert the outbox retains and `pending` climbs,
+   restart it, assert the backlog drains and no event was lost or duplicated in the ledger.
+   Testcontainers can stop and start a container inside a test, so both are automatable rather than
+   a script somebody runs by hand.
+2. **The runbooks, once the drills say what actually happens.** `docs/operations/RUNBOOKS.md` has
+   four, written before the signals they describe existed, and the plan asks for nine: API down,
+   scoring down, consumer lag, outbox backlog, DLQ growth, connection saturation, high error rate,
+   slow report query, model artifact load failure. Every one of them can now name a real dashboard
+   panel and a real metric, and several can name a trace. The existing four need revisiting rather
+   than leaving: they predate the numbers and say "read it with `kafka-consumer-groups.sh`" where a
+   gauge now exists.
+3. **Close the Phase 7 gate honestly, then start Phase 8.** The two open criteria are the drill and
+   the redaction claim at the level the ADR states it — see the gate table. Phase 8 is security and
+   quality hardening, and it inherits one item already named in "Known issues": `/actuator/prometheus`
+   is published to the host on the local stack.
 
-**The observability ADR needs a number allocated when it is written.** The implementation plan used
-to pin it to ADR-0013, which Phase 6 took for the CORS decision; the plan now says so instead of
-naming a number that is already used.
+**Nothing else in Phase 7 is outstanding.** Alert rules were deliberately not added:
+`infra/prometheus/prometheus.yml` still has `rule_files: []` with the reason written beside it — a
+rule with no runbook is a pager nobody knows how to answer — so alert rules belong with action 2, not
+before it.
+
+### Three things this session learned the hard way, worth carrying forward
+
+- **Spring Boot 4 splits autoconfiguration into its own modules, and the failure is silent.**
+  `micrometer-tracing-bridge-otel` on the classpath with no `spring-boot-starter-opentelemetry`
+  produced no `Tracer` bean, no spans and no warning. This is the second time — Flyway was the first,
+  and its pom comment has said so since Phase 2. **When a Boot feature does nothing and says nothing,
+  check for a missing `spring-boot-*` module before debugging anything else.**
+- **A property that binds nothing looks exactly like a property that works.**
+  `management.otlp.tracing.*` still appears in the configuration metadata and is the pre-4.1 spelling.
+  Every test passed while no span left the process. If a configured thing appears not to happen,
+  verify the property name against the metadata in the jar rather than against a search result.
+- **Run the dashboard queries, not the dashboard.** Eight of forty-eight returned nothing, and five
+  of those were application defects rather than dashboard mistakes. A panel that renders "No data" is
+  indistinguishable from one showing zero, and Grafana reports both as a dashboard that loaded.
+  `curl 'localhost:9090/api/v1/query?query=<expr>'` over every panel target is a five-minute check
+  that is worth repeating whenever a metric changes.
 
 **One decision is still open and it is not the console's.** How an assignee's identifier resolves
 to a person. Until it is made, the console can release an alert but cannot give one to anybody, and
