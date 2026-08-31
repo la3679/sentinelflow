@@ -403,6 +403,11 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # The alerting rules, at the path prometheus.yml's rule_files glob points
+      # at. A separate mount for the same reason Grafana's dashboards are one:
+      # the scrape configuration and the rules are two different things, and a
+      # rule added to the directory needs no change to the file above.
+      - ./infra/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9090/-/healthy"]
