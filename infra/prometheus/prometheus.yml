@@ -11,10 +11,20 @@ global:
     environment: local
     project: sentinelflow
 
-# No alerting rules yet. Alerts are defined in Phase 7 alongside the dashboards
-# and runbooks that make them actionable; a rule with no runbook is a pager
-# that nobody knows how to answer.
-rule_files: []
+# Alerting rules, one file, mounted read-only at this path by compose.yaml.
+#
+# They waited for the runbooks rather than landing beside the dashboards: a rule
+# with no runbook is a pager nobody knows how to answer, so every rule in there
+# carries a `runbook` annotation naming the section of
+# docs/operations/RUNBOOKS.md that answers it.
+#
+# There is no Alertmanager in this stack, so nothing pages anybody. A firing
+# rule appears on Prometheus's own Alerts page and can be graphed with ALERTS in
+# Grafana. Adding Alertmanager would be a service with no recipient; the rules
+# are worth having anyway, because they put the thresholds somewhere they can be
+# read and argued with.
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
   - job_name: prometheus

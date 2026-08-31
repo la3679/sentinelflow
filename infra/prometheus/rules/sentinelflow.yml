@@ -1,0 +1,269 @@
+# Alerting rules for the local SentinelFlow stack.
+#
+# ---------------------------------------------------------------------------
+# What these are, and what they are not
+# ---------------------------------------------------------------------------
+#
+# Every rule below points at a numbered runbook in docs/operations/RUNBOOKS.md
+# through its `runbook` annotation. That pairing is the reason this file did not
+# exist until now: a rule with no runbook is a pager nobody knows how to answer,
+# so the rules waited for the runbooks rather than landing beside the dashboards.
+#
+# **There is no Alertmanager in this stack, so nothing pages anyone.** A firing
+# rule appears on Prometheus's own Alerts page at http://localhost:9090/alerts
+# and can be graphed with ALERTS in Grafana. Adding Alertmanager would be a
+# service with no recipient, on a stack that runs on one laptop and holds
+# synthetic data — the rules are worth having because they write the thresholds
+# down where they can be read and argued with; the delivery half is not.
+#
+# **No threshold here is calibrated against a measured baseline.** Phase 9 runs
+# the benchmarks. Each rule states which configured value it is derived from, or
+# says plainly that it is a convention, so the next person can re-derive it
+# rather than guess at it again. Two are conventions and both say so.
+#
+# Every metric named below is registered in application code and was queried
+# against the running stack when this file was written; none is aspirational.
+
+groups:
+  # -------------------------------------------------------------------------
+  # Availability — is the thing there at all
+  # -------------------------------------------------------------------------
+  - name: sentinelflow-availability
+    rules:
+      - alert: ApiDown
+        expr: up{job="sentinelflow-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: The API has not answered a scrape for two minutes
+          description: >-
+            Prometheus cannot scrape sentinelflow-api. Ingestion, the console and every
+            report are unavailable while this holds. Nothing is lost: transactions that
+            were accepted are committed, and the outbox retains what has not been
+            published.
+          runbook: docs/operations/RUNBOOKS.md#runbook-5--the-api-is-down
+        # 2m is eight consecutive failed scrapes at the global 15s interval.
+        # Shorter fires on a deploy; longer is a long time to be down.
+
+      - alert: ScoringUnreachable
+        expr: up{job="sentinelflow-scoring"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: scoring
+        annotations:
+          summary: The scoring service has not answered a scrape for two minutes
+          description: >-
+            Assessments continue, degraded to the rule baseline. This is reduced
+            coverage rather than an outage — see ScoringBreakerOpen for the API's own
+            view of the same fault.
+          runbook: docs/operations/RUNBOOKS.md#runbook-4--assessments-are-degrading
+        # Warning rather than critical, deliberately: ADR-0008 §3 makes this a
+        # degradation the pipeline is designed to absorb, and a page for a
+        # condition the system handles by itself teaches people to ignore pages.
+
+  # -------------------------------------------------------------------------
+  # Scoring — the dependency the pipeline degrades around
+  # -------------------------------------------------------------------------
+  - name: sentinelflow-scoring
+    rules:
+      - alert: ScoringBreakerOpen
+        expr: sentinelflow_scoring_breaker_state{state="OPEN"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          component: scoring
+        annotations:
+          summary: The circuit breaker in front of scoring has been open for two minutes
+          description: >-
+            The API is degrading assessments without attempting a scoring call. Every
+            transaction is still assessed and none is dead-lettered; the model's
+            contribution is missing from anything written while this holds.
+          runbook: docs/operations/RUNBOOKS.md#runbook-4--assessments-are-degrading
+        # Derived from circuit-breaker-open-duration, 30s. A breaker still open
+        # after two minutes has let a probe through and re-opened at least three
+        # times, so this is an outage rather than one slow call.
+
+      - alert: ScoringModelMissing
+        expr: sentinelflow_scoring_model_loaded == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: scoring
+        annotations:
+          summary: The scoring service is running with no model loaded
+          description: >-
+            /v1/score refuses with 503 and every assessment degrades to rules. The
+            service is healthy and serving nothing, which is a different fault from a
+            container that is down.
+          runbook: docs/operations/RUNBOOKS.md#runbook-9--the-scoring-model-will-not-load
+        # A model is resolved once, at startup, so this gauge does not recover on
+        # its own and any non-zero duration is already terminal. 10m is only
+        # long enough that a restart, or a deliberate short run against an empty
+        # registry, does not fire it.
+
+      - alert: AssessmentsDegrading
+        expr: sum(rate(sentinelflow_risk_assessments_total{outcome="degraded"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: scoring
+        annotations:
+          summary: Assessments have been degrading continuously for ten minutes
+          description: >-
+            Written assessments carry no model score. A degraded assessment is never
+            upgraded automatically when scoring recovers (ADR-0008 §2), so this is also
+            a growing set of rows that will stay degraded.
+          runbook: docs/operations/RUNBOOKS.md#runbook-4--assessments-are-degrading
+        # Above zero rather than above a share. The breaker's open window is 30s
+        # and the client's whole retry budget is under ten seconds, so ten
+        # minutes of continuous degradation cannot be explained by either.
+
+  # -------------------------------------------------------------------------
+  # The event pipeline
+  # -------------------------------------------------------------------------
+  - name: sentinelflow-pipeline
+    rules:
+      - alert: OutboxBacklogStale
+        expr: sentinelflow_outbox_oldest_age_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+          component: outbox
+        annotations:
+          summary: The oldest unpublished event has been over a minute old for five minutes
+          description: >-
+            State changes are committed and not published, so every consumer is working
+            from a stale view. Nothing is lost — that is what the outbox is for — and
+            the backlog is unbounded until the broker returns.
+          runbook: docs/operations/RUNBOOKS.md#runbook-3--outbox-backlog
+        # Derived from poll-interval, 500ms. A healthy oldest-age is under a
+        # second, so 60s is 120 drains that did not happen or did not succeed.
+        # Age rather than depth: a queue of constant size is healthy if it is
+        # turning over (ADR-0005 §6).
+
+      - alert: OutboxEventsFailed
+        expr: sentinelflow_outbox_failed > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: outbox
+        annotations:
+          summary: An outbox event has exhausted its retry budget
+          description: >-
+            FAILED is terminal by ADR-0005 §4 and these events will not be retried
+            automatically. Each one is a state change that happened and that nothing
+            downstream has been told about.
+          runbook: docs/operations/RUNBOOKS.md#runbook-3--outbox-backlog
+        # Above zero, with no tolerance: reaching FAILED already took ten
+        # attempts over roughly 25 minutes. The 1m is to let a scrape land, not
+        # to wait and see.
+
+      - alert: ConsumerLagSustained
+        expr: sentinelflow_kafka_consumer_lag > 150
+        for: 10m
+        labels:
+          severity: warning
+          component: consumer
+        annotations:
+          summary: The transaction-risk group has been more than one poll behind for ten minutes
+          description: >-
+            Assessment is falling behind ingestion. Nothing is lost — offsets are
+            committed per record after the listener returns — but the console is missing
+            recent activity.
+          runbook: docs/operations/RUNBOOKS.md#runbook-2--consumer-lag-and-a-stalled-partition
+        # 150 = max-poll-records (50) x the topic's three partitions: one full
+        # poll's worth on every partition at once. Below that the consumer is
+        # keeping up with what a single poll can hand it.
+
+      - alert: DeadLetterGrowing
+        expr: increase(sentinelflow_consumer_deadletter_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: consumer
+        annotations:
+          summary: Events are being dead-lettered
+          description: >-
+            Every dead-lettered event is a transaction that will never be assessed
+            unless the record is reprocessed. Break the count down by class before
+            doing anything else — the class is the diagnosis.
+          runbook: docs/operations/RUNBOOKS.md#runbook-1--dead-letter-queue-growth
+
+      - alert: UndeliverableRecords
+        expr: increase(sentinelflow_consumer_undeliverable_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: consumer
+        annotations:
+          summary: Records are arriving that are not readable as an envelope
+          description: >-
+            These are not on the dead-letter topic — ADR-0006 §4 forbids copying
+            unsanitised content onto an operational topic — so the log line naming the
+            topic, partition and offset is the only route to them.
+          runbook: docs/operations/RUNBOOKS.md#runbook-1--dead-letter-queue-growth
+
+  # -------------------------------------------------------------------------
+  # The API's own health, once it is up
+  # -------------------------------------------------------------------------
+  - name: sentinelflow-api
+    rules:
+      - alert: HighServerErrorRate
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{application="sentinelflow-api",status=~"5.."}[5m]))
+          / clamp_min(sum(rate(http_server_requests_seconds_count{application="sentinelflow-api"}[5m])), 0.0001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: More than one request in twenty is failing with a server error
+          description: >-
+            A 5xx is the API's own fault by definition; a rejected or malformed request
+            is a 4xx and is not counted here.
+          runbook: docs/operations/RUNBOOKS.md#runbook-7--a-high-server-error-rate
+        # 5% is a convention, not a measurement, and it is the first threshold
+        # to replace with Phase 9's baseline. clamp_min keeps the ratio defined
+        # on an idle stack, where the denominator is zero.
+
+      - alert: ConnectionPoolSaturated
+        expr: hikaricp_connections_pending{application="sentinelflow-api"} > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: Requests have been queuing for a database connection for five minutes
+          description: >-
+            Every pending thread is a request that will fail if the pool does not free a
+            connection in time. Latency rises across every endpoint at once, which is
+            what distinguishes this from one slow query.
+          runbook: docs/operations/RUNBOOKS.md#runbook-6--database-connection-saturation
+        # Derived from connection-timeout, 10s: a thread pending longer than that
+        # fails its request. Sustained over five minutes the pool is the
+        # bottleneck rather than a burst, which one scrape could not tell apart.
+
+      - alert: SlowReportQuery
+        expr: >-
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket{application="sentinelflow-api",uri=~"/api/v1/reports.*"}[10m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Report requests are taking more than five seconds at p95
+          description: >-
+            A report is a scan over a window an operator chose, so this is usually the
+            window rather than the system. It also holds a database connection for its
+            whole duration, which is how one slow report becomes everyone's problem.
+          runbook: docs/operations/RUNBOOKS.md#runbook-8--a-slow-report-query
+        # Five seconds is a convention. Nothing configured implies it and no
+        # baseline has been measured; it is set where a person would already
+        # call the request slow, and Phase 9 replaces it with a number.
