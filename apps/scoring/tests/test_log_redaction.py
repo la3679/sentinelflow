@@ -33,6 +33,7 @@ import json
 import logging
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -69,6 +70,24 @@ def client(logs: io.StringIO) -> Iterator[TestClient]:
         Settings(
             git_sha="0" * 40,
             models_root=REGISTRY_ROOT,
+            log_format="json",
+            log_level="DEBUG",
+        )
+    )
+    configure_logging("DEBUG", "json", stream=logs)
+    with TestClient(application) as running:
+        yield running
+
+
+@pytest.fixture
+def modelless_logging_client(logs: io.StringIO, tmp_path: Path) -> Iterator[TestClient]:
+    """The same shipped pipeline, over a registry with nothing in it."""
+    empty = tmp_path / "models"
+    empty.mkdir()
+    application = create_app(
+        Settings(
+            git_sha="0" * 40,
+            models_root=empty,
             log_format="json",
             log_level="DEBUG",
         )
@@ -125,6 +144,30 @@ def test_a_rejected_request_names_its_fields_and_echoes_none_of_them(
     # the morning, so the line has to still say what was wrong and where.
     assert "request rejected" in stream
     assert "transaction.amount.currency" in stream
+
+
+def test_a_refused_request_logs_no_part_of_the_body_it_could_not_score(
+    modelless_logging_client: TestClient, logs: io.StringIO
+) -> None:
+    """The third outcome, and the one the API's degraded assessment depends on.
+
+    ``scored`` and ``invalid`` are covered above. ``unavailable`` is the path a
+    clone that has never trained a model takes, and it is the one a caller
+    provokes most often during an incident — so it is the one most worth
+    asserting is not where the body ends up. An empty registry directory rather
+    than a patched flag: that is exactly what the state looks like on disk.
+    """
+    response = modelless_logging_client.post("/v1/score", json=scoring_request())
+    assert response.status_code == 503, response.text
+
+    stream = written(logs)
+    for value in FORBIDDEN:
+        assert value not in stream, f"{value} reached the log"
+
+    # And the refusal still says what happened, or the redaction has cost the
+    # log the thing it was for.
+    assert AMOUNT not in response.text
+    assert stream.strip(), "the service wrote nothing about a request it refused"
 
 
 def test_the_json_renderer_produces_one_parsable_object_per_line(

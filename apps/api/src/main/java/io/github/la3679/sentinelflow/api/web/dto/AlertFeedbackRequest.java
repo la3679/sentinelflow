@@ -19,4 +19,17 @@ import io.github.la3679.sentinelflow.api.domain.FeedbackLabel;
  * @param reason why, in the analyst's own words. Optional, and stored rather than interpreted.
  */
 public record AlertFeedbackRequest(
-        @NotNull FeedbackLabel label, @Size(max = 1000) String reason) {}
+        @NotNull FeedbackLabel label, @Size(max = 1000) String reason) {
+
+    /**
+     * The verdict, never the sentence behind it.
+     *
+     * <p>The same rule as {@link AlertNoteRequest}: an analyst's own words are a request body, and
+     * the framework renders a deserialised body at {@code DEBUG}. The label is the part a log line
+     * about feedback has any use for.
+     */
+    @Override
+    public String toString() {
+        return "AlertFeedbackRequest[label=" + label + " reason redacted]";
+    }
+}

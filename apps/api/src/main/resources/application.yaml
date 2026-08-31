@@ -584,3 +584,31 @@ logging:
     # the data is fake" is not a control. A genuine failure still reaches the
     # log through the exception the application actually handles.
     org.hibernate.orm.jdbc.error: ERROR
+    # Hibernate's bind logger prints every bound parameter of every statement.
+    # It exists to do exactly what ADR-0016 section 4 forbids, and on this
+    # schema the parameters are amounts, device handles and idempotency keys.
+    #
+    # Pinned rather than left to the root level, because the root level is not
+    # the only thing that raises it: `logging.level.org.hibernate=DEBUG` while
+    # chasing something unrelated is enough. A developer who genuinely wants
+    # bound parameters lifts this line deliberately, which is the intended
+    # trade.
+    org.hibernate.orm.jdbc.bind: INFO
+    # Hibernate dumps the full state of every entity in the persistence context
+    # at DEBUG - one line per entity, every property rendered by its type. On
+    # this schema that line carries a transaction's amount, its device handle
+    # and its idempotency key; on an outbox row it carries the whole event
+    # payload; on an alert action it carries the analyst's own words.
+    #
+    # Pinned for the same reason as the line above, and it is the same kind of
+    # thing: a debugging tool whose entire purpose is to print what ADR-0016
+    # section 4 forbids. Unlike a request DTO, an entity cannot defend itself -
+    # the printer reads properties through the persister rather than calling
+    # toString - so pinning the logger is the only control available.
+    #
+    # The cost is that raising Hibernate's core logging needs this line lifted
+    # deliberately. That is the intended trade: a developer who wants entity
+    # dumps can have them by asking, and a deployment that raised
+    # `org.hibernate` while chasing something unrelated does not get them by
+    # accident. Found by widening LogRedactionIT to every logger at DEBUG.
+    org.hibernate.orm.core: INFO

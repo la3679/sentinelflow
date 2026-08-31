@@ -16,4 +16,22 @@ import jakarta.validation.constraints.Size;
  * anything, so two analysts writing one at the same time both succeed and both notes are kept.
  * Demanding a version would refuse the second for no reason a user could act on.
  */
-public record AlertNoteRequest(@NotBlank @Size(max = 2000) String note) {}
+public record AlertNoteRequest(@NotBlank @Size(max = 2000) String note) {
+
+    /**
+     * That there is a note, never what it says.
+     *
+     * <p>Spring's {@code RequestResponseBodyMethodProcessor} logs {@code Read "application/json" to
+     * […]} at {@code DEBUG}, rendering the deserialised record. ADR-0016 §4 forbids a whole request
+     * body in a log at every level, and this body is nothing but an analyst's own words about an
+     * alert. Without this override, raising the framework's own logger to {@code DEBUG} — which a
+     * deployment may do while chasing something unrelated — writes every note into the log.
+     *
+     * <p>Found by widening {@code LogRedactionIT} to the alert workflow, which no earlier version of
+     * it exercised.
+     */
+    @Override
+    public String toString() {
+        return "AlertNoteRequest[note redacted, " + (note == null ? 0 : note.length()) + " chars]";
+    }
+}
