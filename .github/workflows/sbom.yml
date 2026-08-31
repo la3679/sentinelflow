@@ -1,0 +1,191 @@
+name: Security — SBOM and checksums
+
+# What this repository actually ships, enumerated, with a digest for each file.
+#
+# Two SBOMs per run, because they answer different questions and only having one
+# of them would be misleading:
+#
+#   - **Per image.** What is installed in the artifact somebody runs: the
+#     resolved Maven tree, the distribution packages, the interpreter. This is
+#     the one a vulnerability scanner should be pointed at.
+#   - **Source.** What the repository declares: the Bun lockfile, the uv
+#     lockfile, the pom, and the GitHub Actions the workflows pin.
+#
+# The gap between them is the point. Measured 2026-08-31 with syft: the source
+# tree yields 22 Maven components and the built API image yields 138, because
+# Maven resolves transitively and nothing in this repository locks that
+# resolution. A source SBOM alone would under-report the Java tree six-fold.
+# The other three ecosystems do not have that gap - Bun and uv both lock, and
+# the source scan reads those lockfiles (245 npm, 57 pypi) rather than the
+# manifests.
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # File components are off. A default image scan emitted 3,966 of them beside
+  # 262 real packages - every file in /etc with a digest - which is 1.7 MB of
+  # JSON that answers no question anybody asks an SBOM. Measured 2026-08-31.
+  SYFT_FILE_METADATA_SELECTION: none
+
+jobs:
+  images:
+    name: SBOM for ${{ matrix.image.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: api
+            context: apps/api
+            dockerfile: apps/api/Dockerfile
+          - name: scoring
+            context: apps/scoring
+            dockerfile: apps/scoring/Dockerfile
+          # The console builds from the repository root: the Bun workspace root
+          # owns the single lockfile, and a frozen install needs it.
+          - name: web
+            context: .
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4.3.0
+
+      # Built here rather than pulled from a registry, because nothing is
+      # pushed to one. The cache is shared with ci-containers.yml by scope, so
+      # this is usually a cache hit rather than a second full build.
+      - name: Build image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          push: false
+          load: true
+          tags: sentinelflow-${{ matrix.image.name }}:sbom
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+
+      # Third-party action pinned to an immutable commit SHA.
+      - name: Generate the image SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: sentinelflow-${{ matrix.image.name }}:sbom
+          # CycloneDX rather than SPDX. Both are legitimate; CycloneDX is what
+          # the vulnerability tooling in this stack reads, and picking the one
+          # nothing here consumes would be producing a document for its own
+          # sake.
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.image.name }}.cdx.json
+          # The action's own artifact upload is off: this workflow collects
+          # every document into one artifact with a checksum file below, and two
+          # upload paths would mean two answers to "which SBOM is the release's".
+          upload-artifact: false
+          upload-release-assets: false
+
+      # A document nobody looked at is not evidence. This fails the job if the
+      # SBOM is empty or missing the ecosystem the image is built from, which is
+      # the failure a silently-misconfigured cataloger produces.
+      - name: Assert the SBOM found what this image is made of
+        run: |
+          file="sbom-${{ matrix.image.name }}.cdx.json"
+          test -s "$file" || { echo "::error::$file is empty"; exit 1; }
+          count="$(jq '.components | length' "$file")"
+          echo "$file lists $count components"
+          [ "$count" -gt 20 ] || { echo "::error::only $count components; a cataloger is not running"; exit 1; }
+
+      - name: Upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sbom-${{ matrix.image.name }}
+          path: sbom-${{ matrix.image.name }}.cdx.json
+          retention-days: 90
+
+  source:
+    name: SBOM for the source tree, and the checksums
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: images
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Generate the source SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom-source.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Assert every ecosystem is represented
+        run: |
+          file=sbom-source.cdx.json
+          test -s "$file" || { echo "::error::$file is empty"; exit 1; }
+          # One assertion per ecosystem this repository actually has. A
+          # cataloger that stops recognising a lockfile - Bun's is the one most
+          # likely to move, being the newest - drops its packages silently, and
+          # a total count would not notice because the other three carry it.
+          for ecosystem in npm pypi maven github; do
+            count="$(jq --arg e "$ecosystem" '[.components[] | select(.purl // "" | startswith("pkg:" + $e + "/"))] | length' "$file")"
+            echo "$ecosystem: $count"
+            [ "$count" -gt 0 ] || { echo "::error::no $ecosystem components; its cataloger is not running"; exit 1; }
+          done
+
+      - name: Collect the image SBOMs
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: sbom-*
+          merge-multiple: true
+
+      # SHA-256 over every document, in the format `sha256sum -c` reads, so a
+      # consumer can verify what they downloaded with one command rather than by
+      # eye.
+      - name: Checksum every document
+        run: |
+          sha256sum sbom-*.cdx.json | tee SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Upload the release bundle
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sbom-bundle
+          path: |
+            sbom-*.cdx.json
+            SHA256SUMS
+          retention-days: 90
+
+  attach:
+    name: Attach to the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: source
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      - name: Collect the bundle
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: sbom-bundle
+
+      # `gh release upload` rather than a third-party action: this is the one
+      # job in the repository that writes, and what it writes should be legible
+      # in the diff rather than delegated.
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sbom-*.cdx.json SHA256SUMS --clobber

@@ -559,6 +559,8 @@ Controls that exist today, not aspirations:
 | Dependency review           | Fails a pull request on a high-severity or copyleft addition              |
 | Dependabot                  | Weekly across all five ecosystems                                         |
 | Container scanning          | Trivy on every image; fails on any fixable HIGH or CRITICAL               |
+| Static analysis             | CodeQL over Java, Python and TypeScript, every push and weekly            |
+| SBOM                        | CycloneDX per image and for the source tree, with `SHA256SUMS`            |
 | Non-root containers         | Asserted in CI against the built image                                    |
 | Pinned actions              | Third-party actions pinned to an immutable commit SHA                     |
 | Verified build tooling      | The Maven Wrapper validates a SHA-256 verified against two sources        |

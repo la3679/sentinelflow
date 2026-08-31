@@ -1,0 +1,95 @@
+name: Security — CodeQL
+
+# Static analysis for all three languages this repository ships. Separate from
+# `security-scan.yml`, which answers different questions: that one looks for
+# committed secrets and for dependencies with advisories, and neither of those
+# reads the code. CodeQL reads the code.
+#
+# Not path-filtered, for the same reason as every other workflow here: a
+# workflow skipped by an `on: paths` filter produces no check run at all, which
+# permanently blocks a pull request when the same check is required by a
+# ruleset. See docs/adr/0002.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, on a different day and hour from the secret scan, so a scheduled
+    # week does not start six jobs at once. A query pack improves without this
+    # repository changing, and a scan that only runs on a push would never see
+    # that.
+    - cron: "0 7 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyse ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      # CodeQL uploads its results as a SARIF report to the code-scanning API,
+      # which is what puts a finding on the pull request that introduced it
+      # rather than in a log nobody opens.
+      security-events: write
+
+    strategy:
+      # One language failing should not hide the other two. A matrix that
+      # cancels its siblings turns three answers into one.
+      fail-fast: false
+      matrix:
+        include:
+          - language: java-kotlin
+            build-mode: manual
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Java is compiled, so CodeQL needs the build. `build-mode: manual` means
+      # this workflow runs it between init and analyse; autobuild is deliberately
+      # not used, because it guesses at the toolchain and this project pins one
+      # (Java 25, ADR-0003) that a guess would get wrong.
+      - name: Set up JDK 25
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v6.0.0
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+          cache-dependency-path: apps/api/pom.xml
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # security-and-quality over the default security-extended: this is a
+          # portfolio project whose point is the code being readable, so a
+          # maintainability finding is worth seeing rather than filtering out.
+          # It is noisier, and that is the trade being taken deliberately.
+          queries: security-and-quality
+
+      # Compile only. The tests already run in ci-api.yml against real
+      # PostgreSQL and Kafka, and running them again here would double a
+      # twenty-minute job to answer a question CodeQL does not ask.
+      - name: Build the API for analysis
+        if: matrix.language == 'java-kotlin'
+        working-directory: apps/api
+        run: ./mvnw -B --no-transfer-progress -DskipTests compile
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: "/language:${{ matrix.language }}"
