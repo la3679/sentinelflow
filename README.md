@@ -43,8 +43,8 @@ finished system as though it were running.
 | 5     | Alert lifecycle, investigations, audit             | **complete** |
 | 6     | Operations console wired to the real API           | **complete** |
 | 7     | Observability and resilience                       | **complete** |
-| 8     | Security and release-quality hardening             | next         |
-| 9     | Performance, documentation, clean-clone check      | not started  |
+| 8     | Security and release-quality hardening             | **complete** |
+| 9     | Performance, documentation, clean-clone check      | in progress  |
 | 10    | v1.0.0 release                                     | not started  |
 
 **What runs today:** `docker compose up` starts PostgreSQL, Kafka, the Spring Boot API, the FastAPI
@@ -540,6 +540,49 @@ anything: a tracing backend that is down must not stop the pipeline, so no appli
 them and the exporter fails quietly. Export is off outside `compose`, so a local `./mvnw
 spring-boot:run` still puts trace ids on its log lines without retrying a collector nobody started.
 
+## Performance
+
+**Measured, not estimated.** `make bench` drives the running stack over HTTP and writes
+[`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md) with the machine, the container
+runtime and the dataset it ran against — a latency figure without those three is not reproducible.
+
+Read latency, 2026-08-31, against 21,000 transactions and 13,700 assessments on one developer
+laptop running the whole ten-container stack:
+
+| Endpoint                            | p50   | p95   | p99    |
+| ----------------------------------- | ----- | ----- | ------ |
+| `GET /alerts` (page 1, size 20)     | 22 ms | 37 ms | 110 ms |
+| `GET /transactions` (page 1, 50)    | 27 ms | 40 ms | 45 ms  |
+| `GET /transactions` (page 20, 50)   | 32 ms | 68 ms | 79 ms  |
+| `GET /reports/alert-summary` (24 h) | 20 ms | 36 ms | 37 ms  |
+| `GET /reports/alert-summary` (30 d) | 17 ms | 30 ms | 33 ms  |
+
+A burst of 100 transactions at concurrency 8 was accepted in 0.42 s, and all 100 were scored and
+persisted 3.4 s later — the outbox relay's 500 ms poll (ADR-0005) is inside that, and nothing in
+this pipeline is real-time.
+
+### The one optimization so far, and how it was found
+
+`GET /transactions` was the slowest endpoint by a factor of five. The SQL was captured from
+PostgreSQL's own statement log rather than reconstructed, and `EXPLAIN (ANALYZE, BUFFERS)` showed
+where the time went:
+
+|                    | before      | after      |
+| ------------------ | ----------- | ---------- |
+| Page query         | **68.0 ms** | **5.0 ms** |
+| Shared buffer hits | **71,256**  | **6,155**  |
+
+**The cost was not the sort.** It was the correlated subquery resolving each transaction's latest
+assessment version: it ran **34,629 times** — once per row of a join that had to be fully
+materialised before anything could be discarded — for 98% of the buffers, to return fifty rows.
+There was no index for the query's `ORDER BY occurred_at DESC, id DESC`, so the planner had no way
+to stop early. `V12__transactions_listing_index.sql` adds one; the migration carries both plans and
+the trade it accepts, which is one more index on the highest-volume write path.
+
+**What none of this measures:** sustained throughput (the rate limiter's ceiling is the binding
+constraint by design, and the benchmark stays under it rather than raising it to flatter itself),
+cold starts, the console, or any hardware but the one named in the report.
+
 ## Security
 
 Full policy: [`SECURITY.md`](SECURITY.md). **Report a vulnerability privately**, through
@@ -653,6 +696,7 @@ repository provisions a billable resource.
 | Planning        | [`docs/planning/`](docs/planning/)                                                       |
 | Operations      | [`docs/operations/`](docs/operations/)                                                   |
 | Threat model    | [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md)                         |
+| Benchmarks      | [`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md)                         |
 | Frontend audit  | [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md)                 |
 | API migration   | [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)           |
 | Development     | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md)         |
@@ -662,9 +706,10 @@ repository provisions a billable resource.
 ## Roadmap
 
 Phases 2 through 10 in [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md),
-tracked against milestones M0–M5. In short: contracts and schema, then ingestion and the outbox,
-then synthetic data and scoring, then the alert workflow, then the console against the real API,
-then observability, hardening, performance, and v1.0.0.
+tracked against milestones M0–M5. Eight of eleven phases are closed: contracts and schema,
+ingestion and the outbox, synthetic data and scoring, the alert workflow, the console against the
+real API, observability, and security hardening. **Phase 9 is in progress** — benchmarks, the
+documentation audit and a clean-clone check — and Phase 10 is the release.
 
 ## Licence and acknowledgements
 

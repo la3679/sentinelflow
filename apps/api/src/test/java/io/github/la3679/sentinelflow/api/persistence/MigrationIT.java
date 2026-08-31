@@ -33,7 +33,7 @@ class MigrationIT extends AbstractPostgresTest {
         // Every migration this module ships, in order. Adding one without
         // adding it here fails, which is the point: a migration that ran but
         // that nothing expected is exactly what an accidental commit looks like.
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
 
         Integer failures =
                 jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success = false", Integer.class);
@@ -151,7 +151,12 @@ class MigrationIT extends AbstractPostgresTest {
                         // The scan that looks for work to do.
                         "transactions_pending_idx",
                         // At most one active model, enforced by the database.
-                        "model_registry_single_active_idx");
+                        "model_registry_single_active_idx",
+                        // The transaction list's ORDER BY. Without it the planner
+                        // has to materialise every transaction and sort, which
+                        // measured 68 ms and 71,256 buffers against 21,000 rows
+                        // (V12, and docs/performance/BENCHMARK.md).
+                        "transactions_occurred_id_idx");
     }
 
     @Test

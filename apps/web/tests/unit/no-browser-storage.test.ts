@@ -34,16 +34,22 @@ describe("browser storage", () => {
   });
 
   it("has no source file referencing web storage APIs", async () => {
-    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { readdirSync, readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
 
     const offenders: string[] = [];
     const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir)) {
-        const full = join(dir, entry);
-        if (statSync(full).isDirectory()) {
+      // `withFileTypes` rather than a `statSync` per entry. The stat version
+      // asks the filesystem a second time about a path it has already been told
+      // about, which is a time-of-check/time-of-use gap CodeQL reports as
+      // `js/file-system-race` - and it is a fair report even here, where the
+      // only writer is the developer's own editor. The directory entry already
+      // carries the answer.
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
           walk(full);
-        } else if (/\.tsx?$/.test(entry)) {
+        } else if (/\.tsx?$/.test(entry.name)) {
           const source = readFileSync(full, "utf8");
           // Match real calls, not the prose in doc comments explaining the rule.
           if (/\b(localStorage|sessionStorage)\s*\.\s*(get|set|remove)Item\b/.test(source)) {
