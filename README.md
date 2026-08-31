@@ -28,7 +28,7 @@ data, to be read as engineering rather than as a product.**
 
 ---
 
-## Current status — Phases 0 to 6 complete, Phase 7 next
+## Current status — Phases 0 to 6 complete, Phase 7 in progress
 
 This is an in-progress build, and the README says where it actually is rather than describing the
 finished system as though it were running.
@@ -42,14 +42,18 @@ finished system as though it were running.
 | 4     | Synthetic data generation and risk scoring         | **complete** |
 | 5     | Alert lifecycle, investigations, audit             | **complete** |
 | 6     | Operations console wired to the real API           | **complete** |
-| 7     | Observability and resilience                       | next         |
+| 7     | Observability and resilience                       | in progress  |
 | 8     | Security and release-quality hardening             | not started  |
 | 9     | Performance, documentation, clean-clone check      | not started  |
 | 10    | v1.0.0 release                                     | not started  |
 
 **What runs today:** `docker compose up` starts PostgreSQL, Kafka, the Spring Boot API, the FastAPI
-scoring service, the console, Prometheus and Grafana; all seven report healthy and Prometheus
-scrapes both services.
+scoring service, the console, Prometheus, Grafana, an OpenTelemetry Collector and Tempo. Prometheus
+scrapes both services, five dashboards are provisioned from files, and one transaction can be
+followed as a single trace from the HTTP request through the outbox and Kafka to the scoring call.
+
+**What Phase 7 still owes:** the resilience drills and the runbooks they give real content to. The
+phase gate is not claimed until both land.
 
 The pipeline is end to end. A transaction posted to `/api/v1/transactions` is written with its
 outbox row in one database transaction, published to Kafka by the relay, consumed idempotently, and
@@ -491,12 +495,33 @@ datasource already provisioned from
 - Scoring metrics: <http://localhost:8000/metrics>
 - Targets: <http://localhost:9090/targets>
 
-Dashboards, alert rules and runbooks arrive in Phase 7, with the signals they describe. A dashboard
-of empty panels is not observability, and an alert rule with no runbook is a pager nobody knows how
-to answer.
+Five dashboards are provisioned from [`infra/grafana/dashboards/`](infra/grafana/dashboards/):
+platform, API and database, Kafka and outbox, scoring, and alerts and risk. Every panel carries a
+description saying what the number means and what it does not — the dead-letter panel, for instance,
+says it is a depth rather than a backlog, because nothing consumes that topic and the figure falls
+when retention expires rather than when somebody fixes something.
 
-The OpenTelemetry Collector is deliberately **absent** from `compose.yaml` until tracing exists in
-Phase 7 — a collector that receives nothing is decoration.
+Every panel query was run against the live Prometheus before this was written: 48 queries, none
+empty, none malformed.
+
+**Alert rules are still deliberately absent.** `rule_files: []` in
+[`infra/prometheus/prometheus.yml`](infra/prometheus/prometheus.yml) says why: a rule with no runbook
+is a pager nobody knows how to answer, so they arrive with the runbooks rather than before them.
+
+### Tracing
+
+W3C trace context crosses every hop, including the asynchronous one — the outbox stores the
+originating `traceparent` and the relay replays it onto the Kafka record, so the consumer continues
+the trace rather than starting a second one nothing joins to the first
+([ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md) §5).
+
+- Tempo: <http://localhost:3200> — `GET /api/traces/<traceId>` returns a trace
+- Traces are also reachable through Grafana's provisioned Tempo datasource
+
+The API exports OTLP to an OpenTelemetry Collector, which forwards to Tempo. Neither container gates
+anything: a tracing backend that is down must not stop the pipeline, so no application depends on
+them and the exporter fails quietly. Export is off outside `compose`, so a local `./mvnw
+spring-boot:run` still puts trace ids on its log lines without retrying a collector nobody started.
 
 ## Security
 

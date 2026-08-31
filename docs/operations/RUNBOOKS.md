@@ -12,8 +12,14 @@ because somebody follows it. Four runbooks are written below: three cover the ev
 Phase 3 delivered, and the fourth covers scoring degradation, which became a thing that happens when
 Phase 4's assessment workflow landed. The remainder — API unavailable, database connection
 saturation, high error rate, slow report query, and model artifact load failure — arrive with the
-components they describe, in Phases 5 and 7. Phase 7 also adds the Grafana dashboards these
-runbooks currently substitute Prometheus queries for.
+components they describe, in Phases 5 and 7.
+
+**Phase 7's dashboards have landed and these four runbooks have not yet been revised against them.**
+Five dashboards are provisioned from `infra/grafana/dashboards/`, and consumer lag, dead-letter
+depth, the scoring breaker's state and caller-side scoring latency are now metrics rather than
+things to read by hand. The "known limitations" below that say otherwise are marked where they are
+stale; rewriting these four, and adding the five that are missing, is the outstanding half of Phase
+7 and is recorded as such in `PROJECT_STATE.md`.
 
 ## Where the numbers come from
 
@@ -202,9 +208,11 @@ resumes climbing. Transactions leave `PENDING`.
 
 ### Known limitations
 
-- Consumer lag is read from the broker rather than exported as a SentinelFlow metric. Phase 7 adds
-  the exporter and the dashboard; until then the `kafka-consumer-groups.sh` command above is the
-  source of truth.
+- ~~Consumer lag is read from the broker rather than exported as a SentinelFlow metric.~~
+  **Superseded 2026-08-30.** `sentinelflow_kafka_consumer_lag`, summed across partitions, is
+  exported by the API and graphed on the platform and Kafka dashboards. The
+  `kafka-consumer-groups.sh` command above is still the way to get the **per-partition** breakdown,
+  which the metric deliberately does not carry (ADR-0016 §6).
 - `outcome="duplicate"` climbing alongside `processed` is **not** a fault. At-least-once delivery
   means duplicates are ordinary traffic, and the ledger absorbing them is the design working.
 
@@ -385,9 +393,11 @@ degraded assessments, restarts it, waits out the breaker, and shows four scored 
 
 - **Assessments written while scoring was down stay degraded.** There is no rescoring endpoint yet;
   ADR-0005 §5 makes it an administrator-only audited operation and Phase 5 owns it.
-- **The breaker's state is not exposed as a metric.** `ScoringClient.circuitState()` answers it in
-  process and nothing publishes it, so "is the breaker open" is currently inferred from the absence
-  of per-record warnings. Worth a gauge when Phase 7 adds the dashboards.
+- ~~**The breaker's state is not exposed as a metric.**~~ **Superseded 2026-08-30.**
+  `sentinelflow_scoring_breaker_state` publishes one series per state, each 0 or 1, so
+  `sentinelflow_scoring_breaker_state{state="OPEN"} == 1` answers "is the breaker open" directly. It
+  is on the platform and scoring dashboards. Caller-side scoring latency and calls by outcome are
+  exported too, so the inference-from-absent-warnings step below is no longer necessary.
 - **A degraded assessment and a scored one are banded by the same policy**, deliberately (ADR-0008
   §4). That is what makes them comparable; it also means a degraded assessment can band lower than
   the same transaction would have banded with the model, and nothing flags that difference.
