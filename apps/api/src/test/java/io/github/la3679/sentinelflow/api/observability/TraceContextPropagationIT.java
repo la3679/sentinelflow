@@ -38,6 +38,8 @@ import org.springframework.test.context.TestPropertySource;
 import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.KafkaContainerSupport;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
+import io.github.la3679.sentinelflow.api.support.TestCredentials;
+import io.github.la3679.sentinelflow.api.web.ApiHeaders;
 
 /**
  * One transaction, one trace, across an HTTP hop and an asynchronous one.
@@ -272,6 +274,7 @@ class TraceContextPropagationIT extends AbstractPostgresTest {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + "/api/v1/transactions"))
                 .header("Content-Type", "application/json")
+                .header(ApiHeaders.API_KEY, TestCredentials.INGEST_API_KEY)
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         try {

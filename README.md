@@ -520,9 +520,10 @@ service with no recipient; the rules are worth having because they put the thres
 can be read and argued with. No threshold is calibrated against a measured baseline — most are
 derived from a configured budget or interval and name it, and the two that are conventions say so.
 
-**Nine runbooks** cover dead-letter growth, consumer lag, outbox backlog, scoring degradation, the
-API being down, connection saturation, a high server error rate, a slow report query, and a model
-that will not load. Each names real metrics, real dashboard panels and commands that were run.
+**Ten runbooks** cover dead-letter growth, consumer lag, outbox backlog, scoring degradation, the
+API being down, connection saturation, a high server error rate, a slow report query, a model that
+will not load, and a caller being rate limited. Each names real metrics, real dashboard panels and
+commands that were run.
 
 ### Tracing
 
@@ -547,26 +548,41 @@ never as a public issue.
 
 Controls that exist today, not aspirations:
 
-| Control                     | Where                                                                |
-| --------------------------- | -------------------------------------------------------------------- |
-| Secret scanning             | gitleaks over full history, every push and pull request, plus weekly |
-| Push protection             | Enabled on the repository                                            |
-| Dependency review           | Fails a pull request on a high-severity or copyleft addition         |
-| Dependabot                  | Weekly across all five ecosystems                                    |
-| Container scanning          | Trivy on every image; fails on any fixable HIGH or CRITICAL          |
-| Non-root containers         | Asserted in CI against the built image                               |
-| Pinned actions              | Third-party actions pinned to an immutable commit SHA                |
-| Verified build tooling      | The Maven Wrapper validates a SHA-256 verified against two sources   |
-| Least-privilege workflows   | `permissions: contents: read` unless a job needs more                |
-| Closed management endpoints | Only health, info and prometheus — asserted by test _and_ by smoke   |
-| Protected `main`            | Pull requests and nine passing checks, with no bypass actors         |
+| Control                     | Where                                                                     |
+| --------------------------- | ------------------------------------------------------------------------- |
+| Threat model                | STRIDE over four trust boundaries, with every control traced to a test    |
+| Ingestion credential        | `X-API-Key` on `POST /transactions`, compared in constant time            |
+| Rate limiting               | Token bucket per caller; the strictest allowance is on `POST /auth/login` |
+| Request size bound          | 64 KiB, on the declared length and on the bytes delivered                 |
+| Secret scanning             | gitleaks over full history, every push and pull request, plus weekly      |
+| Push protection             | Enabled on the repository                                                 |
+| Dependency review           | Fails a pull request on a high-severity or copyleft addition              |
+| Dependabot                  | Weekly across all five ecosystems                                         |
+| Container scanning          | Trivy on every image; fails on any fixable HIGH or CRITICAL               |
+| Non-root containers         | Asserted in CI against the built image                                    |
+| Pinned actions              | Third-party actions pinned to an immutable commit SHA                     |
+| Verified build tooling      | The Maven Wrapper validates a SHA-256 verified against two sources        |
+| Least-privilege workflows   | `permissions: contents: read` unless a job needs more                     |
+| Closed management endpoints | Only health, info and prometheus — asserted by test _and_ by smoke        |
+| Protected `main`            | Pull requests and nine passing checks, with no bypass actors              |
 
 ### Known limitations, stated plainly
 
-- **Ingestion is unauthenticated.** Operator endpoints require a bearer token from Phase 5, but
-  `POST /api/v1/transactions` does not: it is a machine-to-machine surface that needs its own
-  credential rather than an operator's password, and that arrives in Phase 8 with the rate limits
-  and payload bounds that belong beside it. [ADR-0012 §5](docs/adr/0012-operator-authentication.md).
+- **Ingestion carries a shared secret, not a per-caller identity.** `POST /api/v1/transactions`
+  requires `X-API-Key` ([ADR-0017 §1](docs/adr/0017-protecting-the-ingestion-surface.md)) — a
+  machine-to-machine surface with its own credential rather than an operator's password. It is one
+  key for one caller: nothing distinguishes two pipelines, and an ingested transaction is not
+  attributed to anybody in the audit trail. A real deployment would want a service account with a
+  lifecycle, which the ADR names as what to revisit.
+- **The rate limit is per API instance.** A token bucket in memory, so two instances behind a load
+  balancer would permit twice the configured rate, and a restart forgets who was being limited.
+  That is the right trade for a single-instance demo and the wrong one for a real edge, where the
+  limiter belongs in front ([ADR-0017 §2](docs/adr/0017-protecting-the-ingestion-surface.md)).
+- **`/actuator/prometheus` is still open.** A scrape cannot hold a token that expires every thirty
+  minutes. The series are aggregate counters and timers with closed label sets, so what it
+  discloses is the shape of the traffic; the real fix is a management port that is not published
+  to the host. Tracked as T-04 in the
+  [threat model](docs/security/THREAT_MODEL.md), open and owned.
 - **A token cannot be revoked before it expires.** Thirty minutes is the whole of how long a
   withdrawn role keeps working. That is the cost of a stateless token and it is deliberate.
 - **A reload signs the console out.** It signs in against the real API, and holds the token in the

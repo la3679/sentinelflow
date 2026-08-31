@@ -439,6 +439,41 @@ sentinelflow:
       # this service). Comma-separated; every entry is validated at startup, and
       # "*" is refused with a message saying why.
       allowed-origins: ${SENTINELFLOW_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
+    ingestion:
+      # NO USABLE DEFAULT, for a stronger reason than the JWT secret's: this one
+      # key grants the right to write to the database and the outbox, and a
+      # default would grant it on every deployment that forgot to override it.
+      # IngestionProperties refuses to start without one and says what to set.
+      # `make bootstrap` generates it into .env (ADR-0017 section 1).
+      api-key: ${SENTINELFLOW_INGEST_API_KEY:}
+
+  # What this API accepts from one caller (ADR-0017 sections 2 and 3). Every
+  # number here DOES default, unlike the two secrets above: a default limit
+  # grants nothing to anybody, while a default secret is a secret everybody has.
+  limits:
+    # The largest legitimate body is a transaction of a few hundred bytes; the
+    # largest a person writes is a 2,000-character alert note. 64 KiB is two
+    # orders of magnitude of headroom and still a bound.
+    max-request-bytes: ${SENTINELFLOW_MAX_REQUEST_BYTES:65536}
+    login:
+      # The endpoint that runs BCrypt against a supplied password. A person
+      # typing one fails a handful of times; a thousand attempts is not a
+      # person, and until now nothing here said so.
+      permits: ${SENTINELFLOW_RATE_LOGIN_PERMITS:10}
+      per: ${SENTINELFLOW_RATE_LOGIN_PER:1m}
+      burst: ${SENTINELFLOW_RATE_LOGIN_BURST:10}
+    ingest:
+      # Sized so `make replay` is not shaped by it. Generous on purpose: a limit
+      # that changes what the demo does is a limit that gets turned off.
+      permits: ${SENTINELFLOW_RATE_INGEST_PERMITS:600}
+      per: ${SENTINELFLOW_RATE_INGEST_PER:1m}
+      burst: ${SENTINELFLOW_RATE_INGEST_BURST:120}
+    standard:
+      # Everything else under /api/v1/. An operator clicking a console cannot
+      # approach this; a loop can.
+      permits: ${SENTINELFLOW_RATE_STANDARD_PERMITS:300}
+      per: ${SENTINELFLOW_RATE_STANDARD_PER:1m}
+      burst: ${SENTINELFLOW_RATE_STANDARD_BURST:60}
 
 server:
   port: ${SENTINELFLOW_API_PORT:8080}

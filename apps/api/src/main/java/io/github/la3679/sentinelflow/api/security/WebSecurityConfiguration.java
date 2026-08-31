@@ -40,11 +40,11 @@ import io.github.la3679.sentinelflow.api.web.CorrelationIdFilter;
  *   <li><strong>Open:</strong> {@code POST /api/v1/auth/login}, because a caller with no token has to
  *       be able to get one; the actuator's health probes, because a liveness check cannot hold one;
  *       and {@code /actuator/prometheus}, because a scrape cannot either.
- *   <li><strong>Open, deliberately and temporarily:</strong> {@code POST /api/v1/transactions}. It is
- *       a machine-to-machine surface whose caller is a payment pipeline rather than a person, so an
- *       operator's password buys nothing there. It needs its own credential together with the rate
- *       limits and payload bounds that belong beside it, which is Phase 8's work, and ADR-0012 §5
- *       records it as a stated gap rather than an oversight.
+ *   <li><strong>Open to this chain, and not open:</strong> {@code POST /api/v1/transactions}. It is a
+ *       machine-to-machine surface whose caller is a payment pipeline rather than a person, so an
+ *       operator's password buys nothing there — but since ADR-0017 it carries its own credential,
+ *       checked by {@link IngestApiKeyFilter} ahead of this chain. The {@code permitAll} below means
+ *       "no operator token", not "no credential", and the gap ADR-0012 §5 stated is closed.
  *   <li><strong>Authenticated:</strong> everything else, by {@code anyRequest().authenticated()} — a
  *       default-deny, so an endpoint added later is protected by having been forgotten rather than
  *       exposed by it.
@@ -109,13 +109,20 @@ public class WebSecurityConfiguration {
                         // traffic rather than anything about a transaction.
                         //
                         // The real answer is to move the actuator to a
-                        // management port that is not published to the host,
-                        // which is Phase 8's hardening work and not something to
-                        // half-do here.
+                        // management port that is not published to the host.
+                        // ADR-0017 section 4 declines to bundle that here: it
+                        // changes what Prometheus scrapes, what compose.yaml
+                        // publishes, what the smoke test asserts and what the
+                        // runbooks say, and it is its own change. It stays
+                        // T-04 in the threat model, open and owned.
                         .requestMatchers("/actuator/prometheus")
                         .permitAll()
-                        // Ingestion, until Phase 8 gives it a credential of its
-                        // own. ADR-0012 section 5.
+                        // Ingestion. Not unprotected: IngestApiKeyFilter has
+                        // already required X-API-Key by the time a request
+                        // reaches this chain (ADR-0017 section 1). What this
+                        // line says is that an operator's bearer token is not
+                        // the credential for it, which is ADR-0012 section 5's
+                        // reasoning with the gap it left now filled.
                         .requestMatchers(HttpMethod.POST, "/api/v1/transactions")
                         .permitAll()
                         .anyRequest()

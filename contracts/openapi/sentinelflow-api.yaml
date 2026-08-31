@@ -29,6 +29,13 @@ info:
       primitive.
     - **Errors are RFC 9457 `application/problem+json`** and never contain a
       stack trace, a SQL fragment, or an internal class name.
+    - **Every request under `/api/v1/` is rate limited and size bounded**
+      (ADR-0017). A caller past its allowance gets `429` with `Retry-After`; a
+      body over the maximum gets `413`. Only the two endpoints where a limit is
+      part of the endpoint's own story declare them explicitly — `POST
+      /auth/login`, which holds the strictest allowance, and `POST
+      /transactions`, which holds the most generous — but both statuses are
+      reachable from any operation here.
     - **`X-Correlation-Id`** is accepted on every request and echoed on every
       response, tying an API call to its logs, spans and events.
 
@@ -78,6 +85,11 @@ paths:
         **There is no refresh token.** The expiry is short instead, because a
         stateless token cannot be revoked before it expires and a refresh flow
         would extend the window a withdrawn role keeps working.
+
+        **The strictest rate limit in the API is on this endpoint** (ADR-0017
+        §2), because it is the one that checks a password and it answers a wrong
+        one identically to an unknown username. That symmetry is right and it is
+        not a defence against somebody trying a million of them; the limit is.
       security: []
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
@@ -102,6 +114,10 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /transactions:
     post:
       tags: [transactions]
@@ -117,13 +133,18 @@ paths:
         same key returns the original result rather than creating a second
         transaction.
 
-        **Unauthenticated until Phase 8, deliberately.** This is a
-        machine-to-machine surface whose caller is a payment pipeline rather
-        than a person, so an operator's password buys nothing here. It needs its
-        own credential together with the rate limits and payload bounds that
-        belong beside it, which is Phase 8's work. ADR-0012 §5 records it as a
-        stated gap rather than an oversight.
-      security: []
+        **Authenticated by its own credential, not an operator's token.** This
+        is a machine-to-machine surface whose caller is a payment pipeline
+        rather than a person, so an operator's password buys nothing here.
+        ADR-0017 §1 gave it `X-API-Key`, together with the rate limit and the
+        payload bound that belong beside it; ADR-0012 §5 stated the gap and this
+        is what closed it.
+
+        **Rate limited** (ADR-0017 §2) and **size bounded** (ADR-0017 §3) like
+        every other endpoint under `/api/v1/`, with an allowance of its own
+        sized so a replay burst is not shaped by it.
+      security:
+        - ingestApiKey: []
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
       requestBody:
@@ -162,8 +183,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
     get:
       tags: [transactions]
@@ -823,8 +848,26 @@ components:
         login**, which is what makes `alert_actions.actor_role` an honest record
         of the capacity somebody acted in.
 
-        Enforced from Phase 5. Phase 8 hardens it: a credential for ingestion,
-        rate limits, and whatever revocation the demo turns out to need.
+        Enforced from Phase 5. ADR-0017 added the ingestion credential and the
+        rate limits beside it; revocation remains deliberately absent, with the
+        30-minute expiry as the stated mitigation.
+
+    ingestApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        The credential for `POST /transactions` (ADR-0017 §1).
+
+        Ingestion is a machine-to-machine surface whose caller is a payment
+        pipeline rather than a person, so it carries its own shared secret
+        instead of an operator's token — an operator's password buys nothing
+        here, and issuing the pipeline one would model it as somebody it is not.
+
+        **It grants exactly one thing:** the right to post a transaction. It is
+        not a role, it reads nothing, and it does not become an actor in the
+        audit trail. `GET /transactions` is an operator's permission and does
+        not accept this key.
 
   parameters:
     CorrelationId:
@@ -933,6 +976,37 @@ components:
 
     UnprocessableEntity:
       description: The request is well-formed but fails validation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    PayloadTooLarge:
+      description: |
+        The request body exceeds the maximum this API accepts — **64 KiB** by
+        default, configurable per deployment. Both the declared `Content-Length`
+        and the bytes actually delivered are checked, so a chunked request is
+        bounded by the same number (ADR-0017 §3).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    TooManyRequests:
+      description: |
+        The caller has exceeded its rate allowance (ADR-0017 §2). `Retry-After`
+        carries the interval in seconds.
+
+        The refusal deliberately says nothing about the limit or how much of it
+        remains: that is a convenience for a well-behaved client and a progress
+        bar for a badly behaved one.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying. Never zero.
+          required: true
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/problem+json:
           schema:

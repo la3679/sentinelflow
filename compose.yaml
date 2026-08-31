@@ -240,6 +240,11 @@ services:
       # POSTGRES_PASSWORD is: a default here would sign valid tokens on every
       # deployment that forgot to override it.
       SENTINELFLOW_JWT_SECRET: ${SENTINELFLOW_JWT_SECRET:?run make bootstrap to generate local secrets}
+      # The ingestion credential (ADR-0017 section 1). Same rule as the signing
+      # key and for a stronger reason: this one grants the right to write to the
+      # database and the outbox, so a missing variable must stop the stack
+      # rather than start it with an endpoint anything can post to.
+      SENTINELFLOW_INGEST_API_KEY: ${SENTINELFLOW_INGEST_API_KEY:?run make bootstrap to generate local secrets}
       # Which web origins a browser may let read this API (ADR-0013). This one
       # defaults where the secret above does not: a default origin list grants
       # nothing to anybody who cannot already reach this machine's loopback

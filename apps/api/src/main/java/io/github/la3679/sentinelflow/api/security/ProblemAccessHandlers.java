@@ -2,21 +2,18 @@
 package io.github.la3679.sentinelflow.api.security;
 
 import java.io.IOException;
-import java.net.URI;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
 
-import tools.jackson.databind.ObjectMapper;
+import io.github.la3679.sentinelflow.api.web.ProblemWriter;
 
 /**
  * The two refusals the filter chain makes before any controller runs, in the shape every other
@@ -30,7 +27,8 @@ import tools.jackson.databind.ObjectMapper;
  * <p><strong>Written here rather than delegated to {@code ApiExceptionHandler}.</strong> These are
  * thrown before the dispatcher picks a handler, so no {@code @ExceptionHandler} sees them. Routing
  * them into one through a {@code HandlerExceptionResolver} is possible and is more machinery than
- * writing two objects to a stream.
+ * handing two objects to {@link ProblemWriter}, which is what the other filter-level refusals use
+ * too.
  *
  * <p><strong>Neither says anything the caller does not already know.</strong> A 401 says a valid
  * token is needed and not why this one was not valid — expired, malformed and forged are all the
@@ -40,12 +38,10 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class ProblemAccessHandlers implements AuthenticationEntryPoint, AccessDeniedHandler {
 
-    private static final String TYPE_PREFIX = "https://sentinelflow.example/problems/";
+    private final ProblemWriter problems;
 
-    private final ObjectMapper objectMapper;
-
-    public ProblemAccessHandlers(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public ProblemAccessHandlers(ProblemWriter problems) {
+        this.problems = problems;
     }
 
     @Override
@@ -55,7 +51,7 @@ public class ProblemAccessHandlers implements AuthenticationEntryPoint, AccessDe
         // rather than a 403 with the wrong number on it. Spring Security's own
         // entry point sets it; replacing the body must not lose it.
         response.setHeader("WWW-Authenticate", "Bearer");
-        write(
+        problems.write(
                 request,
                 response,
                 HttpStatus.UNAUTHORIZED,
@@ -67,30 +63,12 @@ public class ProblemAccessHandlers implements AuthenticationEntryPoint, AccessDe
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException denied)
             throws IOException {
-        write(
+        problems.write(
                 request,
                 response,
                 HttpStatus.FORBIDDEN,
                 "insufficient-role",
                 "Insufficient role",
                 "The authenticated role does not permit this operation.");
-    }
-
-    private void write(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            HttpStatus status,
-            String type,
-            String title,
-            String detail)
-            throws IOException {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-        problem.setType(URI.create(TYPE_PREFIX + type));
-        problem.setTitle(title);
-        problem.setInstance(URI.create(request.getRequestURI()));
-
-        response.setStatus(status.value());
-        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        objectMapper.writeValue(response.getOutputStream(), problem);
     }
 }

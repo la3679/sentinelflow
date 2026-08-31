@@ -41,6 +41,8 @@ import io.github.la3679.sentinelflow.api.messaging.consumer.TransactionCreatedCo
 import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.KafkaContainerSupport;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
+import io.github.la3679.sentinelflow.api.support.TestCredentials;
+import io.github.la3679.sentinelflow.api.web.ApiHeaders;
 import io.micrometer.core.instrument.MeterRegistry;
 
 /**
@@ -308,6 +310,7 @@ class BrokerOutageDrillIT extends AbstractPostgresTest {
 
             client.post()
                     .uri("/api/v1/transactions")
+                    .header(ApiHeaders.API_KEY, TestCredentials.INGEST_API_KEY)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
                             "idempotencyKey",
