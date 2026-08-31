@@ -18,8 +18,16 @@ name: Security — SBOM and checksums
 # The other three ecosystems do not have that gap - Bun and uv both lock, and
 # the source scan reads those lockfiles (245 npm, 57 pypi) rather than the
 # manifests.
+#
+# It runs on pull requests as well as on main, which costs a second build of
+# all three images beside `ci-containers.yml`. That is deliberate: a workflow
+# whose first run is the merge that needs it is a workflow nobody has run, and
+# the three images are cached by the same Buildx scope, so the common case is a
+# cache hit rather than a rebuild.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   release:
     types: [published]
