@@ -2581,3 +2581,92 @@ walkthrough.
 
 Recorded in `PROJECT_STATE.md`: the resilience drills as tests rather than a document, then the nine
 runbooks the drills give real content to, then close the Phase 7 gate honestly and start Phase 8.
+
+---
+
+## 2026-08-31 — Phase 7 closed: two drills, nine runbooks, thirteen rules, four log leaks
+
+| Field           | Value                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| Start / end UTC | 2026-08-31T14:45Z / 2026-08-31T16:10Z                                                                        |
+| Starting SHA    | `a1099ba` on `main`                                                                                          |
+| Ending SHA      | recorded by the checkpoint commit that closes this entry                                                     |
+| Objective       | Finish Phase 7: the resilience drills, the nine runbooks and their alert rules, then close the gate honestly |
+
+### Work completed
+
+**The two drills, as tests rather than as a document** (PR #82). `ScoringOutageDrillIT` drives thirty
+transactions through the whole path while scoring refuses, and asserts the system-level consequence
+ADR-0008 promises: every one assessed, every one degraded with no model score, none dead-lettered,
+and the outage costing five records' worth of HTTP attempts rather than thirty. `BrokerOutageDrillIT`
+freezes the broker mid-run and asserts every clause of ADR-0005's claim — ingestion still answering
+`202`, the outbox holding with `last_error` recorded, the gauges reporting the backlog, nothing
+reaching `FAILED`, and the backlog draining to exactly one ledger row and one assessment per event.
+
+**Nine runbooks and thirteen alert rules** (PR #82). Five runbooks written, four revised against the
+dashboards, a rewritten metric table covering all twenty-one application metrics plus the framework
+ones, and a table saying which of the five dashboards answers which question.
+`infra/prometheus/rules/sentinelflow.yml` replaced `rule_files: []`, each rule annotated with the
+runbook section that answers it.
+
+**The redaction claim widened until it matched the ADR** (PR #83). `LogRedactionIT` now runs at
+`logging.level.root=DEBUG`, pins nothing itself, and drives five paths instead of one.
+
+### Defects found, and where each came from
+
+1. **`sentinelflow_consumer_deadletter_total` and `sentinelflow_consumer_undeliverable_total` had no
+   series at all** on the running stack. Found by writing Runbook 1's alert rule. An absent series
+   and a zero are identical on a graph and different in a rule, and the rarest outcome is the one an
+   alert is written against. Six series now registered at zero in the constructor — the third place
+   this decision has had to be applied.
+2. **Hibernate dumps every entity in the persistence context at `DEBUG`**, carrying a transaction's
+   amount, its device handle, its idempotency key, an outbox row's whole payload and an alert
+   action's note. Found by raising the redaction test to the root logger. An entity cannot defend
+   itself — the printer reads properties through the persister rather than calling `toString` — so
+   `org.hibernate.orm.core` and `org.hibernate.orm.jdbc.bind` are now pinned in `application.yaml`
+   beside `org.hibernate.orm.jdbc.error`, which was the precedent.
+3. **`AlertNoteRequest` printed the analyst's note** through Spring's own `Read "application/json"
+to […]` line at `DEBUG`. ADR-0016 §4 forbids a whole request body at every level. Fixed with the
+   ADR's own first mechanism on the note, transition, assignment and feedback records.
+4. **`TransactionResponse` was safe by accident**, because Spring's response-side log line truncates
+   at 100 characters before reaching the amount. The position of a field in a generated `toString`
+   is not a control; given a redacting one.
+
+### Three corrections to documents, made rather than glossed
+
+Reprocessing a dead-lettered event, reviving a `FAILED` outbox row and rescoring a degraded
+assessment were each described in `docs/operations/RUNBOOKS.md` as "Phase 5 work". **Phase 5 shipped
+and its deliverable list never contained any of them**, and nothing in the implementation plan
+allocates them now. The runbooks now say so and give the manual procedure. Recorded here as the
+discrepancy `CLAUDE.md` asks for: the repository was right and the documents were wrong.
+
+### One finding recorded rather than fixed
+
+**There is no index on `alerts (created_at)` alone**, so a report window is a sequential scan plus a
+sort. In Runbook 8's diagnostics. Not fixed: a measured optimisation is Phase 9's, and an index added
+with no before-and-after is a change nobody can justify afterwards.
+
+### Tests and results
+
+- `./mvnw -B verify` — 233 unit and 309 integration tests, 0 failures, JaCoCo gate met
+- `uv run pytest` — 187 passed; `ruff` and `mypy --strict` clean over 46 source files
+- `promtool check config` and `check rules` — valid, 13 rules
+- All 13 rule expressions run against the live Prometheus; every metric they read exists
+- Prometheus reloaded with the rules mounted — 13 loaded, 13 inactive, 0 evaluation errors
+- 13/13 runbook anchors resolve; `check-docs.mjs` — 216 links across 47 files, 0 broken
+- CI on #82 — all ten required checks, and both drills ran on the Ubuntu runner
+
+### Deliberately not done
+
+- **No Alertmanager.** Nothing pages anybody, and adding it would be a service with no recipient on
+  a stack that runs on one laptop. Stated in the rules file's own header and in the gate table.
+- **No calibrated thresholds.** Most are derived from a configured budget or interval and name it;
+  two are conventions and say so. Phase 9 measures.
+- **The seven open Dependabot pull requests were not triaged.** They are action 1 in
+  `PROJECT_STATE.md` and two of them are majors.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: triage the seven Dependabot pull requests, then Phase 8's threat
+model against the four holes this repository has already documented, then the scanning and
+supply-chain half.

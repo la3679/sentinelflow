@@ -29,4 +29,19 @@ import io.github.la3679.sentinelflow.api.domain.AlertStatus;
 public record AlertTransitionRequest(
         @NotNull AlertStatus targetStatus,
         @NotNull @PositiveOrZero Long expectedVersion,
-        @Size(max = 2000) String note) {}
+        @Size(max = 2000) String note) {
+
+    /**
+     * Where the alert is going and which version was expected. Never the note.
+     *
+     * <p>The same rule as {@link AlertNoteRequest}: the framework renders a deserialised body at
+     * {@code DEBUG}, and an actor's own words are a request body, which ADR-0016 §4 forbids at every
+     * level. The target status and the expected version are the two fields a log line about a
+     * refused transition actually needs.
+     */
+    @Override
+    public String toString() {
+        return "AlertTransitionRequest[targetStatus=" + targetStatus + " expectedVersion=" + expectedVersion
+                + " note redacted]";
+    }
+}

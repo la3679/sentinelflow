@@ -62,5 +62,29 @@ public record TransactionResponse(
      * float anywhere in this project (ADR-0007). {@code toPlainString} rather than {@code toString}
      * so a scale that would otherwise render in scientific notation cannot.
      */
-    public record AmountResponse(String value, String currency) {}
+    public record AmountResponse(String value, String currency) {
+
+        /** The currency and the fact that there was a value. Never the value. See {@link AmountRequest}. */
+        @Override
+        public String toString() {
+            return "AmountResponse[" + currency + " redacted]";
+        }
+    }
+
+    /**
+     * What a read endpoint is allowed to say about a transaction it is returning.
+     *
+     * <p>The amount reaches the caller, legitimately — it is the answer to the question they asked.
+     * It must not reach the log, and the way it would is a framework line rather than one of ours:
+     * Spring's {@code AbstractMessageConverterMethodProcessor} logs {@code Writing […]} at
+     * {@code DEBUG}, rendering the body it is about to serialise. Today that line truncates before it
+     * reaches the amount, which is the response being safe by accident — the position of a field in
+     * a generated {@code toString} is not a control. This makes it safe by construction, which is
+     * ADR-0016 §4's first mechanism applied on the way out as well as on the way in.
+     */
+    @Override
+    public String toString() {
+        return "TransactionResponse[" + transactionReference + " account=" + accountReference + " status="
+                + processingStatus + " band=" + riskBand + " amount redacted]";
+    }
 }

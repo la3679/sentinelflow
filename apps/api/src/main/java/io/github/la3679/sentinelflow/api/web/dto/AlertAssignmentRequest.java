@@ -23,4 +23,17 @@ import jakarta.validation.constraints.Size;
 public record AlertAssignmentRequest(
         UUID assigneeId,
         @NotNull @PositiveOrZero Long expectedVersion,
-        @Size(max = 2000) String note) {}
+        @Size(max = 2000) String note) {
+
+    /**
+     * Who it is going to and which version was expected. Never the note.
+     *
+     * <p>The same rule as {@link AlertNoteRequest}. The assignee identifier stays: it is an operator
+     * identifier rather than a secret, and it is how a contested assignment is followed.
+     */
+    @Override
+    public String toString() {
+        return "AlertAssignmentRequest[assigneeId=" + assigneeId + " expectedVersion=" + expectedVersion
+                + " note redacted]";
+    }
+}

@@ -69,7 +69,7 @@ verified · no secrets · initial preview builds · state file holds the exact r
 
 ---
 
-## Phase 2 — Contracts, domain, and database · M1 — **NEXT**
+## Phase 2 — Contracts, domain, and database · M1
 
 **Deliverables**
 
@@ -197,14 +197,19 @@ passes · Lovable diffs reviewed and merged safely.
 **Gate** — one transaction trace can be followed end to end · dashboards load with data ·
 redaction tests pass · a documented failure drill succeeds.
 
-**Status: four of six deliverables merged** as PRs #70 to #73. The metric set, structured logging
-with redaction, trace propagation and the dashboards are done; the resilience drills and the runbooks
-are not. Two gate criteria are met with evidence, one is partly met and one has not been attempted —
-`PROJECT_STATE.md` §"Acceptance criteria status — Phase 7 gate" holds the row-by-row position.
+**Status: complete.** All six deliverables merged, as PRs #70 to #73, #82 and #83. All four gate
+criteria are met with recorded evidence — `PROJECT_STATE.md` §"Acceptance criteria status — Phase 7
+gate" holds the row-by-row position, including what each piece of evidence does not cover.
+
+The two drills are tests rather than a document: `ScoringOutageDrillIT` and `BrokerOutageDrillIT` in
+`apps/api/src/test/java/…/resilience/`, both run by `make test-integration` and by CI. The nine
+runbooks are in `docs/operations/RUNBOOKS.md`, and the thirteen alerting rules that point at them are
+in `infra/prometheus/rules/sentinelflow.yml` — they landed with the runbooks rather than with the
+dashboards, because a rule with no runbook is a pager nobody knows how to answer.
 
 ---
 
-## Phase 8 — Security and quality hardening · M4
+## Phase 8 — Security and quality hardening · M4 — **NEXT**
 
 **Deliverables**
 
