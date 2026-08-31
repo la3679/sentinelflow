@@ -11,6 +11,28 @@
 #   docker compose down -v          stop and destroy data (see `make reset-demo`)
 #
 # The Makefile wraps these; run `make help`.
+#
+# -----------------------------------------------------------------------------
+# Every published port binds to 127.0.0.1
+# -----------------------------------------------------------------------------
+#
+# `"5432:5432"` publishes on 0.0.0.0, which is Docker's default and is not what
+# a local development stack wants. It was checked rather than assumed: before
+# this change `docker port sentinelflow-postgres` reported `0.0.0.0:5432`, so
+# PostgreSQL with its generated password, Grafana with its generated admin
+# password, and an ingestion endpoint that is deliberately unauthenticated until
+# Phase 8 gives it its own credential were all reachable from any machine on the
+# same network. ADR-0012 said "the demo stack binds to localhost" as part of its
+# argument for leaving ingestion open; the statement was wrong, and this is the
+# change that makes it true rather than a correction to the sentence.
+#
+# `SENTINELFLOW_BIND_ADDRESS` exists for the one legitimate case - showing the
+# demo to somebody on another machine - and defaults to loopback so that case is
+# a decision rather than an accident. Set it to `0.0.0.0` deliberately, and
+# understand that the database, the broker and Grafana come with it.
+#
+# The console is unaffected: the browser runs on the host, so
+# `http://localhost:5173` still resolves.
 
 name: sentinelflow
 
@@ -32,7 +54,7 @@ services:
       # Deterministic collation, so ordering does not depend on the host locale.
       POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       # /var/lib/postgresql, not /var/lib/postgresql/data. From 18 the official
       # image stores the cluster in a major-version subdirectory so that
@@ -83,7 +105,7 @@ services:
       # retention the design calls for, never implicitly with defaults.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     ports:
-      - "${KAFKA_HOST_PORT:-29092}:29092"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${KAFKA_HOST_PORT:-29092}:29092"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -179,7 +201,7 @@ services:
       SENTINELFLOW_SCORING_LOG_FORMAT: ${SCORING_LOG_FORMAT:-json}
       SENTINELFLOW_SCORING_GIT_SHA: ${SENTINELFLOW_GIT_SHA:-unknown}
     ports:
-      - "${SCORING_PORT:-8000}:8000"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${SCORING_PORT:-8000}:8000"
 
   api:
     build:
@@ -262,7 +284,7 @@ services:
       # `docker cp`.
       - ./data/generated/training:/var/lib/sentinelflow/training
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8080}:8080"
     depends_on:
       # The API owns the schema from Phase 2 onward: it runs Flyway at startup
       # and refuses to start if the mappings and the schema disagree. Kafka is
@@ -320,7 +342,7 @@ services:
     container_name: sentinelflow-web
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-5173}:8080"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-5173}:8080"
     depends_on:
       api:
         condition: service_healthy
@@ -346,7 +368,7 @@ services:
     ports:
       # The query API, which Grafana reads through. Published so a trace can be
       # fetched with curl when a dashboard is the thing under suspicion.
-      - "${TEMPO_PORT:-3200}:3200"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${TEMPO_PORT:-3200}:3200"
     volumes:
       - ./infra/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - tempo-data:/var/tempo
@@ -400,7 +422,7 @@ services:
       # Bounded retention: this is a laptop, not a monitoring cluster.
       - --storage.tsdb.retention.time=7d
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       # The alerting rules, at the path prometheus.yml's rule_files glob points
@@ -437,7 +459,7 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
       # The dashboards themselves, at the path the provider in
