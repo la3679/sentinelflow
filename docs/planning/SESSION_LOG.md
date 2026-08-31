@@ -2670,3 +2670,79 @@ with no before-and-after is a change nobody can justify afterwards.
 Recorded in `PROJECT_STATE.md`: triage the seven Dependabot pull requests, then Phase 8's threat
 model against the four holes this repository has already documented, then the scanning and
 supply-chain half.
+
+---
+
+## 2026-08-31 (second half) — Phase 8 opened: dependency triage, and two things `docker port` found
+
+| Field           | Value                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-31T16:10Z / 2026-08-31T18:45Z                                                               |
+| Starting SHA    | `77ad75c` on `main`                                                                                 |
+| Ending SHA      | recorded by PR #93's merge                                                                          |
+| Objective       | Phase 8, action 1: triage the open Dependabot pull requests, and act on whatever the triage exposed |
+
+### Work completed
+
+**The dependency round, which grew while it was worked.** Seven pull requests became twelve: merging
+the first five changed `bun.lock` and Dependabot opened five more. Six merged after local
+verification, two were resolved by other means, four are open — the table in `PROJECT_STATE.md`
+§"Dependabot" holds each one's position and the checks that were actually run against it.
+
+**TypeScript 7.0 refused, 6.0 not** (#85). TypeScript 7 is fine here — `tsc --noEmit` clean, tests
+and build pass — but `typescript-eslint` 8.65.0 refuses to load against it by name, so taking the
+bump meant shipping without a linter. `.github/dependabot.yml` ignores the range `>=7.0.0 <7.1.0`
+rather than the major, because 7.1 is the release typescript-eslint says it is working towards.
+
+**Four React Hooks defects fixed** (#84), then the plugin bump taken by hand (#93) after Dependabot
+declined to rebase #80 twice. Three of the four were in components nothing imported; the fourth was
+`ChartFrame` setting state from an effect, replaced with `useSyncExternalStore`.
+
+**Every published port now binds to loopback** (#91). See below — this is the finding of the session.
+
+**37 unused shadcn components and 30 runtime dependencies deleted** (#92). 52 direct runtime
+dependencies down to 22, 749 resolved packages down to 713, 3,041 lines out of the tree. Done before
+Phase 8 adds CodeQL and an SBOM rather than after.
+
+### The finding
+
+**`docker port sentinelflow-postgres` reported `0.0.0.0:5432`.** Every service in `compose.yaml` was
+published as `"HOST:CONTAINER"`, which Docker binds to all interfaces. On any shared network the
+stack offered PostgreSQL with the password `make bootstrap` generates, Kafka, Grafana with the admin
+password it generates, Prometheus, Tempo, the scoring service, the console, and an API whose
+ingestion endpoint is deliberately unauthenticated until this phase gives it its own credential.
+
+ADR-0012 §5 argues for leaving ingestion open partly on the grounds that "the demo stack binds to
+localhost". **The argument was sound and its premise was false**, which is worse than either alone.
+Fixed rather than reworded: every port binds to `${SENTINELFLOW_BIND_ADDRESS:-127.0.0.1}`, verified
+`127.0.0.1` on all eight afterwards, and the ADR carries a dated correction so the change of factual
+basis is auditable.
+
+**The lesson generalises: a security claim in a document is worth exactly one command.** This one had
+been true in nobody's environment since the compose file was written.
+
+### Tests and results
+
+- `bun run lint` · `typecheck` · `test` · `test:e2e` · `build` on every web branch verified — 0
+  errors, 41 unit tests, 82 Playwright tests, build and prerender pass
+- `uv run pytest` — 187 passed; `ruff` and `mypy --strict` clean over 46 source files
+- `./mvnw -B verify -DskipITs` — 232 tests on #75's branch; `spotless:check` clean
+- `make smoke` — 23 passed, 0 failed, after rebinding every port
+- `docker port` on all eight containers — 8/8 `127.0.0.1`, from 8/8 `0.0.0.0`
+- `bun install --frozen-lockfile` — 617 installs across 694 packages, from 650 across 749
+- `bun run format:check` · `check-docs.mjs` — clean · 216 links across 47 files, 0 broken
+
+### Deliberately not done
+
+- **None of Phase 8's own seven deliverables.** The threat model, rate limits, an ingestion
+  credential, CodeQL and the SBOM are all untouched. What landed is the triage and what the triage
+  exposed.
+- **#87 (`zod` 4) and #90 (`recharts` 3) are not verified.** Both are majors on live routes and both
+  need the browser suite, not only unit tests.
+- **#86 and #88 are verified and unmerged.** They passed every local check; the session stopped
+  before they were merged, and that is recorded rather than glossed so nobody re-runs the work.
+
+### Next actions
+
+Recorded in `PROJECT_STATE.md`: finish the four open Dependabot pull requests, then the threat model
+against the four holes this repository already documents, then CodeQL and the SBOM.

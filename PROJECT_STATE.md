@@ -14,22 +14,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                               |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-08-31T16:05Z                                                                                                                                                                                   |
-| Updated by           | Claude                                                                                                                                                                                              |
-| Overall status       | active — **Phase 7 is closed with all four gate criteria evidenced**; Phase 8 is next                                                                                                               |
-| Current phase        | Phase 8 — security and quality hardening (not started)                                                                                                                                              |
-| Current task         | **none in progress.** Phase 7's six deliverables are merged and its gate is claimed. Phase 8 has not been opened; see "Next three actions"                                                          |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                            |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                  |
-| Working branch       | `main`                                                                                                                                                                                              |
-| Local clone verified | **yes**                                                                                                                                                                                             |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                    |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                |
-| Open PRs             | [#84](https://github.com/la3679/sentinelflow/pull/84) and [#80](https://github.com/la3679/sentinelflow/pull/80), which land together. The 2026-08-31 Dependabot round is triaged — see "Dependabot" |
-| Latest release       | none                                                                                                                                                                                                |
+| Field                | Value                                                                                                                                                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-08-31T18:40Z                                                                                                                                                                                                                                                                                 |
+| Updated by           | Claude                                                                                                                                                                                                                                                                                            |
+| Overall status       | active — **Phase 7 closed**; Phase 8 opened with its dependency triage and two security fixes, and its own deliverables are not started                                                                                                                                                           |
+| Current phase        | Phase 8 — security and quality hardening (in progress)                                                                                                                                                                                                                                            |
+| Current task         | **none in progress.** Four Dependabot pull requests are open, two of them verified and unmerged. Phase 8's threat model, rate limits, CodeQL and SBOM are not started                                                                                                                             |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                                                                          |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                                                                              |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                                                                                |
+| Working branch       | `main`                                                                                                                                                                                                                                                                                            |
+| Local clone verified | **yes**                                                                                                                                                                                                                                                                                           |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                                                                                  |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                                                                              |
+| Open PRs             | four, all Dependabot: [#86](https://github.com/la3679/sentinelflow/pull/86), [#87](https://github.com/la3679/sentinelflow/pull/87), [#88](https://github.com/la3679/sentinelflow/pull/88), [#90](https://github.com/la3679/sentinelflow/pull/90). Two are verified and unmerged; see "Dependabot" |
+| Latest release       | none                                                                                                                                                                                                                                                                                              |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -82,7 +82,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 5 — alerts and investigations**
 - [x] **Phase 6 — operations frontend**
 - [x] **Phase 7 — observability and resilience**
-- [ ] **Phase 8 — security and quality hardening** ← next
+- [ ] **Phase 8 — security and quality hardening** ← in progress: dependency triage and two security fixes landed; the phase's own deliverables are not started
 - [ ] Phase 9 — performance and documentation
 - [ ] Phase 10 — release
 
@@ -2403,21 +2403,24 @@ checks.
 
 ## Dependabot
 
-### The 2026-08-31 round: five merged, one fixed first, one closed
+### The 2026-08-31 round: six merged, two resolved by other means, four still open
 
-Seven pull requests, [#75](https://github.com/la3679/sentinelflow/pull/75) to
-[#81](https://github.com/la3679/sentinelflow/pull/81), all verified locally before anything was
-merged rather than on CI's word alone.
+It began as seven pull requests, [#75](https://github.com/la3679/sentinelflow/pull/75) to
+[#81](https://github.com/la3679/sentinelflow/pull/81). Merging five of them changed the lockfile,
+which made Dependabot open five more — [#86](https://github.com/la3679/sentinelflow/pull/86) to
+[#90](https://github.com/la3679/sentinelflow/pull/90) — so the round is **not finished**, and
+"Next three actions" carries what is left. Everything merged below was verified locally first, rather
+than on CI's word alone.
 
-| PR                                                    | Bump                                      | Outcome                                                                                                        |
-| ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [#75](https://github.com/la3679/sentinelflow/pull/75) | `spotless-maven-plugin` 3.10.0 → 3.10.1   | **merged** — `spotless:check` clean, 232 API unit tests                                                        |
-| [#76](https://github.com/la3679/sentinelflow/pull/76) | `ruff` 0.16.4 → 0.16.5                    | **merged** — `ruff`, `mypy --strict` clean, 186 scoring tests                                                  |
-| [#77](https://github.com/la3679/sentinelflow/pull/77) | three TanStack patches                    | **merged** — lint, typecheck, 41 unit tests, build                                                             |
-| [#78](https://github.com/la3679/sentinelflow/pull/78) | `@eslint/js` 9.39.5 → 10.0.1              | **merged** — aligns it with `eslint` 10, which landed in #12                                                   |
-| [#79](https://github.com/la3679/sentinelflow/pull/79) | `lucide-react` 0.575.0 → 1.34.0           | **merged** — 82 Playwright tests, which is what an icon library needs                                          |
-| [#80](https://github.com/la3679/sentinelflow/pull/80) | `eslint-plugin-react-hooks` 5.2.0 → 7.1.1 | **held** — reported 4 real errors; fixed in [#84](https://github.com/la3679/sentinelflow/pull/84), then merged |
-| [#81](https://github.com/la3679/sentinelflow/pull/81) | `typescript` 5.9.3 → 7.0.2                | **closed with a reason**, and an ignore rule added                                                             |
+| PR                                                    | Bump                                      | Outcome                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#75](https://github.com/la3679/sentinelflow/pull/75) | `spotless-maven-plugin` 3.10.0 → 3.10.1   | **merged** — `spotless:check` clean, 232 API unit tests                                                                                                                                                                                                                                                                   |
+| [#76](https://github.com/la3679/sentinelflow/pull/76) | `ruff` 0.16.4 → 0.16.5                    | **merged** — `ruff`, `mypy --strict` clean, 186 scoring tests                                                                                                                                                                                                                                                             |
+| [#77](https://github.com/la3679/sentinelflow/pull/77) | three TanStack patches                    | **merged** — lint, typecheck, 41 unit tests, build                                                                                                                                                                                                                                                                        |
+| [#78](https://github.com/la3679/sentinelflow/pull/78) | `@eslint/js` 9.39.5 → 10.0.1              | **merged** — aligns it with `eslint` 10, which landed in #12                                                                                                                                                                                                                                                              |
+| [#79](https://github.com/la3679/sentinelflow/pull/79) | `lucide-react` 0.575.0 → 1.34.0           | **merged** — 82 Playwright tests, which is what an icon library needs                                                                                                                                                                                                                                                     |
+| [#80](https://github.com/la3679/sentinelflow/pull/80) | `eslint-plugin-react-hooks` 5.2.0 → 7.1.1 | **closed, superseded.** Reported 4 real errors; all four fixed in [#84](https://github.com/la3679/sentinelflow/pull/84). It then conflicted with #84 and #92 and did not rebase after `@dependabot rebase` or `recreate`, so the one-line bump was taken by hand in [#93](https://github.com/la3679/sentinelflow/pull/93) |
+| [#81](https://github.com/la3679/sentinelflow/pull/81) | `typescript` 5.9.3 → 7.0.2                | **closed with a reason**, and an ignore rule added                                                                                                                                                                                                                                                                        |
 
 **#81 is the one worth remembering.** TypeScript 7.0 itself is fine here: `tsc --noEmit` was clean,
 `vitest` passed and the build succeeded. What fails is `typescript-eslint` 8.65.0, which refuses to
@@ -2431,6 +2434,21 @@ new errors is usually reporting real ones. All four were: three in shadcn compon
 one in `ChartFrame`, which set state from an effect to defer rendering until hydration. Fixed in #84
 by deleting the dead code and moving `ChartFrame` to `useSyncExternalStore`, and the bump then merged
 on its merits.
+
+**The second wave, and where it stands.** Merging the first five changed `bun.lock`, and Dependabot
+opened five more against the new base:
+
+| PR                                                    | Bump                               | Where it stands                                                                                            |
+| ----------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [#86](https://github.com/la3679/sentinelflow/pull/86) | `pydantic` 2.13.4 → 2.13.5         | **verified locally, not merged** — `ruff`, `mypy --strict` clean, 187 scoring tests                        |
+| [#87](https://github.com/la3679/sentinelflow/pull/87) | `zod` 3.25.76 → 4.4.3              | **not verified.** A major, and `zod` is live in two routes                                                 |
+| [#88](https://github.com/la3679/sentinelflow/pull/88) | `typescript` 5.9.3 → 6.0.3         | **verified locally, not merged** — typecheck clean, eslint runs, 41 unit tests, 82 e2e, build              |
+| [#89](https://github.com/la3679/sentinelflow/pull/89) | `react-day-picker` 9.14.0 → 10.0.1 | **closed**, superseded by [#92](https://github.com/la3679/sentinelflow/pull/92), which removed the package |
+| [#90](https://github.com/la3679/sentinelflow/pull/90) | `recharts` 2.15.4 → 3.10.1         | **not verified.** A major, and `recharts` is live in two routes                                            |
+
+**#88 is worth noting beside #81.** TypeScript **6.0.3** is fine: `typescript-eslint` loads against
+it, `tsc --noEmit` is clean, and the unit, browser and build checks all pass. The refusal recorded
+above is specific to 7.0, which is why the ignore rule is a range rather than a major.
 
 **The lockfile workflow's gap showed up again and the documented remedy worked.** All five web pull
 requests sat with every check `action_required`, because the lockfile job's push is made with the
@@ -2534,61 +2552,78 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 7 is closed.** All six deliverables are merged as
-[#70](https://github.com/la3679/sentinelflow/pull/70) to
-[#73](https://github.com/la3679/sentinelflow/pull/73),
-[#82](https://github.com/la3679/sentinelflow/pull/82) and
-[#83](https://github.com/la3679/sentinelflow/pull/83), and all four gate criteria are met with
-evidence and with their limits stated. **Phase 8 — security and quality hardening — is next**, and it
-inherits four items this repository has already written down about itself.
+**Phase 7 is closed** — all six deliverables merged, all four gate criteria evidenced with their
+limits stated. **Phase 8 is open but only at its edges.** Two security fixes and the dependency
+triage landed; none of the phase's own seven deliverables has been started.
 
-1. **Triage the seven open Dependabot pull requests before starting new work**, because two of them
-   are major bumps that will interact with everything Phase 8 touches: TypeScript 5.9 to 7.0
-   ([#81](https://github.com/la3679/sentinelflow/pull/81)) and `@eslint/js` 9 to 10
-   ([#78](https://github.com/la3679/sentinelflow/pull/78)), plus `lucide-react` 0.575 to 1.34
-   ([#79](https://github.com/la3679/sentinelflow/pull/79)). The rest are grouped minor and patch
-   updates. **Read the "Dependabot" section above first**: the lockfile job is gated on the actor, so
-   a human reopening a pull request dispatches every workflow and skips the one that would fix the
-   lockfile, reporting `skipping` — which reads like success. Each major gets its own review and its
-   own CI run, as the four merged on 2026-08-26 did.
-2. **The threat model, and the four holes this repository has already documented.** Phase 8's first
-   deliverable is a STRIDE-style threat model, and it should be written against what is actually
-   here rather than against a generic system — four entries in "Known issues and technical debt"
-   above are inputs to it and each names its own fix: `POST /api/v1/transactions` is
-   unauthenticated (ADR-0012 §5), a token cannot be revoked before it expires,
-   `/actuator/prometheus` is published to the host, and the CSV export's formula-injection defence
-   needs to be traceable to a test rather than asserted. The management port that is not published
-   to the host is the concrete fix for the third and is the smallest of the four.
-3. **The scanning and supply-chain half**: CodeQL, dependency review, container scan and secret scan
-   in CI, an SBOM and release checksums, and least-privilege workflow permissions with pinned
-   third-party actions. `security-scan.yml` already runs a secret scan and a dependency review on
-   every pull request, so this is an extension of something that works rather than a new pipeline.
+**What landed under Phase 8 so far**, so a fresh session does not redo it:
 
-**One thing Phase 8 should not re-decide.** Alert rules exist now and none of them pages anybody,
-because there is no Alertmanager and adding one would be a service with no recipient. That is a
-stated limit rather than an omission, and it is recorded in
-`infra/prometheus/rules/sentinelflow.yml`'s own header and in the Phase 7 gate table.
+- Every published port binds to `127.0.0.1` ([#91](https://github.com/la3679/sentinelflow/pull/91)).
+  This was a real finding, not tidying: `docker port` reported `0.0.0.0` on all eight, so PostgreSQL,
+  Kafka, Grafana and an unauthenticated ingestion endpoint were on the local network. ADR-0012 §5's
+  claim that "the demo stack binds to localhost" was false when written and now is not.
+- 37 unused shadcn components and 30 runtime dependencies deleted
+  ([#92](https://github.com/la3679/sentinelflow/pull/92)): 52 direct dependencies down to 22, 749
+  resolved packages down to 713. Done before CodeQL and the SBOM rather than after, so neither has to
+  cover code nothing runs.
+- Four React Hooks defects fixed ([#84](https://github.com/la3679/sentinelflow/pull/84)) and the
+  plugin bump taken ([#93](https://github.com/la3679/sentinelflow/pull/93)).
+- The dependency policy exercised: see "Dependabot" for the round, including why TypeScript 7.0 is
+  refused and 6.0 is not.
 
-### Three things this session learned the hard way, worth carrying forward
+1. **Finish the Dependabot round — four are open and two of them are already verified.**
+   [#86](https://github.com/la3679/sentinelflow/pull/86) (`pydantic` 2.13.5) and
+   [#88](https://github.com/la3679/sentinelflow/pull/88) (`typescript` 6.0.3) passed every local check
+   on 2026-08-31 and were left unmerged only because the session stopped; the numbers are in
+   "Dependabot". [#87](https://github.com/la3679/sentinelflow/pull/87) (`zod` 4) and
+   [#90](https://github.com/la3679/sentinelflow/pull/90) (`recharts` 3) are **majors on live code** —
+   `zod` in the login and alert-detail routes, `recharts` in the overview and reports routes — so both
+   need `bun run test:e2e` and not only unit tests. Expect them to need rebasing onto whatever #93
+   left; Dependabot did not rebase #80 when asked twice, and taking a one-line bump by hand is the
+   documented fallback.
+2. **The threat model, which is Phase 8's first deliverable and the one everything else traces to.**
+   It should be written against what is actually here rather than a generic system, and four entries
+   in "Known issues and technical debt" are its inputs, each already naming its own fix:
+   `POST /api/v1/transactions` is unauthenticated (ADR-0012 §5 defers its own credential to this
+   phase), a token cannot be revoked before it expires, `/actuator/prometheus` is open to whatever can
+   reach the API, and **there is no rate limiting anywhere** — confirmed by search on 2026-08-31,
+   nothing in `apps/api` implements one. Two controls already exist and need tracing to tests rather
+   than building: `CsvWriter`'s formula-injection defence (17 unit tests) and the request bounds
+   (`MAX_PAGE_SIZE` 200, the export's 10,000-row cap, the report window's 366 days).
+3. **The scanning and supply-chain half.** CodeQL and an SBOM are the two that do not exist;
+   `security-scan.yml` already runs a secret scan and dependency review on every event, and
+   `ci-containers.yml` already runs Trivy over all three images and asserts none runs as root. Every
+   workflow already declares `permissions: contents: read` at the top with job-level escalation only
+   where needed, and third-party actions are already SHA-pinned — so "least-privilege workflows
+   reviewed" is a review to record, not work to do.
+
+### Five things this session learned the hard way, worth carrying forward
 
 - **A Testcontainers `stop()` is not a restart, and neither is `docker stop`.** `stop()` removes the
   container; the `start()` after it creates a different one on a different ephemeral host port with
   an empty log. Docker re-picks the host port on a plain `docker stop`/`docker start` too — checked
   with a throwaway container, `32768` before and `32769` after. `docker pause` is what keeps the
   address and the log, and it is why `KafkaContainerSupport` grew a pause rather than a stop.
-- **Widening a redaction test one notch found four leaks at once.** Raising it from "the application's
-  package and Spring Web" to `logging.level.root=DEBUG`, and driving four more paths, found Hibernate
-  dumping whole entities, `AlertNoteRequest` printing an analyst's note through Spring's own
-  `Read […]` line, and `TransactionResponse` being safe only because a framework log line truncates
-  at 100 characters. **A test that excuses the loggers it cannot satisfy is testing its own
-  exclusions.** The version on `main` pins nothing itself; what protects it is `application.yaml`,
-  which means a deployment gets the same guarantee.
+- **Widening a redaction test one notch found four leaks at once.** Raising it from "the
+  application's package and Spring Web" to `logging.level.root=DEBUG`, and driving four more paths,
+  found Hibernate dumping whole entities, `AlertNoteRequest` printing an analyst's note through
+  Spring's own `Read […]` line, and `TransactionResponse` being safe only because a framework log
+  line truncates at 100 characters. **A test that excuses the loggers it cannot satisfy is testing
+  its own exclusions.** The version on `main` pins nothing itself; what protects it is
+  `application.yaml`, which means a deployment gets the same guarantee.
 - **An absent Prometheus series and a zero look identical on a graph and completely different in a
   rule.** Writing the dead-letter alert rule found `sentinelflow_consumer_deadletter_total` and
   `sentinelflow_consumer_undeliverable_total` with no series at all on the running stack — the third
   time this has been found here, after the dashboards found five. **Register every series a closed
-  label set can produce, at zero, in the constructor.** The rarest outcome is the one worth alerting
-  on, so it is precisely the one that does not exist when the rule is written.
+  label set can produce, at zero, in the constructor.**
+- **Check what a compose file actually publishes, with `docker port`, not by reading it.**
+  `"5432:5432"` is Docker's shorthand for all interfaces, and ADR-0012 had been resting an argument
+  on the opposite for weeks. **A security claim in a document is worth exactly one command.**
+- **A dependency bump that reports new errors is usually reporting real ones**, and a dependency
+  nobody imports is a review nobody should have to do. `eslint-plugin-react-hooks` 7 found four
+  genuine defects; `react-day-picker` 9 → 10 arrived for a calendar no screen renders, and pulling
+  that thread found 27 of 52 runtime dependencies reachable only from unrendered components. The
+  answer to a bump is sometimes a deletion.
 
 **One decision is still open and it is not the console's.** How an assignee's identifier resolves to
 a person. Until it is made, the console can release an alert but cannot give one to anybody, and that
