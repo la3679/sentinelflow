@@ -323,6 +323,35 @@ test.describe("the screens that describe the platform", () => {
     // counting beside the report that already does it.
     expect(paths.some((path) => path.endsWith("/overview"))).toBe(false);
   });
+
+  // The two charts are the only third-party rendering in the console, and a
+  // charting major can stop drawing without throwing: the route still renders,
+  // the console stays quiet, and the panel is simply empty. These assert the
+  // bars exist, so a bump that produces an empty <svg> fails here rather than
+  // in a screenshot nobody takes.
+  for (const chart of [
+    { path: "/", label: "Alerts raised per risk band over the last day" },
+    { path: "/reports", label: "Alert count per risk band over the selected window" },
+  ]) {
+    test(`the risk-band chart on ${chart.path} draws bars from the data`, async ({
+      page,
+      api,
+      signIn,
+    }) => {
+      void api;
+      await signIn(page, chart.path);
+
+      const figure = page.getByRole("img", { name: chart.label });
+      await expect(figure).toBeVisible();
+      await expect(figure.locator("svg.recharts-surface")).toBeVisible();
+      // One rectangle per risk band the window contains; the count is the
+      // stub's, so this asserts the data reached the chart rather than that
+      // some SVG exists.
+      await expect
+        .poll(async () => await figure.locator(".recharts-bar-rectangle").count())
+        .toBeGreaterThan(0);
+    });
+  }
 });
 
 test.describe("keyboard operation", () => {
