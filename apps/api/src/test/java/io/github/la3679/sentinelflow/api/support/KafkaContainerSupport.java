@@ -50,4 +50,49 @@ public class KafkaContainerSupport {
     public static String bootstrapServers() {
         return KAFKA.getBootstrapServers();
     }
+
+    /**
+     * Freezes the broker, so a drill can watch what happens while it is not answering.
+     *
+     * <p><strong>Pause, not stop, and the reason is the address.</strong> {@code stop()} on a
+     * Testcontainers container removes it, and the {@code start()} that follows creates a new one on
+     * a new ephemeral host port with an empty log — which is not a broker restart, it is a different
+     * broker, and every producer and consumer in the context is still configured for the old
+     * address. Going under Testcontainers to {@code docker stop} and {@code docker start} does not
+     * help either: Docker re-picks an ephemeral host port on each start, which was confirmed rather
+     * than assumed. {@code docker pause} freezes the processes through the cgroup freezer and
+     * touches neither the port mapping nor the log, so the broker that comes back is the one that
+     * went away.
+     *
+     * <p>What that simulates is a broker that has stopped answering — a stalled disk, a stop-the-
+     * world pause, a partition on the broker's side. It does not simulate a connection refusal:
+     * the kernel in the container's network namespace still completes handshakes into the accept
+     * backlog while the process is frozen, so a client sees a request that never gets a reply rather
+     * than an immediate rejection. Both end at the same place for this project — the producer's
+     * {@code delivery.timeout.ms} expires and {@code KafkaEventPublisher} throws
+     * {@code EventPublicationException} — and a drill that uses this must compress that timeout or
+     * it will wait twenty seconds per attempt.
+     *
+     * <p><strong>Every caller must resume it.</strong> This is the one broker in the JVM fork, so a
+     * drill that leaves it frozen fails every messaging suite that runs after it. Resume in a
+     * {@code finally} and again in an {@code @AfterAll}; {@link #resumeBroker()} is safe to call when
+     * the broker is already running.
+     */
+    public static void pauseBroker() {
+        if (!isBrokerPaused()) {
+            KAFKA.getDockerClient().pauseContainerCmd(KAFKA.getContainerId()).exec();
+        }
+    }
+
+    /** Unfreezes the broker. A no-op when it is not frozen, so it is safe in a {@code finally}. */
+    public static void resumeBroker() {
+        if (isBrokerPaused()) {
+            KAFKA.getDockerClient().unpauseContainerCmd(KAFKA.getContainerId()).exec();
+        }
+    }
+
+    /** Read from Docker rather than from a flag this class keeps, so it cannot drift from the truth. */
+    public static boolean isBrokerPaused() {
+        return Boolean.TRUE.equals(KAFKA.getCurrentContainerInfo().getState().getPaused());
+    }
 }
