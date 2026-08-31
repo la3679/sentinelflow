@@ -1,0 +1,34 @@
+# Dashboard provisioning.
+#
+# Provisioned from files rather than clicked in through the UI, for the reason
+# the datasource beside it gives: a fresh `make up` on a clean machine has
+# working dashboards with no manual step and no state that lives only in one
+# developer's volume.
+#
+# The five files are Phase 7's, and each panel carries a description saying what
+# the number means and what it does not. A panel whose meaning has to be guessed
+# is the kind of figure somebody quotes.
+
+apiVersion: 1
+
+providers:
+  - name: sentinelflow
+    type: file
+    # No folder. Five dashboards is a list, not a hierarchy, and a folder would
+    # be one more click between an operator and the graph a runbook sent them to.
+    folder: ""
+    # allowUiUpdates false, so Grafana reconciles the files on every start and an
+    # edit made in the UI is overwritten. That is the point: the file is the
+    # source of truth, and a dashboard tuned during an incident and never
+    # committed is a dashboard nobody else has.
+    allowUiUpdates: false
+    # Refuses to delete a dashboard from the database when its file disappears.
+    # Off, so removing a file removes the dashboard - otherwise a deleted
+    # dashboard lives on in one developer's volume and nowhere else.
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      # Mirrors the directory layout into folders. Irrelevant while the layout
+      # is flat, and correct the moment it is not.
+      foldersFromFilesStructure: false
