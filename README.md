@@ -42,8 +42,8 @@ finished system as though it were running.
 | 4     | Synthetic data generation and risk scoring         | **complete** |
 | 5     | Alert lifecycle, investigations, audit             | **complete** |
 | 6     | Operations console wired to the real API           | **complete** |
-| 7     | Observability and resilience                       | in progress  |
-| 8     | Security and release-quality hardening             | not started  |
+| 7     | Observability and resilience                       | **complete** |
+| 8     | Security and release-quality hardening             | next         |
 | 9     | Performance, documentation, clean-clone check      | not started  |
 | 10    | v1.0.0 release                                     | not started  |
 
@@ -52,8 +52,12 @@ scoring service, the console, Prometheus, Grafana, an OpenTelemetry Collector an
 scrapes both services, five dashboards are provisioned from files, and one transaction can be
 followed as a single trace from the HTTP request through the outbox and Kafka to the scoring call.
 
-**What Phase 7 still owes:** the resilience drills and the runbooks they give real content to. The
-phase gate is not claimed until both land.
+**Two failures are drilled rather than described.** `ScoringOutageDrillIT` fails the scoring service
+under load and asserts that every transaction is still assessed, degraded, and that the outage's cost
+is bounded by the circuit breaker rather than by the number of transactions.
+`BrokerOutageDrillIT` freezes the broker mid-run and asserts that ingestion keeps accepting, the
+outbox retains, and the backlog drains exactly once when the broker returns. Both run in
+`make test-integration`.
 
 The pipeline is end to end. A transaction posted to `/api/v1/transactions` is written with its
 outbox row in one database transaction, published to Kafka by the relay, consumed idempotently, and
@@ -504,9 +508,21 @@ when retention expires rather than when somebody fixes something.
 Every panel query was run against the live Prometheus before this was written: 48 queries, none
 empty, none malformed.
 
-**Alert rules are still deliberately absent.** `rule_files: []` in
-[`infra/prometheus/prometheus.yml`](infra/prometheus/prometheus.yml) says why: a rule with no runbook
-is a pager nobody knows how to answer, so they arrive with the runbooks rather than before them.
+**Thirteen alerting rules** live in
+[`infra/prometheus/rules/sentinelflow.yml`](infra/prometheus/rules/sentinelflow.yml), each annotated
+with the section of [`docs/operations/RUNBOOKS.md`](docs/operations/RUNBOOKS.md) that answers it.
+They waited for the runbooks rather than landing beside the dashboards, because a rule with no
+runbook is a pager nobody knows how to answer.
+
+There is no Alertmanager in this stack, so nothing pages anybody: a firing rule appears on
+Prometheus's own Alerts page at <http://localhost:9090/alerts>. Adding Alertmanager would be a
+service with no recipient; the rules are worth having because they put the thresholds somewhere they
+can be read and argued with. No threshold is calibrated against a measured baseline — most are
+derived from a configured budget or interval and name it, and the two that are conventions say so.
+
+**Nine runbooks** cover dead-letter growth, consumer lag, outbox backlog, scoring degradation, the
+API being down, connection saturation, a high server error rate, a slow report query, and a model
+that will not load. Each names real metrics, real dashboard panels and commands that were run.
 
 ### Tracing
 
