@@ -242,7 +242,8 @@ was found, not because something was filtered.
 ## Workflow permission review — 2026-08-31
 
 Recorded rather than performed, because the work was already done as each workflow was written. All
-nine declare `permissions: contents: read` at the top.
+nine declare a top-level `permissions:` block; eight of them are `contents: read`, and the ninth is
+`dependabot-bun-lockfile.yml`, whose whole job is to push.
 
 | Workflow                      | Escalation                                                                      | Justified                                                                                                                                                                                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

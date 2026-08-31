@@ -209,7 +209,7 @@ dashboards, because a rule with no runbook is a pager nobody knows how to answer
 
 ---
 
-## Phase 8 — Security and quality hardening · M4 — **NEXT**
+## Phase 8 — Security and quality hardening · M4
 
 **Deliverables**
 
@@ -224,9 +224,24 @@ dashboards, because a rule with no runbook is a pager nobody knows how to answer
 **Gate** — no unresolved critical or high findings without documented false-positive evidence ·
 secret scan clean · workflows reviewed · threat controls traceable to tests and docs.
 
+**Status: complete.** All seven deliverables merged, as PRs #91 to #96. All four gate criteria are
+met with recorded evidence — `PROJECT_STATE.md` §"Acceptance criteria status — Phase 8 gate" holds
+the row-by-row position, including what each piece of evidence does not cover.
+
+The threat model is `docs/security/THREAT_MODEL.md`, and the decision the rest of the phase traces
+to is [ADR-0017](../adr/0017-protecting-the-ingestion-surface.md). Three of its numbered items
+closed inside the phase (T-01, T-02, T-03 with ADR-0017; T-06 and T-07 with `codeql.yml` and
+`sbom.yml`), and **four remain open with owners rather than being dropped** — T-04, T-05, T-08 and
+T-09. T-09 is the one worth reading: closing T-01 created it, because a shared key authenticates a
+caller without identifying which one.
+
+**The CodeQL zero was checked rather than trusted.** An analysis over an empty database reports zero
+results and looks exactly like a clean one, so a defect was planted on a throwaway branch and CodeQL
+reported `java/sql-injection [high]` at the exact line before that branch was deleted.
+
 ---
 
-## Phase 9 — Performance, documentation, and clean-clone validation · M5
+## Phase 9 — Performance, documentation, and clean-clone validation · M5 — **NEXT**
 
 **Deliverables**
 
