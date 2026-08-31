@@ -8,11 +8,13 @@ a safe mitigation, how to validate the fix, and what it deliberately does not co
 
 **This file grows with the system, and only ever documents behaviour that exists.** A runbook for a
 component that has not been built would be a guess, and a guess in a runbook is worse than a gap
-because somebody follows it. **Nine runbooks are written below**, which is the set
+because somebody follows it. **Ten runbooks are written below.** Nine are the set
 `docs/planning/IMPLEMENTATION_PLAN.md` asks Phase 7 for: dead-letter growth, consumer lag, outbox
 backlog and scoring degradation cover the pipeline Phases 3 and 4 built; the API being down,
 connection saturation, a high server error rate, a slow report query and a model that will not load
-cover the rest of what this stack can do wrong.
+cover the rest of what this stack can do wrong. The tenth arrived with the control that made it
+possible — Phase 8's rate limiting adds a way for the stack to refuse a caller on purpose, and a
+refusal nobody can diagnose is a defect wearing a status code.
 
 **Every runbook names metrics that exist and dashboard panels that are provisioned.** Five
 dashboards live in `infra/grafana/dashboards/`; each runbook says which one to open first. The four
@@ -954,3 +956,85 @@ recovery carry a `model_score` and a `model_version`.
   transient.
 - **The registry is committed to this repository**, so "the model is missing" usually means a build
   or a mount rather than a lost file. `docker compose exec scoring ls -R /app/models` settles which.
+
+## Runbook 10 — Everything is suddenly answering 429
+
+### Symptoms
+
+Callers receiving `429 Too Many Requests` with a `Retry-After` header and a problem body typed
+`https://sentinelflow.example/problems/rate-limited`. The console showing errors on screens that
+worked a minute ago, or `make replay` failing partway through a phase.
+
+### Impact
+
+Depends entirely on which allowance was reached, and the three are independent (ADR-0017 §2):
+
+| Category  | Applies to                       | Default                   | What it looks like                                                 |
+| --------- | -------------------------------- | ------------------------- | ------------------------------------------------------------------ |
+| `login`   | `POST /api/v1/auth/login`        | 10 per minute, burst 10   | Nobody can sign in; everybody already signed in is unaffected      |
+| `ingest`  | `POST /api/v1/transactions`      | 600 per minute, burst 120 | Transactions are refused. **Nothing is lost** — the caller retries |
+| `default` | Everything else under `/api/v1/` | 300 per minute, burst 60  | The console degrades; the pipeline behind it keeps running         |
+
+A 429 is not a failure of the request. Nothing was written, nothing was partially applied, and the
+idempotency key on a refused ingestion is still unused — so a retry after the interval is safe and
+is the intended response.
+
+### Diagnostics
+
+**First, decide whether this is the limiter working.** A demo reaching the `ingest` allowance is a
+demo posting more than ten transactions a second, which `make replay` does not do. A single browser
+reaching the `default` allowance is not a browser.
+
+Which category, from the path in the `instance` field of the problem body:
+
+```bash
+curl -si -X POST "http://localhost:8080/api/v1/auth/login" \
+  -H 'Content-Type: application/json' -d '{"username":"x","password":"y"}' | head -20
+```
+
+Read the configured values rather than assuming the defaults:
+
+```bash
+docker compose exec api env | grep SENTINELFLOW_RATE_
+```
+
+An empty result means every category is at its default, which is the normal case.
+
+**The one non-obvious cause: everybody shares a bucket.** The limiter keys on a hash of
+`X-API-Key` when there is one, and on the remote address otherwise. Every browser reaching the API
+through the same address is therefore one caller as far as the `default` allowance is concerned.
+On a laptop that is one person. Behind a NAT or a proxy it is everybody, and the limiter cannot
+tell — no forwarding header is trusted, deliberately, because a forged one would let a single
+caller spread itself across as many buckets as it liked.
+
+### Resolution
+
+- **If it is the limiter working**, do nothing to the limiter. Find what is making the requests.
+- **If a legitimate workload needs more headroom**, raise that one category rather than all three,
+  in `.env`, and restart the API:
+
+  ```bash
+  SENTINELFLOW_RATE_INGEST_PERMITS=2000
+  SENTINELFLOW_RATE_INGEST_BURST=400
+  ```
+
+- **If the API was restarted**, every allowance is already full again: the buckets are in memory
+  and a restart forgets them. That is worth knowing before somebody restarts it hoping to clear a
+  limit and concludes the restart fixed something.
+
+### Validation
+
+A refused caller succeeds after waiting the interval the `Retry-After` header named. No `429` in
+`sum by (uri, status) (rate(http_server_requests_seconds_count{status="429"}[5m]))`.
+
+### Known limitations
+
+- **The limit is per API instance.** Two instances behind a load balancer would permit twice the
+  configured rate. Stated in ADR-0017 §2 rather than discovered here; the limiter belongs at an
+  edge this stack does not have.
+- **The refusal says nothing about the limit or what remains of it.** That is deliberate — a
+  caller being limited needs to know to come back later, not how close it got — so the only way to
+  read the configured values is the `docker compose exec` above.
+- **There is no metric for refusals yet.** `http_server_requests_seconds_count{status="429"}` is
+  what exists, and it comes from the actuator rather than from the limiter, so it counts refusals
+  without saying which category or which caller.

@@ -29,6 +29,7 @@ import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
 import io.github.la3679.sentinelflow.api.support.TestCredentials;
 import io.github.la3679.sentinelflow.api.web.ApiHeaders;
+import io.micrometer.core.instrument.MeterRegistry;
 
 /**
  * The three controls ADR-0017 adds, driven over HTTP against the real application.
@@ -79,6 +80,9 @@ class RequestLimitsIT extends AbstractPostgresTest {
 
     @Autowired
     private RateLimiter limiter;
+
+    @Autowired
+    private MeterRegistry meters;
 
     private RestTestClient client;
     private String accountReference;
@@ -210,6 +214,22 @@ class RequestLimitsIT extends AbstractPostgresTest {
         // No allowance, no remaining count, no window. A caller being limited
         // needs to know to come back later, not how close they got.
         assertThat(problem).doesNotContain("\"limit\"").doesNotContain("remaining");
+    }
+
+    @Test
+    @DisplayName("a refused request is still counted by the actuator, so a 429 rate is observable")
+    void isVisibleToTheActuator() {
+        for (int accepted = 0; accepted < 3; accepted++) {
+            ingest(key()).expectStatus().isAccepted();
+        }
+        ingest(key()).expectStatus().isEqualTo(429);
+
+        // The limiter refuses inside a filter, before the dispatcher. Whether
+        // Spring's own request metric sees that depends on filter ordering, and
+        // RUNBOOKS.md Runbook 10 tells an operator to graph it - so this asserts
+        // the series exists rather than leaving the runbook to be wrong quietly.
+        assertThat(meters.find("http.server.requests").tag("status", "429").timer())
+                .isNotNull();
     }
 
     @Test

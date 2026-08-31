@@ -126,6 +126,14 @@ sentinelflow-postgres` reported `0.0.0.0:5432` on the running stack. "Anything t
 > a deliberate act. The argument this section makes for leaving ingestion open rests on that
 > containment, so it was worth making real before Phase 8 relies on it.
 
+> **Closed, 2026-08-31.** This section is now history rather than a live gap.
+> [ADR-0017](0017-protecting-the-ingestion-surface.md) §1 gave ingestion its own credential —
+> `X-API-Key`, compared in constant time, with no default — together with the rate limit and the
+> payload bound this section said belonged beside it. The reasoning above is left intact because it
+> is still why the credential is a key rather than an operator's token; only the "until Phase 8"
+> clause has expired. ADR-0017 amends this ADR rather than superseding it: §§1–4 are unchanged and
+> still binding.
+
 Also unprotected, and correctly: `/actuator/health/*` (a liveness probe cannot hold a token) and
 `POST /api/v1/auth/login` itself.
 
@@ -152,8 +160,13 @@ Grafana.
   is Phase 8's to add if the demo ever needs one.
 - The console can hold a token in memory and must not put it in browser storage, which is what the
   frontend rules already say and what a test already enforces.
-- Ingestion remains open until Phase 8. That is the one place this decision knowingly leaves
-  something undone.
+- Ingestion remained open until Phase 8, which is the one place this decision knowingly left
+  something undone. [ADR-0017](0017-protecting-the-ingestion-surface.md) closed it on 2026-08-31.
+
+**Amended by [ADR-0017](0017-protecting-the-ingestion-surface.md)** (2026-08-31), which decided the
+ingestion credential this ADR deferred. It is a shared key rather than this ADR's mechanism, for the
+reason §5 gives: a pipeline is not a person, and giving it an operator's login would model it as one.
+Nothing in §§1–4 changes.
 
 **Revisit if:** the demo grows a multi-tenant or per-customer notion of access, which token claims
 alone would not carry; a real deployment needs revocation or single sign-on, at which point an
