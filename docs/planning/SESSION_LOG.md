@@ -2590,7 +2590,7 @@ runbooks the drills give real content to, then close the Phase 7 gate honestly a
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
 | Start / end UTC | 2026-08-31T14:45Z / 2026-08-31T16:10Z                                                                        |
 | Starting SHA    | `a1099ba` on `main`                                                                                          |
-| Ending SHA      | recorded by the checkpoint commit that closes this entry                                                     |
+| Ending SHA      | `77ad75c` on `main` (PR #83's merge)                                                                         |
 | Objective       | Finish Phase 7: the resilience drills, the nine runbooks and their alert rules, then close the gate honestly |
 
 ### Work completed

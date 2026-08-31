@@ -58,6 +58,18 @@ updates:
       # under the generated configuration breaks the build in ways a Dependabot
       # PR cannot explain. See ADR-0009.
       - dependency-name: "@lovable.dev/*"
+      # TypeScript 7.0 only. `typescript-eslint` 8.65.0 refuses to load against
+      # it and says so by name: "typescript-eslint does not support TS 7.0",
+      # pointing at issue #10940, which tracks support for TS >= 7.1. Verified
+      # on PR #81: `tsc --noEmit` was clean, `vitest` passed and the build
+      # succeeded, and `eslint .` could not start - so the repository would have
+      # had to ship without a linter to take it.
+      #
+      # A range rather than an update-type: ignoring the major would also block
+      # 7.1, which is the release typescript-eslint says it is working towards.
+      # Delete these two lines once it lands.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0 <7.1.0"]
 
   # ---------------------------------------------------------------------------
   # Java
