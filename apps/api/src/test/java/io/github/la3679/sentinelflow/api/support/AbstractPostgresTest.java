@@ -9,7 +9,7 @@ import org.springframework.test.context.TestPropertySource;
  * Base class for every test that needs the real schema.
  *
  * <p>Extending this starts the application against {@link PostgresContainerSupport}, which means
- * Flyway applies all six migrations to an empty database and Hibernate then validates every mapping
+ * Flyway applies every migration to an empty database and Hibernate then validates every mapping
  * against the tables that resulted. Both of those are assertions in themselves: a context that
  * loads is a schema that applies and a set of mappings that agree with it.
  *

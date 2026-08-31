@@ -220,24 +220,49 @@ does not know.
 
 ## What the first CodeQL run found, and how that was checked
 
-**Zero findings, across all three languages** — analyses on 2026-08-31, `security-and-quality` pack,
-CodeQL 2.26.4.
+**Corrected 2026-08-31, and the correction is the point of this section.**
 
-That number is worth nothing on its own. **An analysis over an empty database reports zero results
-and looks exactly like a clean one**, which is the same shape as three defects this project has
-already been caught by: an absent Prometheus series that looked like a zero, Kafka topics nothing
-created behind green health checks, and a scoring client rejected at every call while every test
-passed. The Java job is the one to doubt, because it is the only compiled language and its database
-is only as good as the build step in front of it.
+The first version of this section said "zero findings, across all three languages". That was read
+from the analyses on the **pull request merge refs**, which reported `results=0`. It was wrong about
+the repository: the run against `refs/heads/main` after the merge reported **12 alerts**. A
+pull-request analysis and a branch analysis do not answer the same question, and quoting the first
+as though it were the second is exactly the kind of over-read this document's severity columns exist
+to prevent.
 
-**So a defect was planted.** A throwaway controller concatenating a `@RequestParam` into a native
-query — textbook CWE-89 — was pushed on a branch, and CodeQL reported
-`java/sql-injection [high]` at the exact line. The branch was closed and deleted without merging.
-The extractor sees this source tree, the `build-mode: manual` compile step works, and the zero above
-is a real zero.
+**What the branch scan actually found**, CodeQL 2.26.4, `security-and-quality`:
 
-**No suppression, no baseline, no dismissed alert.** The open-alert count is zero because nothing
-was found, not because something was filtered.
+| Severity | Rule                                   | Where                                   | Outcome                                                                                                                                                                                        |
+| -------- | -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| high     | `js/file-system-race`                  | `tests/unit/no-browser-storage.test.ts` | **Fixed.** `readdirSync` with `withFileTypes` instead of a `statSync` per entry, which removes the time-of-check/time-of-use gap rather than arguing the only writer is the developer's editor |
+| high     | `java/spring-disabled-csrf-protection` | `WebSecurityConfiguration`              | **Dismissed, false positive with evidence.** See below                                                                                                                                         |
+| medium   | `java/log-injection`                   | `ApiExceptionHandler`                   | **Fixed.** The method and request URI are flattened and capped before they reach a log line                                                                                                    |
+| note ×9  | `java/unused-parameter`                | `ApiExceptionHandler`, `RateLimiter`    | **Dismissed.** Framework-mandated signatures — Spring's `@ExceptionHandler` fixes the parameter list, and the unused one cannot be removed without breaking the binding                        |
+
+**The CSRF dismissal is the only finding argued rather than fixed**, and the argument is already in
+the code. CSRF protection is off because **there is no cookie to forge a request with**: the API is
+stateless, the token travels in an `Authorization` header the console sets itself, ADR-0013 leaves
+`allowCredentials` false, and a unit test forbids session or authorization state in browser storage.
+`WebSecurityConfiguration`'s Javadoc states the condition under which disabling it is correct and
+that it stops being correct the moment anything here authenticates from a cookie. The dismissal on
+GitHub carries that reason.
+
+**The two fixes are not cosmetic.** The log-injection one matters most: `CorrelationIdFilter`
+already refuses to echo arbitrary client text into a log for precisely this reason, and the
+exception handler was the one other place a caller's bytes reached a log line. Tomcat happens to
+reject control characters in a request line, but that is a property of the container in front of
+this code rather than of this code.
+
+### The extractor was verified separately, and that result still stands
+
+Before any of the above was known, a defect was planted to check that the Java extractor sees this
+source tree at all — **an analysis over an empty database reports zero results and looks exactly
+like a clean one**, which is the same shape as three defects this project has already been caught
+by. A throwaway controller concatenating a `@RequestParam` into a native query was pushed on a
+branch; CodeQL reported `java/sql-injection [high]` at the exact line, and the branch was closed and
+deleted without merging.
+
+That experiment was sound and its conclusion holds. What it could not tell anybody was how many
+alerts already existed on `main`, because it was run on a pull request.
 
 ## Workflow permission review — 2026-08-31
 

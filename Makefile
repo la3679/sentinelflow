@@ -23,7 +23,7 @@ SCORING := apps/scoring
 
 .PHONY: help bootstrap up down logs ps reset-demo seed export-dataset train replay \
         build test test-web test-api test-scoring test-integration test-e2e \
-        lint format format-check security smoke docs-check contracts-check clean
+        lint format format-check security smoke docs-check contracts-check bench clean
 
 ## ---------------------------------------------------------------------------
 ## Help
@@ -122,6 +122,12 @@ train: ## Train, evaluate and register a risk model (ADR-0010)
 # Makefile target would be the wrong trade.
 replay: ## Replay an operational scenario against the running stack
 	@./scripts/dev/replay.sh $${SCENARIO:-all}
+
+# Reads the credentials from .env, because ingestion needs a key (ADR-0017) and
+# the read measurements need an operator token. The driver is standard-library
+# Python on the interpreter ADR-0004 pins, so it needs nothing installed.
+bench: ## Benchmark the running stack and write docs/performance/BENCHMARK.md
+	@set -a; . ./.env; set +a; $(UV) run --no-project --python 3.13 scripts/bench/benchmark.py
 
 ## ---------------------------------------------------------------------------
 ## Build and test

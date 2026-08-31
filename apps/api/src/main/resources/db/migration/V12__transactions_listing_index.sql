@@ -1,0 +1,34 @@
+-- The index the transaction list's ORDER BY has always needed.
+--
+-- `GET /api/v1/transactions` orders by `occurred_at DESC, id DESC` and pages.
+-- Until this index existed there was nothing to serve that ordering, so the
+-- planner had one option: join every transaction to its account, its merchant
+-- and its latest assessment, sort the lot, and throw away everything but the
+-- requested page.
+--
+-- Measured on 2026-08-31 against 20,947 transactions and 13,682 assessments,
+-- page 20 at size 50 — the exact SQL Hibernate emits, captured from the
+-- server's own statement log rather than reconstructed:
+--
+--   before   68.0 ms, 71,256 shared buffer hits
+--   after     5.0 ms,  6,155 shared buffer hits
+--
+-- **The cost was not the sort.** It was the correlated subquery that resolves
+-- each transaction's latest assessment version: it ran 34,629 times, once for
+-- every row of a join that had to be fully materialised before anything could
+-- be discarded, and it accounted for 69,745 of those 71,256 buffer hits — 98%
+-- of the work, to produce fifty rows. With an index to walk in order, the
+-- planner takes a nested loop over the first 1,050 rows and the subquery runs
+-- only for those.
+--
+-- **Why the identifier is in the index and not only the timestamp.** The sort
+-- is on both columns, because `occurred_at` alone is not unique and a page
+-- boundary that falls inside a group of equal timestamps would otherwise
+-- return a row twice or skip it. An index on the timestamp alone would still
+-- need a sort to break those ties, which is the cost this is removing.
+--
+-- **What it costs.** One more index to maintain on every transaction insert,
+-- on the system's highest-volume write path. That is the trade, and it is
+-- taken deliberately: this ordering serves the console's busiest screen and
+-- the endpoint was the slowest of the five measured, by a factor of five.
+CREATE INDEX transactions_occurred_id_idx ON transactions (occurred_at DESC, id DESC);

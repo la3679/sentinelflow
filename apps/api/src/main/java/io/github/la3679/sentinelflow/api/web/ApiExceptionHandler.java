@@ -67,6 +67,9 @@ public class ApiExceptionHandler {
      */
     private static final String TYPE_PREFIX = "https://sentinelflow.example/problems/";
 
+    /** Long enough for any route this API serves, short enough that a hostile URI cannot flood a line. */
+    private static final int MAX_LOGGED_REQUEST_CHARS = 200;
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ProblemDetail onValidationFailure(MethodArgumentNotValidException exception, HttpServletRequest request) {
         ProblemDetail problem = problem(
@@ -128,6 +131,29 @@ public class ApiExceptionHandler {
                 "Request body too large",
                 "The request body exceeds the " + exception.maximumBytes() + " byte maximum this API accepts.",
                 request);
+    }
+
+    /**
+     * Strips anything a caller could use to forge a log line.
+     *
+     * <p>The method and the request URI are both caller-supplied. Tomcat rejects control characters
+     * in a request line and returns the URI still percent-encoded, so a newline does not arrive
+     * intact today — but that is a property of the container in front of this code rather than of
+     * this code, and it is not one worth resting on. {@code CorrelationIdFilter} already refuses to
+     * echo arbitrary client text for exactly this reason; this is the same rule applied at the one
+     * other place a caller's bytes reach a log line.
+     *
+     * <p>Carriage returns and newlines become spaces, and the value is capped, so a long URI cannot
+     * push the rest of the entry out of a viewer.
+     */
+    private static String sanitiseForLog(String value) {
+        if (value == null) {
+            return "";
+        }
+        String flattened = value.replace('\r', ' ').replace('\n', ' ');
+        return flattened.length() <= MAX_LOGGED_REQUEST_CHARS
+                ? flattened
+                : flattened.substring(0, MAX_LOGGED_REQUEST_CHARS) + "…";
     }
 
     /** Walks the cause chain, because the parser wraps whatever its input threw. */
@@ -400,7 +426,11 @@ public class ApiExceptionHandler {
         // The only place the real exception is recorded. Logged with the
         // correlation identifier so the fixed sentence the caller receives can
         // still be traced back to this line.
-        log.error("Unhandled exception serving {} {}", request.getMethod(), request.getRequestURI(), exception);
+        log.error(
+                "Unhandled exception serving {} {}",
+                sanitiseForLog(request.getMethod()),
+                sanitiseForLog(request.getRequestURI()),
+                exception);
 
         ProblemDetail problem = problem(
                 HttpStatus.INTERNAL_SERVER_ERROR,

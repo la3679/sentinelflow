@@ -179,6 +179,7 @@ function Invoke-Help {
         'smoke'            = 'Verify the running stack actually serves'
         'docs-check'       = 'Check documentation formatting, links, and placeholders'
         'contracts-check'  = 'Validate OpenAPI, AsyncAPI, and the event schemas'
+        'bench'            = 'Benchmark the running stack and write docs/performance/BENCHMARK.md'
         'clean'            = 'Remove build output (keeps dependencies and Docker volumes)'
     }
     foreach ($key in $targets.Keys) {
@@ -1044,6 +1045,24 @@ switch ($Target) {
         Invoke-Native $RepoRoot 'bun' @('scripts/dev/check-docs.mjs')
     }
     'contracts-check' { Invoke-Native $RepoRoot 'bun' @('scripts/dev/check-contracts.mjs') }
+
+    # The Makefile target sources .env before running the driver. PowerShell has
+    # no `set -a`, so the same two variables are read out of the file and put on
+    # the process instead: ingestion needs its key (ADR-0017) and the read
+    # measurements need an operator token.
+    'bench' {
+        foreach ($name in @('SENTINELFLOW_INGEST_API_KEY', 'SENTINELFLOW_DEMO_OPERATOR_PASSWORD')) {
+            if (-not (Get-Item "env:$name" -ErrorAction SilentlyContinue)) {
+                $envFile = Join-Path $RepoRoot '.env'
+                if (Test-Path $envFile) {
+                    $line = Get-Content $envFile | Where-Object { $_ -match "^$name=" } | Select-Object -First 1
+                    if ($line) { Set-Item "env:$name" $line.Substring($line.IndexOf('=') + 1) }
+                }
+            }
+        }
+        Invoke-Native $RepoRoot 'uv' @(
+            'run', '--no-project', '--python', '3.13', 'scripts/bench/benchmark.py')
+    }
 
     'clean' {
         foreach ($path in @(
