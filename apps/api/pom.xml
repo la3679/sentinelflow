@@ -37,7 +37,7 @@
     <maven.compiler.release>25</maven.compiler.release>
 
     <!-- Versions the Spring Boot BOM does not manage. See docs/research/RESEARCH_LOG.md. -->
-    <spotless-maven-plugin.version>3.10.0</spotless-maven-plugin.version>
+    <spotless-maven-plugin.version>3.10.1</spotless-maven-plugin.version>
     <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
     <palantir-java-format.version>2.86.0</palantir-java-format.version>
 
