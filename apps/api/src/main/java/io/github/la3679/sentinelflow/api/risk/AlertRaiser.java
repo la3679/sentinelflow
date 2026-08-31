@@ -13,6 +13,7 @@ import io.github.la3679.sentinelflow.api.domain.AlertActionType;
 import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.EventType;
 import io.github.la3679.sentinelflow.api.domain.ReasonCode;
+import io.github.la3679.sentinelflow.api.domain.RiskBand;
 import io.github.la3679.sentinelflow.api.messaging.payload.AlertCreatedPayload;
 import io.github.la3679.sentinelflow.api.observability.CurrentTrace;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
@@ -95,6 +96,7 @@ public class AlertRaiser {
         this.policy = policy;
         this.objectMapper = objectMapper;
         this.meters = meters;
+        registerAlertSeries();
     }
 
     /**
@@ -235,11 +237,30 @@ public class AlertRaiser {
      * be revisited against, and it cannot be revisited against a figure nobody records.
      */
     private void count(Alert alert) {
-        Counter.builder("sentinelflow.alerts.raised")
-                .tag("priority", alert.getPriority().name())
-                .tag("band", alert.getRiskBand().name())
+        raised(alert.getPriority(), alert.getRiskBand()).increment();
+    }
+
+    /**
+     * The series an alerting policy can produce, registered at zero on startup.
+     *
+     * <p>An alert is rare by design, so without this the first hours of a stack's life have no
+     * {@code sentinelflow_alerts_raised_total} at all — and "no alerts have been raised" and "the
+     * metric does not exist" are the same picture on a dashboard and different answers to the
+     * question an operator is asking.
+     *
+     * <p>Only the bands that actually alert, taken from the policy rather than from the enum: a
+     * band below the threshold cannot raise one, and a series for it would be a line that is
+     * permanently zero for a structural reason rather than an operational one.
+     */
+    private void registerAlertSeries() {
+        policy.priorityByBand().forEach((band, priority) -> raised(priority, band));
+    }
+
+    private Counter raised(AlertPriority priority, RiskBand band) {
+        return Counter.builder("sentinelflow.alerts.raised")
+                .tag("priority", priority.name())
+                .tag("band", band.name())
                 .description("Alerts opened by the risk policy, by queue priority and risk band")
-                .register(meters)
-                .increment();
+                .register(meters);
     }
 }

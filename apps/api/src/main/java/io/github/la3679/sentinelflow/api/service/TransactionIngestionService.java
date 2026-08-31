@@ -53,12 +53,16 @@ public class TransactionIngestionService {
     /** The metric name, here so the test asserts against the shipped string. */
     static final String INGESTED_METRIC = "sentinelflow.transactions.ingested";
 
+    /** The complete outcome domain, and the three this class documents. */
+    private static final String[] OUTCOMES = {"created", "replayed", "conflict"};
+
     private final TransactionWriter writer;
     private final MeterRegistry meters;
 
     public TransactionIngestionService(TransactionWriter writer, MeterRegistry meters) {
         this.writer = writer;
         this.meters = meters;
+        registerIngestionSeries();
     }
 
     public IngestionOutcome ingest(TransactionRequest request, UUID correlationId, IngestionSource source) {
@@ -122,12 +126,29 @@ public class TransactionIngestionService {
      * transaction, and {@code http.server.requests} already carries its 4xx.
      */
     private void count(IngestionSource source, String outcome) {
-        Counter.builder(INGESTED_METRIC)
+        ingested(source, outcome).increment();
+    }
+
+    /**
+     * All nine series at zero on startup, so a fresh stack reports no conflicts rather than nothing.
+     *
+     * <p>A conflict is the rarest of the three and the one worth alerting on, which means it is
+     * exactly the series that would not exist when the rule was written.
+     */
+    private void registerIngestionSeries() {
+        for (IngestionSource source : IngestionSource.values()) {
+            for (String outcome : OUTCOMES) {
+                ingested(source, outcome);
+            }
+        }
+    }
+
+    private Counter ingested(IngestionSource source, String outcome) {
+        return Counter.builder(INGESTED_METRIC)
                 .tag("source", source.name())
                 .tag("outcome", outcome)
                 .description("Transactions offered to ingestion, by origin and by what ingestion did with them")
-                .register(meters)
-                .increment();
+                .register(meters);
     }
 
     /**
