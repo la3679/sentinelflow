@@ -45,6 +45,11 @@ public class DeadLetterRecoverer implements ConsumerRecordRecoverer {
 
     private static final Logger log = LoggerFactory.getLogger(DeadLetterRecoverer.class);
 
+    /** The metric names, here rather than inline so the tests assert against the shipped strings. */
+    static final String DEADLETTER_METRIC = "sentinelflow.consumer.deadletter";
+
+    static final String UNDELIVERABLE_METRIC = "sentinelflow.consumer.undeliverable";
+
     private final EventEnvelopeReader reader;
     private final DeadLetterPublisher publisher;
     private final RetryStateTracker retryState;
@@ -62,6 +67,29 @@ public class DeadLetterRecoverer implements ConsumerRecordRecoverer {
         this.retryState = retryState;
         this.failedAssessments = failedAssessments;
         this.meters = meters;
+
+        registerFailureSeries();
+    }
+
+    /**
+     * Every series these two counters can ever produce, registered at zero on startup.
+     *
+     * <p>Micrometer creates a series on its first increment, so before the first dead-letter neither
+     * metric exists at all — and in Prometheus an absent series and a zero look identical on a graph
+     * and completely different in a rule. {@code increase(...[15m]) > 0} over a series that has never
+     * existed matches nothing, which is the right answer for the wrong reason and stops being
+     * distinguishable from a metric whose name is misspelled. Registering them makes a healthy
+     * pipeline say so.
+     *
+     * <p>Six series and no more: the five failure classes and the one topic this consumer reads, both
+     * closed sets fixed in code. {@code RiskAssessmentService} and {@code OutboxBatchProcessor} do the
+     * same thing for the same reason; this is the third place a dashboard or a rule noticed the gap.
+     */
+    private void registerFailureSeries() {
+        for (DlqFailureClass failureClass : DlqFailureClass.values()) {
+            counter(DEADLETTER_METRIC, "class", failureClass.name());
+        }
+        counter(UNDELIVERABLE_METRIC, "topic", TransactionCreatedConsumer.TOPIC);
     }
 
     @Override
@@ -107,8 +135,7 @@ public class DeadLetterRecoverer implements ConsumerRecordRecoverer {
                 attempts.attempts(),
                 failureClass,
                 deadLetter.exceptionType());
-        counter("sentinelflow.consumer.deadletter", "class", failureClass.name())
-                .increment();
+        counter(DEADLETTER_METRIC, "class", failureClass.name()).increment();
     }
 
     /**
@@ -160,7 +187,7 @@ public class DeadLetterRecoverer implements ConsumerRecordRecoverer {
                 record.offset(),
                 FailureSanitiser.typeOf(cause),
                 FailureSanitiser.typeOf(unreadable));
-        counter("sentinelflow.consumer.undeliverable", "topic", record.topic()).increment();
+        counter(UNDELIVERABLE_METRIC, "topic", record.topic()).increment();
     }
 
     private static String valueOf(ConsumerRecord<?, ?> record) {

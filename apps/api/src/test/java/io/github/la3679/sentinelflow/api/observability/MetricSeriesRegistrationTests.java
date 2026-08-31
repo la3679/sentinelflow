@@ -15,8 +15,12 @@ import io.github.la3679.sentinelflow.api.alert.AlertService;
 import io.github.la3679.sentinelflow.api.alert.AlertTransitions;
 import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
+import io.github.la3679.sentinelflow.api.domain.DlqFailureClass;
+import io.github.la3679.sentinelflow.api.domain.EventType;
 import io.github.la3679.sentinelflow.api.domain.IngestionSource;
 import io.github.la3679.sentinelflow.api.domain.RiskBand;
+import io.github.la3679.sentinelflow.api.messaging.EventTopics;
+import io.github.la3679.sentinelflow.api.messaging.consumer.DeadLetterRecoverer;
 import io.github.la3679.sentinelflow.api.messaging.consumer.IdempotentEventProcessor;
 import io.github.la3679.sentinelflow.api.messaging.consumer.TransactionCreatedConsumer;
 import io.github.la3679.sentinelflow.api.risk.AlertRaiser;
@@ -152,6 +156,35 @@ class MetricSeriesRegistrationTests {
                         .tag("consumer", TransactionCreatedConsumer.CONSUMER_NAME)
                         .tag("outcome", "duplicate")
                         .counter())
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("every failure class has a series before anything has failed, and so does the one topic")
+    void deadLetterSeriesExistUpFront() {
+        new DeadLetterRecoverer(null, null, null, null, meters);
+
+        assertThat(meters.find("sentinelflow.consumer.deadletter").counters())
+                .as("five classes, and a healthy pipeline reports zero on each rather than reporting "
+                        + "nothing at all")
+                .hasSize(DlqFailureClass.values().length);
+
+        for (DlqFailureClass failureClass : DlqFailureClass.values()) {
+            assertThat(meters.find("sentinelflow.consumer.deadletter")
+                            .tag("consumer", TransactionCreatedConsumer.CONSUMER_NAME)
+                            .tag("class", failureClass.name())
+                            .counter())
+                    .as("no series for %s", failureClass)
+                    .isNotNull();
+        }
+
+        assertThat(meters.find("sentinelflow.consumer.undeliverable")
+                        .tag("consumer", TransactionCreatedConsumer.CONSUMER_NAME)
+                        .tag("topic", EventTopics.topicFor(EventType.TRANSACTION_CREATED))
+                        .counter())
+                .as("an undeliverable record is the rarest thing this consumer can meet, which makes "
+                        + "it exactly the series a rule would be written against and exactly the one "
+                        + "that would not exist when the rule was written")
                 .isNotNull();
     }
 
