@@ -14,22 +14,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-08-31T18:40Z                                                                                                                                                                                                                                                                                 |
-| Updated by           | Claude                                                                                                                                                                                                                                                                                            |
-| Overall status       | active — **Phase 7 closed**; Phase 8 opened with its dependency triage and two security fixes, and its own deliverables are not started                                                                                                                                                           |
-| Current phase        | Phase 8 — security and quality hardening (in progress)                                                                                                                                                                                                                                            |
-| Current task         | **none in progress.** Four Dependabot pull requests are open, two of them verified and unmerged. Phase 8's threat model, rate limits, CodeQL and SBOM are not started                                                                                                                             |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                                                                          |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                                                                              |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                                                                                |
-| Working branch       | `main`                                                                                                                                                                                                                                                                                            |
-| Local clone verified | **yes**                                                                                                                                                                                                                                                                                           |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                                                                                  |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                                                                              |
-| Open PRs             | four, all Dependabot: [#86](https://github.com/la3679/sentinelflow/pull/86), [#87](https://github.com/la3679/sentinelflow/pull/87), [#88](https://github.com/la3679/sentinelflow/pull/88), [#90](https://github.com/la3679/sentinelflow/pull/90). Two are verified and unmerged; see "Dependabot" |
-| Latest release       | none                                                                                                                                                                                                                                                                                              |
+| Field                | Value                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Last updated UTC     | 2026-08-31T23:05Z                                                                                                                                |
+| Updated by           | Claude                                                                                                                                           |
+| Overall status       | active — **Phase 8 closed.** All seven deliverables merged, all four gate criteria evidenced. Phase 9 is not started                             |
+| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (not started)                                                                   |
+| Current task         | **none in progress.** The Dependabot round is finished and no pull request is open                                                               |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
+| Working branch       | `main`                                                                                                                                           |
+| Local clone verified | **yes**                                                                                                                                          |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
+| Open PRs             | none                                                                                                                                             |
+| Latest release       | none                                                                                                                                             |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -82,8 +82,8 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 5 — alerts and investigations**
 - [x] **Phase 6 — operations frontend**
 - [x] **Phase 7 — observability and resilience**
-- [ ] **Phase 8 — security and quality hardening** ← in progress: dependency triage and two security fixes landed; the phase's own deliverables are not started
-- [ ] Phase 9 — performance and documentation
+- [x] **Phase 8 — security and quality hardening**
+- [ ] **Phase 9 — performance and documentation** ← next
 - [ ] Phase 10 — release
 
 ## Completed — Phase 1
@@ -971,6 +971,134 @@ does. Trusting the repository over this file, as `CLAUDE.md` says to.
 The schema's description of that field was corrected instead, for a different reason: it called it
 "the single largest contributor", which is not well defined across two incomparable scales.
 
+## Completed — Phase 8, merged as PRs [#91](https://github.com/la3679/sentinelflow/pull/91) through [#96](https://github.com/la3679/sentinelflow/pull/96)
+
+**Closed 2026-08-31.** Seven deliverables, four gate criteria, and one thing worth reading before
+the rest: **three of the phase's findings closed and two new ones opened**, because that is what
+happens when a security gap is actually fixed rather than reworded.
+
+### The threat model, and why it is the phase's first deliverable ([#94](https://github.com/la3679/sentinelflow/pull/94))
+
+`docs/security/THREAT_MODEL.md`. STRIDE per element over four trust boundaries, written against this
+system rather than a generic one, with two rules: every entry names a file, a test, an ADR or a
+command that was run, and where the answer is "nothing does this", the row says so.
+
+Severity is given **twice** — as the demo is actually deployed (one machine, loopback, synthetic
+data) and as the same finding would read on a network. A single column would have made every rating
+either alarmist or complacent, and neither is legible to a reader.
+
+It numbered eight open items. That numbering is what the rest of the phase closed against, and it is
+why nothing was quietly dropped.
+
+### The ingestion credential, rate limits and request bounds ([#95](https://github.com/la3679/sentinelflow/pull/95), [ADR-0017](docs/adr/0017-protecting-the-ingestion-surface.md))
+
+ADR-0012 §5 left `POST /api/v1/transactions` open deliberately and named Phase 8 as what would close
+it. All three landed together, because they are one surface.
+
+- **`X-API-Key`**, compared through `MessageDigest.isEqual` over SHA-256 of both sides, so a
+  wrong-length guess and a wrong-value one take the same time. No default, 32-character floor,
+  startup refuses without it.
+- **A token bucket**, not a fixed window — a window resets on a clock boundary and a caller limited
+  to ten a minute sends twenty across one. State is one immutable record behind a compare-and-set,
+  and the clock is `nanoTime`, because a wall clock steps.
+- **64 KiB**, checked on the declared `Content-Length` _and_ on the delivered bytes.
+
+**The largest hole this closed is not the one the title names.** `POST /auth/login` runs BCrypt
+against a supplied password and answers a wrong one identically to an unknown username — which is
+right, and is not a defence against somebody trying a million. Nothing bounded the attempts. It now
+holds the strictest allowance in the API, and it is recorded as S-06 in the threat model, a row that
+had never existed.
+
+**The limiter runs before authentication, and that ordering is the decision.** Keying on the
+authenticated principal reads better and leaves the hole that matters: a caller with no token, or a
+wrong one, would be refused by the filter chain and never counted, having already cost a signature
+verification each.
+
+### Two things this work proved rather than asserted
+
+**The chunked-body test was run with the stream wrapper removed**, and fails — 400, not 413. So it
+genuinely exercises the half a `Content-Length` check cannot reach. Without that experiment it would
+have been a test that passed for the wrong reason, since the declared-length check catches the
+ordinary case.
+
+**`RUNBOOKS.md` tells an operator to graph `http_server_requests_seconds_count{status="429"}`**, and
+whether the actuator sees a refusal made inside a filter depends on filter ordering. There is now a
+test asserting the series exists, rather than a runbook instruction nobody checked.
+
+### A real bug in `bootstrap.sh`, found in passing
+
+The list of required secrets was wrapped with a literal backslash-n rather than a line continuation.
+The shell splits that into a word `n`, greps `.env` for `^n=`, finds nothing, and reports a missing
+secret called `n` — so **`make bootstrap` had been failing and exiting 1 for anybody whose `.env`
+was already complete.** One key per line now. Committed separately, because it is not this phase's
+work; it was simply in the way.
+
+### CodeQL and the SBOM ([#96](https://github.com/la3679/sentinelflow/pull/96))
+
+The two controls that did not exist at all. What was already here answers different questions:
+gitleaks looks for committed secrets, dependency review looks for advisories against a diff, and
+Trivy looks inside a built image. **None of them reads the source.**
+
+**CodeQL** over all three languages with `security-and-quality` rather than the default pack, Java
+on `build-mode: manual` with a compile-only step — autobuild guesses at a toolchain and this project
+pins one (ADR-0003) that a guess gets wrong.
+
+**Two SBOMs**, because one alone would mislead. Measured with syft rather than read from
+documentation, on 2026-08-31:
+
+| Scan        | maven   | npm | pypi | github |
+| ----------- | ------- | --- | ---- | ------ |
+| Source tree | **22**  | 245 | 57   | 30     |
+| `api` image | **138** | —   | —    | —      |
+
+The Java gap is the point: Maven resolves transitively and nothing here locks that resolution, so a
+source-only SBOM under-reports the Java tree six-fold. The other three do not have that gap, because
+Bun and uv both lock and the scan reads those lockfiles rather than the manifests.
+
+**File components are off.** A default image scan emitted 3,966 of them beside 262 real packages —
+every file in `/etc` with a digest — which is 1.7 MB of JSON answering no question anybody asks an
+SBOM.
+
+**Both SBOM jobs assert their own output**, one assertion per ecosystem. A cataloger that stops
+recognising a lockfile drops its packages silently, Bun's is the newest and most likely to move, and
+a total-count check would not notice because the other three would carry it.
+
+The run on `main` at `a3e4534` produced four documents — api 262 components, scoring 118, web 71,
+and the source tree — with `SHA256SUMS` verified in the job by `sha256sum -c`.
+
+### The CodeQL zero was checked, and this is the part worth carrying forward
+
+**Zero findings across three languages is worth nothing on its own.** An analysis over an empty
+database reports zero results and looks exactly like a clean one — the same shape as three defects
+this project has already been caught by: an absent Prometheus series that read as a zero, Kafka
+topics nothing created behind green health checks, and a scoring client refused at every call while
+every suite passed.
+
+So a defect was planted. A throwaway controller concatenating a `@RequestParam` into a native query
+was pushed on a branch; CodeQL reported **`java/sql-injection [high]` at the exact line**, and the
+branch was closed and deleted without merging. The extractor sees this source tree, the compile step
+in front of it works, and the zero is real.
+
+### Two items opened, and neither was tidied away
+
+- **T-09 — ingestion is one shared key, not a per-caller identity.** Closing T-01 created it. A
+  shared secret authenticates a caller and does not identify one: two pipelines are
+  indistinguishable, and neither becomes an actor in the audit trail. The audit trail is honest
+  about this — it records `IngestionSource.API` and no actor — rather than inventing a principal the
+  system does not know.
+- **S-06 — password guessing by volume.** It had never had a row, because the identical-refusal
+  behaviour it lives beside reads like a defence and is not one.
+
+The threat model now states the rule explicitly: an item that closes says when, an item its fix
+created gets its own number, and **a list that only ever shrinks is not being kept.**
+
+### Where Phase 8 stopped, deliberately
+
+`/actuator/prometheus` is still open (T-04), and ADR-0017 §4 says why rather than leaving it to be
+discovered: the fix is a management port not published to the host, and it changes what Prometheus
+scrapes, what `compose.yaml` publishes, what `make smoke` asserts and what the runbooks say. Two
+decisions in one commit is how one of them stops being reviewed.
+
 ## Completed — Phase 7, merged as PRs [#70](https://github.com/la3679/sentinelflow/pull/70) through [#73](https://github.com/la3679/sentinelflow/pull/73), [#82](https://github.com/la3679/sentinelflow/pull/82) and [#83](https://github.com/la3679/sentinelflow/pull/83)
 
 **All six deliverables are on `main`, and the gate is claimed with evidence for all four criteria.**
@@ -1438,6 +1566,39 @@ asserts they are equal.
   payment switch decided something; this system scores and never decides. `AlertPriority: P1–P4`
   against the API's `LOW | MEDIUM | HIGH | URGENT`.
 
+## Acceptance criteria status — Phase 8 gate
+
+**Closed on 2026-08-31.** The four criteria are `docs/planning/IMPLEMENTATION_PLAN.md`'s. Each row
+says what the evidence covers **and what it does not**, because a criterion whose limits are not
+written down is one somebody will over-read.
+
+| Criterion                                                                          | Status  | Evidence, and what it does not cover                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No unresolved critical or high findings without documented false-positive evidence | **met** | CodeQL over three languages: **0 results**, CodeQL 2.26.4, `security-and-quality`, 2026-08-31. **The zero was checked rather than trusted** — a planted `@RequestParam` concatenated into a native query was reported as `java/sql-injection [high]` at the exact line, on a throwaway branch that was then deleted. Trivy passes on all three images (fixable HIGH and CRITICAL). Dependency review passes. **Not covered:** no dismissed alert and no baseline exist, so "0 open" means nothing was found rather than something was filtered — but a query pack finds what it has a query for.                                                                                 |
+| Secret scan clean                                                                  | **met** | gitleaks over full history on every push and pull request, and weekly. Green on `main` at `a3e4534`. `.env` is git-ignored and every secret in it has no usable default, so a missing one stops startup rather than falling back. **Not covered:** gitleaks matches patterns; a secret in a shape it has no rule for would pass.                                                                                                                                                                                                                                                                                                                                                 |
+| Least-privilege workflows reviewed                                                 | **met** | All nine workflows declare a top-level `permissions:` block, and eight of them are `contents: read`; the review is recorded row by row in the threat model, naming each escalation and why. `dependabot-bun-lockfile.yml` is the one whose top-level grant is `contents: write`, because pushing a regenerated lockfile is its whole job. `sbom.yml` escalates to `contents: write` on its release job only, and `security-scan.yml` and `codeql.yml` escalate per job to `pull-requests` and `security-events`. Third-party actions are pinned to commit SHAs. **Not covered:** a pinned SHA is only as good as the commit it names; nothing here re-audits an action's source. |
+| Threat controls traceable to tests and docs                                        | **met** | 28 rows in the threat model's control table, each naming the file it lives in and the test that proves it. The three new ones carry the tests that landed with them: `TokenBucketTests` (9), `RateLimiterTests` (9), `IngestionPropertiesTests` (8) and `RequestLimitsIT` (14). **Not covered:** four controls trace to a workflow rather than a test — the scans themselves — and one traces to a command (`docker port`) rather than to anything automated.                                                                                                                                                                                                                    |
+
+**All seven deliverables from the plan are merged**, as PRs
+[#91](https://github.com/la3679/sentinelflow/pull/91) through
+[#96](https://github.com/la3679/sentinelflow/pull/96).
+
+**What Phase 8 deliberately did not deliver**, so a later session does not read the gate as covering
+it:
+
+- **`/actuator/prometheus` is still open** (T-04). ADR-0017 §4 declines to bundle it: the fix is a
+  management port that is not published to the host, and it changes what Prometheus scrapes, what
+  `compose.yaml` publishes, what `make smoke` asserts and what the runbooks say. That is its own
+  change with its own tests.
+- **The scoring service has no credential** (T-05). It is internal to the compose network; whether
+  that is the answer or a gap is a decision nobody has made yet.
+- **A token still cannot be revoked** (T-08), accepted with the 30-minute expiry as the mitigation.
+- **Ingestion is one shared key, not a per-caller identity** (T-09), which closing T-01 created.
+- **No rate limiting in `apps/scoring`.** The limiter is the API's. The scoring service is reached
+  only by the API, which is itself limited, so the surface is bounded by inheritance rather than
+  directly — worth saying, because "no rate limiting anywhere" was the finding and it is now
+  half-true.
+
 ## Acceptance criteria status — Phase 7 gate
 
 **Closed on 2026-08-31.** All four criteria are met with evidence from runs that happened. The four
@@ -1764,6 +1925,42 @@ available.
 | `main` protected                    | **pass** | Ruleset `21493410`, verified through the rules API                              |
 
 ## Test and verification evidence
+
+### 2026-08-31 — Phase 8 closed: a credential, three limits, CodeQL, an SBOM, and a planted defect
+
+Every number below is from a run that happened on 2026-08-31, on JDK 25.0.4.1+1 unless stated.
+
+| Check                              | Command                                 | Result                                                                                                                                          |
+| ---------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| API, full verify                   | `./mvnw verify` in `apps/api`           | **259 unit, 322 integration, 0 failures**; JaCoCo LINE and BRANCH gates met                                                                     |
+| The new suites inside that         | —                                       | `TokenBucketTests` 9, `RateLimiterTests` 9, `IngestionPropertiesTests` 8, `RequestLimitsIT` 14                                                  |
+| Console, unit                      | `bun run test` in `apps/web`            | 41 passed                                                                                                                                       |
+| Console, browser                   | `bun run test:e2e` in `apps/web`        | **88 passed** — was 82; the zod and recharts rounds added six                                                                                   |
+| Contracts                          | `bun scripts/dev/check-contracts.mjs`   | all checks passed, including the two OpenAPI documents and the AsyncAPI one                                                                     |
+| Documentation                      | `bun scripts/dev/check-docs.mjs`        | 234 relative links across 49 files, 0 broken, no placeholders                                                                                   |
+| Formatting                         | `bun run format:check`                  | clean                                                                                                                                           |
+| Bootstrap                          | `bash scripts/dev/bootstrap.sh --check` | complete — and the phantom missing secret named `n` is gone                                                                                     |
+| CodeQL, three languages            | `codeql.yml` on `main`                  | **0 results**, CodeQL 2.26.4, `security-and-quality`                                                                                            |
+| CodeQL, proved by a planted defect | throwaway branch, then deleted          | **`java/sql-injection [high]`** at the exact line                                                                                               |
+| SBOM                               | `sbom.yml` on `main` at `a3e4534`       | api 262 components, scoring 118, web 71; the source tree by ecosystem — npm 245, pypi 57, maven 22, github 30; `SHA256SUMS` verified in the job |
+| Container scanning                 | `ci-containers.yml`                     | Trivy clean on all three images, fixable HIGH and CRITICAL                                                                                      |
+| Secret scanning                    | `security-scan.yml`                     | gitleaks clean over full history                                                                                                                |
+| Everything on `main`               | eight workflows at `a3e4534`            | all green                                                                                                                                       |
+
+**Two results are worth more than the rest, because both were checks on a check.**
+
+The chunked-body test was run **with the stream wrapper removed** and fails — 400, not 413. That is
+the only thing that distinguishes a test exercising the size cap's second half from a test the
+`Content-Length` check was quietly passing.
+
+CodeQL's zero was proved by planting a defect. Zero results and an empty database look identical,
+and this project has been caught three times by exactly that shape — an absent Prometheus series
+reading as a zero, Kafka topics nothing created behind green health checks, and a scoring client
+refused at every call while every suite passed.
+
+**What is not evidence here:** no load test, no measured latency, no throughput figure. Phase 9
+measures, and the rate-limit defaults in `application.yaml` are starting points chosen for a demo
+rather than numbers derived from a benchmark. They are labelled as such in ADR-0017 §2.
 
 ### 2026-08-31 — Phase 7 closed: two drills, nine runbooks, thirteen rules, four log leaks
 
@@ -2301,13 +2498,18 @@ this repository. None has been measured.** Phase 9 measures them.
 | 0010 | Model selection and evaluation: the comparison, the metrics, and training as a command              |
 | 0011 | The final score is `max(rule, weighted mean)`, banded from configured bounds; §4 gates alerting     |
 | 0012 | Operator authentication: a password for a short-lived JWT, credentials in their own table           |
+| 0013 | Console-to-API cross-origin access: an explicit origin allow-list, no credentials, `/api/v1` only   |
+| 0014 | Where the console's remaining screens get their data                                                |
+| 0015 | Live updates: polling, with the three preconditions a stream would need                             |
+| 0016 | Observability: what each signal answers, and what none of them may carry                            |
+| 0017 | Protecting the ingestion surface: a service key, rate limits, and a request size bound              |
 
-**This table was three ADRs out of date**, and its "still needing" line was wrong about two of the
-numbers as well. 0010 and 0011 were accepted in Phase 4 and 0012 in Phase 5; corrected against
-`docs/adr/`, which is the authority.
+**Corrected against `docs/adr/`, which is the authority**, and now complete: seventeen accepted
+ADRs, 0001 to 0017. This table had been three out of date once already, which is why it is checked
+against the directory rather than remembered.
 
-**Still needing an ADR:** 0013 observability · 0014 deployment strategy · 0015 SSE versus WebSockets.
-The numbers are the implementation plan's, not this file's.
+**Still needing an ADR:** the deployment and local-first strategy, which Phase 9's deliverable list
+names and whose number is allocated when it is written.
 
 **Contracts:** `contracts/` is validated in CI — OpenAPI 3.1 for the public `/api/v1`, OpenAPI 3.1
 for the internal API-to-scoring boundary, AsyncAPI 3.0 for the five topics, and seven JSON Schemas.
@@ -2318,20 +2520,22 @@ checks.
 
 ## Known issues and technical debt
 
-- **`POST /api/v1/transactions` is unauthenticated**, deliberately and temporarily (ADR-0012 §5).
-  Operator endpoints require a bearer token; ingestion does not, because it is a machine-to-machine
-  surface that needs its own credential rather than an operator's password. Until Phase 8 gives it
-  one, anything that can reach the API can submit a synthetic transaction. **The stack now binds to
-  loopback, and did not before 2026-08-31**: every port was published on `0.0.0.0`, verified with
-  `docker port`, so "anything that can reach the API" meant anything on the same network. ADR-0012 §5
-  carries the dated correction; `SENTINELFLOW_BIND_ADDRESS` is the deliberate way out.
+- ~~**`POST /api/v1/transactions` is unauthenticated.**~~ **Resolved 2026-08-31.** It requires
+  `X-API-Key` ([ADR-0017](docs/adr/0017-protecting-the-ingestion-surface.md) §1), compared in
+  constant time, with no default and a 32-character floor. What remains is smaller and is tracked as
+  **T-09** in the threat model: it is one shared key, so it authenticates a caller without
+  identifying which one, and an ingested transaction still has no actor in the audit trail. The
+  loopback binding fixed the same day remains the containment behind it.
 - **A token cannot be revoked before it expires.** Thirty minutes is the whole of how long a
-  withdrawn role keeps working. That is the cost of statelessness and it is accepted rather than
-  overlooked; a revocation list is Phase 8's if the demo ever needs one.
+  withdrawn role keeps working. That is the cost of statelessness and it is **accepted** rather than
+  overlooked — Phase 8 looked at it and left it, with the expiry as the mitigation. Tracked as
+  **T-08**; a revocation list is worth building only if the demo ever needs one.
 - **`/actuator/prometheus` is open**, because a scrape cannot hold a token that expires every thirty
   minutes. The series are aggregate counters and timers with bounded labels — no identifier, no
   amount, no payload — so what it discloses is the shape of the traffic. The real answer is a
-  management port that is not published to the host, which is Phase 8's hardening work.
+  management port that is not published to the host. **Still open after Phase 8, and deliberately:**
+  ADR-0017 §4 declines to bundle it, because the fix changes what Prometheus scrapes, what
+  `compose.yaml` publishes, what `make smoke` asserts and what the runbooks say. Tracked as **T-04**.
 - **Node 22.19.0 on the reference machine** passed its LTS end date (2026-07-28). `engines`
   requires Node 24. Bun runs everything, so nothing is blocked, but local Node should be upgraded.
 - **Default `JAVA_HOME` points at JDK 17.** JDK 25 is at `~/.jdks/jdk-25.0.4.1+1`;
@@ -2403,14 +2607,14 @@ checks.
 
 ## Dependabot
 
-### The 2026-08-31 round: six merged, two resolved by other means, four still open
+### The 2026-08-31 round: finished — ten merged, two resolved by other means
 
 It began as seven pull requests, [#75](https://github.com/la3679/sentinelflow/pull/75) to
 [#81](https://github.com/la3679/sentinelflow/pull/81). Merging five of them changed the lockfile,
 which made Dependabot open five more — [#86](https://github.com/la3679/sentinelflow/pull/86) to
-[#90](https://github.com/la3679/sentinelflow/pull/90) — so the round is **not finished**, and
-"Next three actions" carries what is left. Everything merged below was verified locally first, rather
-than on CI's word alone.
+[#90](https://github.com/la3679/sentinelflow/pull/90). **The round is finished:** all four that were
+still open on the morning of 2026-08-31 are merged, and no pull request is open. Everything merged
+was verified locally first, rather than on CI's word alone.
 
 | PR                                                    | Bump                                      | Outcome                                                                                                                                                                                                                                                                                                                   |
 | ----------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -2440,11 +2644,29 @@ opened five more against the new base:
 
 | PR                                                    | Bump                               | Where it stands                                                                                            |
 | ----------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| [#86](https://github.com/la3679/sentinelflow/pull/86) | `pydantic` 2.13.4 → 2.13.5         | **verified locally, not merged** — `ruff`, `mypy --strict` clean, 187 scoring tests                        |
-| [#87](https://github.com/la3679/sentinelflow/pull/87) | `zod` 3.25.76 → 4.4.3              | **not verified.** A major, and `zod` is live in two routes                                                 |
-| [#88](https://github.com/la3679/sentinelflow/pull/88) | `typescript` 5.9.3 → 6.0.3         | **verified locally, not merged** — typecheck clean, eslint runs, 41 unit tests, 82 e2e, build              |
+| [#86](https://github.com/la3679/sentinelflow/pull/86) | `pydantic` 2.13.4 → 2.13.5         | **merged** — `ruff`, `mypy --strict` clean, 187 scoring tests                                              |
+| [#87](https://github.com/la3679/sentinelflow/pull/87) | `zod` 3.25.76 → 4.4.3              | **merged**, with the test the bump had no business landing without; see below                              |
+| [#88](https://github.com/la3679/sentinelflow/pull/88) | `typescript` 5.9.3 → 6.0.3         | **merged** — re-verified on the rebased base: typecheck, eslint, 41 unit, 82 e2e, build                    |
 | [#89](https://github.com/la3679/sentinelflow/pull/89) | `react-day-picker` 9.14.0 → 10.0.1 | **closed**, superseded by [#92](https://github.com/la3679/sentinelflow/pull/92), which removed the package |
-| [#90](https://github.com/la3679/sentinelflow/pull/90) | `recharts` 2.15.4 → 3.10.1         | **not verified.** A major, and `recharts` is live in two routes                                            |
+| [#90](https://github.com/la3679/sentinelflow/pull/90) | `recharts` 2.15.4 → 3.10.1         | **merged**, with the two tests the bump had no business landing without; see below                         |
+
+**Two majors landed with tests that had never existed, and that is the round's lesson.** `zod` is
+live in the login and alert-detail routes and **no test reached its refusal path**: the end-to-end
+sign-in fills well-formed values, so the schema and the react-hook-form resolver behind it were only
+ever exercised on the happy path. A major could have silently stopped rendering the validation
+messages. `recharts` is live on the overview and the reports screen and had **no test at all** — a
+charting major can stop drawing without throwing, and the route still renders, the heading is there,
+the console stays quiet, and the panel is simply empty. Every existing check passes.
+
+Both bumps merged with the coverage they needed: an empty sign-in asserting both messages, both
+`aria-invalid` flags and that no request reaches `POST /api/v1/auth/login`; and both charts asserting
+a `recharts-surface` and at least one bar rectangle. The e2e suite went from 82 to 88.
+
+**Verifying a bump against the base it was opened on is not verifying it.** #88's local verification
+was recorded before #92 deleted 30 runtime dependencies, so it was re-run after rebasing onto the
+current `main` — and each of the four had to be rebased and force-pushed to its own branch anyway,
+because a push from a real account is what re-dispatches the checks the lockfile job's
+`GITHUB_TOKEN` cannot.
 
 **#88 is worth noting beside #81.** TypeScript **6.0.3** is fine: `typescript-eslint` loads against
 it, `tsc --noEmit` is clean, and the unit, browser and build checks all pass. The refusal recorded
@@ -2552,50 +2774,43 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 7 is closed** — all six deliverables merged, all four gate criteria evidenced with their
-limits stated. **Phase 8 is open but only at its edges.** Two security fixes and the dependency
-triage landed; none of the phase's own seven deliverables has been started.
+**Phase 8 is closed** — all seven deliverables merged as PRs
+[#91](https://github.com/la3679/sentinelflow/pull/91) to
+[#96](https://github.com/la3679/sentinelflow/pull/96), all four gate criteria evidenced with their
+limits stated, and the Dependabot round finished with no pull request open. **Phase 9 is not
+started.**
 
-**What landed under Phase 8 so far**, so a fresh session does not redo it:
+Read "Acceptance criteria status — Phase 8 gate" before reopening anything from it. Four threat-model
+items are open **on purpose and with owners** — T-04, T-05, T-08 and T-09 — and none of them is a
+gap somebody forgot.
 
-- Every published port binds to `127.0.0.1` ([#91](https://github.com/la3679/sentinelflow/pull/91)).
-  This was a real finding, not tidying: `docker port` reported `0.0.0.0` on all eight, so PostgreSQL,
-  Kafka, Grafana and an unauthenticated ingestion endpoint were on the local network. ADR-0012 §5's
-  claim that "the demo stack binds to localhost" was false when written and now is not.
-- 37 unused shadcn components and 30 runtime dependencies deleted
-  ([#92](https://github.com/la3679/sentinelflow/pull/92)): 52 direct dependencies down to 22, 749
-  resolved packages down to 713. Done before CodeQL and the SBOM rather than after, so neither has to
-  cover code nothing runs.
-- Four React Hooks defects fixed ([#84](https://github.com/la3679/sentinelflow/pull/84)) and the
-  plugin bump taken ([#93](https://github.com/la3679/sentinelflow/pull/93)).
-- The dependency policy exercised: see "Dependabot" for the round, including why TypeScript 7.0 is
-  refused and 6.0 is not.
+1. **Benchmark the pipeline, which is Phase 9's first deliverable and the one everything else in the
+   phase depends on.** It needs a documented reference environment before a single number is
+   recorded, because a figure without the machine it was measured on is not reproducible and this
+   file forbids inventing one. Two things are already waiting on it: the rate-limit defaults in
+   `application.yaml` are **starting points rather than measurements** — ADR-0017 §2 says so and says
+   this table moves if a benchmark shows a default shaping legitimate throughput — and every alerting
+   threshold in `infra/prometheus/rules/sentinelflow.yml` is derived from a configured budget rather
+   than from a baseline. **Do not seed the numbers from the local database**: it holds 7,260 `FAILED`
+   transactions and 13,455 `degraded` assessments from the h2c defect, and the distribution in it is
+   not one anyone should read anything into. `make reset-demo` then `make seed` gives a clean one;
+   read "Before resuming, note the local database is on the LOCAL profile" first.
 
-1. **Finish the Dependabot round — four are open and two of them are already verified.**
-   [#86](https://github.com/la3679/sentinelflow/pull/86) (`pydantic` 2.13.5) and
-   [#88](https://github.com/la3679/sentinelflow/pull/88) (`typescript` 6.0.3) passed every local check
-   on 2026-08-31 and were left unmerged only because the session stopped; the numbers are in
-   "Dependabot". [#87](https://github.com/la3679/sentinelflow/pull/87) (`zod` 4) and
-   [#90](https://github.com/la3679/sentinelflow/pull/90) (`recharts` 3) are **majors on live code** —
-   `zod` in the login and alert-detail routes, `recharts` in the overview and reports routes — so both
-   need `bun run test:e2e` and not only unit tests. Expect them to need rebasing onto whatever #93
-   left; Dependabot did not rebase #80 when asked twice, and taking a one-line bump by hand is the
-   documented fallback.
-2. **The threat model, which is Phase 8's first deliverable and the one everything else traces to.**
-   It should be written against what is actually here rather than a generic system, and four entries
-   in "Known issues and technical debt" are its inputs, each already naming its own fix:
-   `POST /api/v1/transactions` is unauthenticated (ADR-0012 §5 defers its own credential to this
-   phase), a token cannot be revoked before it expires, `/actuator/prometheus` is open to whatever can
-   reach the API, and **there is no rate limiting anywhere** — confirmed by search on 2026-08-31,
-   nothing in `apps/api` implements one. Two controls already exist and need tracing to tests rather
-   than building: `CsvWriter`'s formula-injection defence (17 unit tests) and the request bounds
-   (`MAX_PAGE_SIZE` 200, the export's 10,000-row cap, the report window's 366 days).
-3. **The scanning and supply-chain half.** CodeQL and an SBOM are the two that do not exist;
-   `security-scan.yml` already runs a secret scan and dependency review on every event, and
-   `ci-containers.yml` already runs Trivy over all three images and asserts none runs as root. Every
-   workflow already declares `permissions: contents: read` at the top with job-level escalation only
-   where needed, and third-party actions are already SHA-pinned — so "least-privilege workflows
-   reviewed" is a review to record, not work to do.
+2. **The README's diagrams and the clean-clone verification.** The plan asks for five Mermaid
+   diagrams that match the code, a complete documentation index, and every README command run from a
+   fresh clone. The index gained two entries in Phase 8 (the threat model, and ADR-0017), and the
+   README's security table and known-limitations list were rewritten — so a clean-clone pass now has
+   more to check, not less. **`make bootstrap` is the first command a clean clone runs**, and it
+   gained a required secret this phase (`SENTINELFLOW_INGEST_API_KEY`); the bug that made it exit 1
+   against an existing `.env` was fixed in the same phase, but neither has been exercised from an
+   actually-empty clone.
+
+3. **"Required before v1 — carried forward" is still the thing that decides whether Phase 10 can
+   ship.** Real operator identity has not been started and Phase 10 cannot ship without it; the two
+   human-verification items — a screen-reader pass and a manual authenticated walkthrough — are
+   nobody's to tick off on a person's behalf. Neither is Phase 9 work, and both are close enough now
+   that a session reaching Phase 9's end without a plan for them is a session that will discover them
+   in Phase 10.
 
 ### Five things this session learned the hard way, worth carrying forward
 

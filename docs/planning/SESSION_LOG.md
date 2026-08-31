@@ -2746,3 +2746,91 @@ been true in nobody's environment since the compose file was written.
 
 Recorded in `PROJECT_STATE.md`: finish the four open Dependabot pull requests, then the threat model
 against the four holes this repository already documents, then CodeQL and the SBOM.
+
+---
+
+## 2026-08-31 (third session) — Phase 8 closed: the Dependabot round, the threat model, the ingestion credential, CodeQL and the SBOM
+
+| Field           | Value                                                                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-31T21:14Z / 2026-08-31T23:15Z                                                                           |
+| Starting SHA    | `d1911da` on `main`                                                                                             |
+| Ending SHA      | `a3e4534` on `main`, plus this checkpoint                                                                       |
+| Objective       | Finish the open Dependabot round, then deliver Phase 8 — threat model, hardening, scanning, SBOM — and close it |
+
+### Work completed
+
+**The Dependabot round, finished.** Four pull requests were open and two of them had been recorded as
+"verified locally". That verification was against the base they were opened on, which predated #92
+deleting 30 runtime dependencies — so each was rebased onto the current `main`, re-verified, and
+force-pushed to its own branch, because a push from a real account is what re-dispatches the checks
+the lockfile job's `GITHUB_TOKEN` cannot start. #86, #87, #88 and #90 all merged.
+
+**Two majors landed with tests that had never existed.** `zod` is live in the login and alert-detail
+routes and no test reached its refusal path — the end-to-end sign-in fills well-formed values, so the
+schema and its resolver were only ever exercised on the happy path. `recharts` is live on two screens
+and had no test at all; a charting major can stop drawing without throwing, and every existing check
+would still pass. Both bumps merged with the coverage they needed. The browser suite went from 82 to 88.
+
+**The threat model** (#94). STRIDE per element over four trust boundaries, written against this
+system rather than a generic one. Severity given twice — as the demo is actually deployed and as the
+same finding would read on a network. It numbered eight open items, which is what the rest of the
+phase closed against.
+
+**The ingestion credential, the rate limits and the request size bound** (#95, ADR-0017). ADR-0012 §5
+had left `POST /api/v1/transactions` open deliberately and named Phase 8. All three landed together
+because they are one surface: `X-API-Key` compared in constant time, a token bucket per caller per
+category keyed before authentication, and 64 KiB checked on both the declared length and the
+delivered bytes. **The largest hole closed was not the one the work was named for** — `POST
+/auth/login` runs BCrypt against a supplied password and nothing bounded the attempts.
+
+**CodeQL and the SBOM** (#96). The two controls that did not exist at all. Two SBOMs per run, because
+the source tree yields 22 Maven components and the built API image yields 138 — a source-only
+document would under-report the Java tree six-fold.
+
+### Two verifications worth more than the code they checked
+
+**The chunked-body test was run with the stream wrapper removed**, and fails — 400, not 413. Without
+that experiment it would have been a test passing for the wrong reason, because the
+`Content-Length` check catches the ordinary case and the second half would never have been exercised.
+
+**CodeQL's zero was proved by planting a defect.** Zero findings and an empty database look
+identical, and this project has been caught three times by exactly that shape. A throwaway controller
+concatenating a `@RequestParam` into a native query was pushed on a branch; CodeQL reported
+`java/sql-injection [high]` at the exact line, and the branch was closed and deleted without merging.
+
+### A defect found in passing
+
+`bootstrap.sh` wrapped its list of required secrets with a literal backslash-n rather than a line
+continuation. The shell splits that into a word `n`, greps `.env` for `^n=`, finds nothing, and
+reports a missing secret called `n` — so **`make bootstrap` had been failing and exiting 1 for
+anybody whose `.env` was already complete.** Committed separately from the phase's work.
+
+### Two threat-model items opened
+
+**T-09**, because closing T-01 created it: a shared key authenticates a caller without identifying
+which one, so two pipelines are indistinguishable and neither becomes an actor in the audit trail.
+**S-06**, password guessing by volume, which had never had a row because the identical-refusal
+behaviour it lives beside reads like a defence and is not one.
+
+The threat model now states the rule: an item that closes says when, an item its fix created gets its
+own number, and a list that only ever shrinks is not being kept.
+
+### Evidence
+
+`PROJECT_STATE.md` §"2026-08-31 — Phase 8 closed" holds the table. In short: 259 unit and 322
+integration tests in `apps/api`, 41 unit and 88 browser tests in `apps/web`, contracts and docs
+checks clean, CodeQL 0 results over three languages, SBOMs at 262 / 118 / 71 components per image,
+and all eight workflows green on `main`.
+
+### What was deliberately not done
+
+`/actuator/prometheus` is still unauthenticated (T-04). ADR-0017 §4 declines to bundle it: the fix is
+a management port not published to the host, and it changes what Prometheus scrapes, what
+`compose.yaml` publishes, what `make smoke` asserts and what the runbooks say. Two decisions in one
+commit is how one of them stops being reviewed.
+
+No load test, no measured latency, no throughput figure. The rate-limit defaults are starting points
+chosen for a demo, labelled as such in ADR-0017 §2, and Phase 9 is what measures.
+
+---
