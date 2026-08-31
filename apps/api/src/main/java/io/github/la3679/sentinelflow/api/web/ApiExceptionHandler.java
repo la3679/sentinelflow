@@ -37,6 +37,8 @@ import io.github.la3679.sentinelflow.api.service.exception.InvalidAssigneeExcept
 import io.github.la3679.sentinelflow.api.service.exception.InvalidWindowException;
 import io.github.la3679.sentinelflow.api.service.exception.TransactionNotFoundException;
 import io.github.la3679.sentinelflow.api.service.exception.UnknownReferenceException;
+import io.github.la3679.sentinelflow.api.web.limit.RequestSizeLimitFilter;
+import io.github.la3679.sentinelflow.api.web.limit.RequestTooLargeException;
 
 /**
  * The single place an exception becomes a response body.
@@ -89,6 +91,16 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ProblemDetail onUnreadableBody(HttpMessageNotReadableException exception, HttpServletRequest request) {
+        // A body cut off by the size limit arrives here, because the parser is
+        // what notices its input ended early. It is a 413 and not a 400: the
+        // request was well formed and too big, and telling a caller their JSON
+        // is malformed when it is merely long sends them to debug the wrong
+        // thing (ADR-0017 section 3).
+        RequestTooLargeException tooLarge = causedByRequestTooLarge(exception);
+        if (tooLarge != null) {
+            return onRequestTooLarge(tooLarge, request);
+        }
+
         // The parser's own message names offsets, field paths and sometimes the
         // offending value. None of that goes to the client; the log keeps it.
         log.debug("Rejected an unreadable request body", exception);
@@ -98,6 +110,39 @@ public class ApiExceptionHandler {
                 "Malformed request",
                 "The request body is not valid JSON, or a field has the wrong type.",
                 request);
+    }
+
+    /**
+     * A body that ran past the configured maximum (ADR-0017 §3).
+     *
+     * <p>Registered for the exception itself as well as unwrapped above, because the stream can throw
+     * it before a parser is involved at all — a caller that opens a body and abandons it, for one.
+     * Both paths answer with the same status and the same problem type, so which half caught it is
+     * not something a caller can tell.
+     */
+    @ExceptionHandler(RequestTooLargeException.class)
+    ProblemDetail onRequestTooLarge(RequestTooLargeException exception, HttpServletRequest request) {
+        return problem(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                RequestSizeLimitFilter.PROBLEM_TYPE,
+                "Request body too large",
+                "The request body exceeds the " + exception.maximumBytes() + " byte maximum this API accepts.",
+                request);
+    }
+
+    /** Walks the cause chain, because the parser wraps whatever its input threw. */
+    private static RequestTooLargeException causedByRequestTooLarge(Throwable thrown) {
+        for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+            if (cause instanceof RequestTooLargeException tooLarge) {
+                return tooLarge;
+            }
+            if (cause.getCause() == cause) {
+                // A self-referential cause chain is malformed rather than
+                // impossible, and walking one forever is a hang, not an error.
+                break;
+            }
+        }
+        return null;
     }
 
     @ExceptionHandler(UnknownReferenceException.class)

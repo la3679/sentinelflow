@@ -33,6 +33,14 @@ set -euo pipefail
 
 SCENARIO="${1:-all}"
 API_BASE="${SENTINELFLOW_API_BASE:-http://localhost:8080}"
+# The ingestion credential (ADR-0017 section 1). Read from the environment, and
+# from the git-ignored .env when the shell does not already carry it, because
+# that is where `make bootstrap` generates it. Never defaulted: a replay that
+# invented a key would fail with a 401 that reads like a broken stack.
+if [[ -z "${SENTINELFLOW_INGEST_API_KEY:-}" && -f .env ]]; then
+    SENTINELFLOW_INGEST_API_KEY="$(grep -E '^SENTINELFLOW_INGEST_API_KEY=' .env | head -1 | cut -d= -f2-)"
+fi
+INGEST_API_KEY="${SENTINELFLOW_INGEST_API_KEY:-}"
 # One run id per invocation, so idempotency keys never collide with an earlier
 # run against the same database. Replaying twice must post twice, not silently
 # return the first run's transactions.
@@ -75,6 +83,10 @@ require_stack() {
     esac
     curl -fsS "${API_BASE}/actuator/health/readiness" >/dev/null ||
         fail "the api is not ready at ${API_BASE}"
+    # Checked here rather than discovered as a 401 on the first post, which is
+    # the failure that sends somebody to debug the pipeline instead.
+    [[ -n "${INGEST_API_KEY}" ]] ||
+        fail "SENTINELFLOW_INGEST_API_KEY is not set and was not found in .env. Run 'make bootstrap'."
     note "api is up and ready at ${API_BASE}"
 }
 
@@ -88,6 +100,7 @@ post_transaction() {
     local account="$1" merchant="$2" key="$3" amount="$4"
     curl -fsS -X POST "${API_BASE}/api/v1/transactions" \
         -H 'Content-Type: application/json' \
+        -H "X-API-Key: ${INGEST_API_KEY}" \
         -d "{
               \"idempotencyKey\": \"${key}\",
               \"accountReference\": \"${account}\",

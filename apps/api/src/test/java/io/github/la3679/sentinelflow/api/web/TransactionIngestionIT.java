@@ -28,6 +28,7 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 
 import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
+import io.github.la3679.sentinelflow.api.support.TestCredentials;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 
@@ -97,8 +98,12 @@ class TransactionIngestionIT extends AbstractPostgresTest {
                 Instant.now().truncatedTo(ChronoUnit.MILLIS).toString());
     }
 
+    /** Every submission carries the ingestion credential ADR-0017 §1 requires. */
     private RestTestClient.RequestBodySpec post() {
-        return client.post().uri("/api/v1/transactions").contentType(MediaType.APPLICATION_JSON);
+        return client.post()
+                .uri("/api/v1/transactions")
+                .header(ApiHeaders.API_KEY, TestCredentials.INGEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON);
     }
 
     /** Pulls one string field out of a response body, so a test can compare fields rather than bytes. */
@@ -465,10 +470,7 @@ class TransactionIngestionIT extends AbstractPostgresTest {
     void correlationIdentifierIsEchoed() {
         UUID supplied = UUID.fromString("01936b2a-7c4f-7000-8000-1a2b3c4d5e6f");
 
-        String responseBody = client.post()
-                .uri("/api/v1/transactions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .header(CorrelationIdFilter.HEADER, supplied.toString())
+        String responseBody = post().header(CorrelationIdFilter.HEADER, supplied.toString())
                 .body(body("corr-" + SchemaFixtures.next6()))
                 .exchange()
                 .expectStatus()
@@ -494,10 +496,7 @@ class TransactionIngestionIT extends AbstractPostgresTest {
         // filter's. A plain malformed value is what actually reaches the server.
         String hostile = "not-a-uuid and some trailing junk";
 
-        String echoed = client.post()
-                .uri("/api/v1/transactions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .header(CorrelationIdFilter.HEADER, hostile)
+        String echoed = post().header(CorrelationIdFilter.HEADER, hostile)
                 .body(body("hostile-" + SchemaFixtures.next6()))
                 .exchange()
                 .expectStatus()

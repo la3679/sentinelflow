@@ -24,6 +24,7 @@ import io.github.la3679.sentinelflow.api.domain.RoleCode;
 import io.github.la3679.sentinelflow.api.security.TokenIssuer;
 import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
+import io.github.la3679.sentinelflow.api.support.TestCredentials;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -220,11 +221,21 @@ class TransactionReadIT extends AbstractPostgresTest {
     }
 
     @Test
-    @DisplayName("reading transactions needs a token, unlike posting one")
+    @DisplayName("reading transactions needs an operator token, and posting one needs a different credential")
     void refusesAnAnonymousRead() {
-        // POST is permitAll because its caller is a payment pipeline. Reading
-        // other people's activity is not the same permission.
+        // Two credentials on one path, and that is the decision rather than an
+        // accident. Reading other people's activity is an operator's
+        // permission; posting is a pipeline's, and since ADR-0017 §1 it carries
+        // its own key. An operator token is not accepted for the POST and the
+        // ingestion key is not accepted for the GET.
         client.get().uri("/api/v1/transactions").exchange().expectStatus().isUnauthorized();
+
+        client.get()
+                .uri("/api/v1/transactions")
+                .header(ApiHeaders.API_KEY, TestCredentials.INGEST_API_KEY)
+                .exchange()
+                .expectStatus()
+                .isUnauthorized();
     }
 
     // ----------------------------------------------------------------------- //

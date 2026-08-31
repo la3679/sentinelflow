@@ -634,11 +634,19 @@ function Invoke-Replay {
     }
     Write-Ok "api is up and ready at $apiBase"
 
+    # Resolved here rather than discovered as a 401 on the first post, which is
+    # the failure that sends somebody to debug the pipeline instead.
+    $ingestApiKey = Get-IngestApiKey $RepoRoot
+    if (-not $ingestApiKey) {
+        Write-Fail "SENTINELFLOW_INGEST_API_KEY is not set and was not found in .env. Run 'bootstrap'."
+        exit 1
+    }
+
     switch ($Scenario) {
-        'scoring-outage' { Invoke-ReplayScoringOutage $apiBase $runId $perPhase }
+        'scoring-outage' { Invoke-ReplayScoringOutage $apiBase $runId $perPhase $ingestApiKey }
         'poison-event' { Invoke-ReplayPoisonEvent $runId $apiBase }
         'all' {
-            Invoke-ReplayScoringOutage $apiBase $runId $perPhase
+            Invoke-ReplayScoringOutage $apiBase $runId $perPhase $ingestApiKey
             Invoke-ReplayPoisonEvent $runId $apiBase
         }
         default {
@@ -663,13 +671,37 @@ function Invoke-ReplayQuery {
             'compose', 'exec', '-T', 'postgres', 'psql', '-U', $user, '-d', $database, '-At', '-c', $Sql))
 }
 
+function Get-IngestApiKey {
+    <#
+        .SYNOPSIS
+        The ingestion credential POST /api/v1/transactions requires (ADR-0017 section 1).
+
+        .DESCRIPTION
+        The environment first, then the git-ignored .env, because that is where
+        `make bootstrap` generates it. Never defaulted and never invented: a
+        replay posting a made-up key fails with a 401 that reads like a broken
+        stack rather than a missing variable.
+    #>
+    param([Parameter(Mandatory)][string]$RepoRoot)
+
+    if ($env:SENTINELFLOW_INGEST_API_KEY) { return $env:SENTINELFLOW_INGEST_API_KEY }
+
+    $envFile = Join-Path $RepoRoot '.env'
+    if (Test-Path $envFile) {
+        $line = Get-Content $envFile | Where-Object { $_ -match '^SENTINELFLOW_INGEST_API_KEY=' } | Select-Object -First 1
+        if ($line) { return $line.Substring($line.IndexOf('=') + 1) }
+    }
+    return ''
+}
+
 function Invoke-ReplayPost {
     param(
         [Parameter(Mandatory)][string]$ApiBase,
         [Parameter(Mandatory)][string]$Account,
         [Parameter(Mandatory)][string]$Merchant,
         [Parameter(Mandatory)][string]$Key,
-        [Parameter(Mandatory)][string]$Amount
+        [Parameter(Mandatory)][string]$Amount,
+        [Parameter(Mandatory)][string]$ApiKey
     )
     $body = @{
         idempotencyKey    = $Key
@@ -683,7 +715,7 @@ function Invoke-ReplayPost {
     } | ConvertTo-Json -Depth 4
 
     $response = Invoke-RestMethod -Method Post -Uri "$ApiBase/api/v1/transactions" `
-        -ContentType 'application/json' -Body $body -TimeoutSec 30
+        -ContentType 'application/json' -Headers @{ 'X-API-Key' = $ApiKey } -Body $body -TimeoutSec 30
     return $response.transactionId
 }
 
@@ -694,11 +726,12 @@ function Invoke-ReplayPhase {
         [Parameter(Mandatory)][string]$Merchant,
         [Parameter(Mandatory)][string]$Label,
         [Parameter(Mandatory)][int]$Count,
-        [Parameter(Mandatory)][string]$RunId
+        [Parameter(Mandatory)][string]$RunId,
+        [Parameter(Mandatory)][string]$ApiKey
     )
     $ids = @()
     for ($index = 1; $index -le $Count; $index++) {
-        $ids += Invoke-ReplayPost $ApiBase $Account $Merchant "replay-$RunId-$Label-$index" "$((120 + $index * 37)).00"
+        $ids += Invoke-ReplayPost $ApiBase $Account $Merchant "replay-$RunId-$Label-$index" "$((120 + $index * 37)).00" $ApiKey
     }
     return $ids
 }
@@ -746,7 +779,7 @@ function Invoke-ReplayScoringOutage {
         claim about behaviour under failure, and the only honest way to show it
         is to cause the failure.
     #>
-    param([string]$ApiBase, [string]$RunId, [int]$PerPhase)
+    param([string]$ApiBase, [string]$RunId, [int]$PerPhase, [string]$ApiKey)
 
     $account = Invoke-ReplayQuery 'SELECT account_reference FROM accounts ORDER BY account_reference LIMIT 1'
     $merchant = Invoke-ReplayQuery 'SELECT merchant_reference FROM merchants ORDER BY merchant_reference LIMIT 1'
@@ -761,7 +794,7 @@ function Invoke-ReplayScoringOutage {
     Write-Host '   the transaction is accepted, committed and published before scoring runs.'
     Invoke-Native $RepoRoot 'docker' @('compose', 'stop', 'scoring') | Out-Null
 
-    $degraded = Invoke-ReplayPhase $ApiBase $account $merchant 'outage' $PerPhase $RunId
+    $degraded = Invoke-ReplayPhase $ApiBase $account $merchant 'outage' $PerPhase $RunId $ApiKey
     Write-Host "   Posted $PerPhase transactions with scoring down."
     Wait-ReplayAssessments $degraded
     Show-ReplayAssessments $degraded
@@ -776,7 +809,7 @@ function Invoke-ReplayScoringOutage {
     Write-Host "   Waiting for the circuit breaker's open window to elapse before the next call."
     Start-Sleep -Seconds 32
 
-    $scored = Invoke-ReplayPhase $ApiBase $account $merchant 'recovered' $PerPhase $RunId
+    $scored = Invoke-ReplayPhase $ApiBase $account $merchant 'recovered' $PerPhase $RunId $ApiKey
     Write-Host "   Posted $PerPhase transactions with scoring back up."
     Wait-ReplayAssessments $scored
     Show-ReplayAssessments $scored

@@ -34,6 +34,8 @@ import io.github.la3679.sentinelflow.api.domain.TransactionChannel;
 import io.github.la3679.sentinelflow.api.domain.TransactionType;
 import io.github.la3679.sentinelflow.api.support.AbstractPostgresTest;
 import io.github.la3679.sentinelflow.api.support.SchemaFixtures;
+import io.github.la3679.sentinelflow.api.support.TestCredentials;
+import io.github.la3679.sentinelflow.api.web.ApiHeaders;
 import io.github.la3679.sentinelflow.api.web.dto.AmountRequest;
 import io.github.la3679.sentinelflow.api.web.dto.TransactionRequest;
 
@@ -498,8 +500,11 @@ class LogRedactionIT extends AbstractPostgresTest {
                         Instant.now().truncatedTo(ChronoUnit.MILLIS).toString());
     }
 
+    /** Ingestion, with the credential ADR-0017 §1 requires and no operator token. */
     private HttpResponse<String> post(String json) {
-        return post("/api/v1/transactions", null, json);
+        return send(request("/api/v1/transactions", null)
+                .header(ApiHeaders.API_KEY, TestCredentials.INGEST_API_KEY)
+                .POST(HttpRequest.BodyPublishers.ofString(json)));
     }
 
     private HttpResponse<String> get(String path, String token) {
