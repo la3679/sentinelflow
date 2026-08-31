@@ -634,6 +634,7 @@ repository provisions a billable resource.
 | Research        | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                         |
 | Planning        | [`docs/planning/`](docs/planning/)                                                       |
 | Operations      | [`docs/operations/`](docs/operations/)                                                   |
+| Threat model    | [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md)                         |
 | Frontend audit  | [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md)                 |
 | API migration   | [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)           |
 | Development     | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md)         |
