@@ -186,7 +186,7 @@ names something that runs.
 | No token in browser storage                 | `sessionSlice`, frontend rules                                   | `tests/unit/no-browser-storage.test.ts`                                                                                                                                                                                         |
 | Closed management surface                   | `application.yaml` actuator exposure                             | `OperatorAuthenticationIT`, and `make smoke` against the running stack                                                                                                                                                          |
 | Loopback-only publishing                    | `compose.yaml`, `SENTINELFLOW_BIND_ADDRESS`                      | `docker port` on the running stack — the command, because reading the file is what got this wrong before                                                                                                                        |
-| Static analysis                             | `codeql.yml`                                                     | CodeQL over Java, Python and TypeScript, every push and pull request, plus weekly                                                                                                                                               |
+| Static analysis                             | `codeql.yml`                                                     | CodeQL over Java, Python and TypeScript, every push and pull request, plus weekly. **Verified by a planted defect**, not by a green run — see below                                                                             |
 | SBOM                                        | `sbom.yml`                                                       | A CycloneDX document per image and one for the source tree. The job asserts each is non-empty and that every ecosystem's cataloger ran, so a silently-dropped lockfile fails the job rather than quietly shrinking the document |
 | Release checksums                           | `sbom.yml`                                                       | `SHA256SUMS` over every document, verified in the job with `sha256sum -c` before upload                                                                                                                                         |
 | Secret scanning                             | `security-scan.yml`, gitleaks over full history                  | Runs on every push, every pull request, and weekly                                                                                                                                                                              |
@@ -217,6 +217,27 @@ three of them closed on 2026-08-31 rather than being quietly dropped from the li
 A shared secret authenticates a caller and does not identify one. The audit trail is honest about
 this — it records `IngestionSource.API` and no actor — rather than inventing a principal the system
 does not know.
+
+## What the first CodeQL run found, and how that was checked
+
+**Zero findings, across all three languages** — analyses on 2026-08-31, `security-and-quality` pack,
+CodeQL 2.26.4.
+
+That number is worth nothing on its own. **An analysis over an empty database reports zero results
+and looks exactly like a clean one**, which is the same shape as three defects this project has
+already been caught by: an absent Prometheus series that looked like a zero, Kafka topics nothing
+created behind green health checks, and a scoring client rejected at every call while every test
+passed. The Java job is the one to doubt, because it is the only compiled language and its database
+is only as good as the build step in front of it.
+
+**So a defect was planted.** A throwaway controller concatenating a `@RequestParam` into a native
+query — textbook CWE-89 — was pushed on a branch, and CodeQL reported
+`java/sql-injection [high]` at the exact line. The branch was closed and deleted without merging.
+The extractor sees this source tree, the `build-mode: manual` compile step works, and the zero above
+is a real zero.
+
+**No suppression, no baseline, no dismissed alert.** The open-alert count is zero because nothing
+was found, not because something was filtered.
 
 ## Workflow permission review — 2026-08-31
 
