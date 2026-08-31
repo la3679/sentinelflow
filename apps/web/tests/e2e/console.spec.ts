@@ -171,6 +171,27 @@ test.describe("the transport", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
+  // The sign-in form's validation is a schema (zod) behind a resolver
+  // (react-hook-form), and neither is exercised by a submission that happens to
+  // be well formed. This drives the refusal itself, so a major version of
+  // either has to keep the messages rendering and keep the request unsent.
+  test("an empty sign-in is refused by the form, and never reaches the API", async ({
+    page,
+    api,
+  }) => {
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Sign in" }).click();
+
+    await expect(page.locator("#username-error")).toHaveText("Enter your username.");
+    await expect(page.locator("#password-error")).toHaveText("Enter your password.");
+    await expect(page.getByLabel("Username")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByLabel("Password")).toHaveAttribute("aria-invalid", "true");
+
+    expect(api.requests.map((request) => `${request.method} ${request.path}`)).not.toContain(
+      "POST /api/v1/auth/login",
+    );
+  });
+
   test("renders alert rows from the API, by their references", async ({ page, api, signIn }) => {
     void api;
     await signIn(page, "/alerts");
