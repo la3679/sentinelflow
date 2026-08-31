@@ -14,22 +14,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-08-31T16:05Z                                                                                                                                                           |
-| Updated by           | Claude                                                                                                                                                                      |
-| Overall status       | active — **Phase 7 is closed with all four gate criteria evidenced**; Phase 8 is next                                                                                       |
-| Current phase        | Phase 8 — security and quality hardening (not started)                                                                                                                      |
-| Current task         | **none in progress.** Phase 7's six deliverables are merged and its gate is claimed. Phase 8 has not been opened; see "Next three actions"                                  |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                    |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                        |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                          |
-| Working branch       | `main`                                                                                                                                                                      |
-| Local clone verified | **yes**                                                                                                                                                                     |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                            |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                        |
-| Open PRs             | seven Dependabot PRs, [#75](https://github.com/la3679/sentinelflow/pull/75) to [#81](https://github.com/la3679/sentinelflow/pull/81), untriaged. No SentinelFlow PR is open |
-| Latest release       | none                                                                                                                                                                        |
+| Field                | Value                                                                                                                                                                                               |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-08-31T16:05Z                                                                                                                                                                                   |
+| Updated by           | Claude                                                                                                                                                                                              |
+| Overall status       | active — **Phase 7 is closed with all four gate criteria evidenced**; Phase 8 is next                                                                                                               |
+| Current phase        | Phase 8 — security and quality hardening (not started)                                                                                                                                              |
+| Current task         | **none in progress.** Phase 7's six deliverables are merged and its gate is claimed. Phase 8 has not been opened; see "Next three actions"                                                          |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                            |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                  |
+| Working branch       | `main`                                                                                                                                                                                              |
+| Local clone verified | **yes**                                                                                                                                                                                             |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                    |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                |
+| Open PRs             | [#84](https://github.com/la3679/sentinelflow/pull/84) and [#80](https://github.com/la3679/sentinelflow/pull/80), which land together. The 2026-08-31 Dependabot round is triaged — see "Dependabot" |
+| Latest release       | none                                                                                                                                                                                                |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -2400,6 +2400,46 @@ checks.
   the stack's observability.
 
 ## Dependabot
+
+### The 2026-08-31 round: five merged, one fixed first, one closed
+
+Seven pull requests, [#75](https://github.com/la3679/sentinelflow/pull/75) to
+[#81](https://github.com/la3679/sentinelflow/pull/81), all verified locally before anything was
+merged rather than on CI's word alone.
+
+| PR                                                    | Bump                                      | Outcome                                                                                                        |
+| ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| [#75](https://github.com/la3679/sentinelflow/pull/75) | `spotless-maven-plugin` 3.10.0 → 3.10.1   | **merged** — `spotless:check` clean, 232 API unit tests                                                        |
+| [#76](https://github.com/la3679/sentinelflow/pull/76) | `ruff` 0.16.4 → 0.16.5                    | **merged** — `ruff`, `mypy --strict` clean, 186 scoring tests                                                  |
+| [#77](https://github.com/la3679/sentinelflow/pull/77) | three TanStack patches                    | **merged** — lint, typecheck, 41 unit tests, build                                                             |
+| [#78](https://github.com/la3679/sentinelflow/pull/78) | `@eslint/js` 9.39.5 → 10.0.1              | **merged** — aligns it with `eslint` 10, which landed in #12                                                   |
+| [#79](https://github.com/la3679/sentinelflow/pull/79) | `lucide-react` 0.575.0 → 1.34.0           | **merged** — 82 Playwright tests, which is what an icon library needs                                          |
+| [#80](https://github.com/la3679/sentinelflow/pull/80) | `eslint-plugin-react-hooks` 5.2.0 → 7.1.1 | **held** — reported 4 real errors; fixed in [#84](https://github.com/la3679/sentinelflow/pull/84), then merged |
+| [#81](https://github.com/la3679/sentinelflow/pull/81) | `typescript` 5.9.3 → 7.0.2                | **closed with a reason**, and an ignore rule added                                                             |
+
+**#81 is the one worth remembering.** TypeScript 7.0 itself is fine here: `tsc --noEmit` was clean,
+`vitest` passed and the build succeeded. What fails is `typescript-eslint` 8.65.0, which refuses to
+load against it and says so by name — "typescript-eslint does not support TS 7.0", pointing at its
+issue #10940, which tracks support for TS ≥ 7.1. Taking the bump would have meant shipping without a
+linter. `.github/dependabot.yml` now ignores the range `>=7.0.0 <7.1.0` rather than the major, so
+7.1 will be proposed when it exists, and the comment says to delete the rule then.
+
+**#80 is the second one worth remembering**, for the opposite reason: a dependency bump that reports
+new errors is usually reporting real ones. All four were: three in shadcn components nothing imports,
+one in `ChartFrame`, which set state from an effect to defer rendering until hydration. Fixed in #84
+by deleting the dead code and moving `ChartFrame` to `useSyncExternalStore`, and the bump then merged
+on its merits.
+
+**The lockfile workflow's gap showed up again and the documented remedy worked.** All five web pull
+requests sat with every check `action_required`, because the lockfile job's push is made with the
+default `GITHUB_TOKEN` and a push made with that token cannot start further workflow runs — the
+limitation `dependabot-bun-lockfile.yml`'s own header records. `gh pr close <n> && gh pr reopen <n>`
+re-dispatched everything with a human actor, and the lockfile job correctly reported `skipping`,
+because each of the five had already had a successful lockfile run. **Check that before reopening:**
+a pull request whose lockfile job never succeeded will, on reopen, dispatch every workflow and skip
+the one that would have fixed them.
+
+### The 2026-08-26 round, and the gap it found
 
 **All four major dev-dependency bumps are merged**, on 2026-08-26: `@types/node` 22 to 26 (#9),
 `globals` 15 to 17 (#10), `@vitejs/plugin-react` 5 to 6 (#11), and `eslint` 9 to 10 (#12). Each was
