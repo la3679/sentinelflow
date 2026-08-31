@@ -1778,7 +1778,7 @@ available.
 | All 13 rule expressions against the live Prometheus         | **13/13 parsed and evaluated**, and every metric each one reads exists   |
 | Prometheus reloaded with the rules mounted                  | 13 rules loaded, **13 inactive, 0 evaluation errors**                    |
 | Runbook anchors referenced by the rules                     | **13/13 resolve** to a heading in `docs/operations/RUNBOOKS.md`          |
-| `bun scripts/dev/check-docs.mjs`                            | **PASS** — 215 links across 47 files, 0 broken, 0 placeholders           |
+| `bun scripts/dev/check-docs.mjs`                            | **PASS** — 216 links across 47 files, 0 broken, 0 placeholders           |
 | CI on [#82](https://github.com/la3679/sentinelflow/pull/82) | **PASS** — all ten required checks; both drills ran on the Ubuntu runner |
 
 **The drills, from the runs that closed the gate:**

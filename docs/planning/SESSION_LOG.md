@@ -2653,7 +2653,7 @@ with no before-and-after is a change nobody can justify afterwards.
 - `promtool check config` and `check rules` — valid, 13 rules
 - All 13 rule expressions run against the live Prometheus; every metric they read exists
 - Prometheus reloaded with the rules mounted — 13 loaded, 13 inactive, 0 evaluation errors
-- 13/13 runbook anchors resolve; `check-docs.mjs` — 215 links across 47 files, 0 broken
+- 13/13 runbook anchors resolve; `check-docs.mjs` — 216 links across 47 files, 0 broken
 - CI on #82 — all ten required checks, and both drills ran on the Ubuntu runner
 
 ### Deliberately not done
