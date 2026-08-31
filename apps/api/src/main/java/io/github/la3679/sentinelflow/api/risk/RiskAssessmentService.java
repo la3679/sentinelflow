@@ -161,6 +161,7 @@ public class RiskAssessmentService {
         this.outbox = outbox;
         this.objectMapper = objectMapper;
         this.meters = meters;
+        registerAssessmentSeries();
     }
 
     /**
@@ -400,12 +401,35 @@ public class RiskAssessmentService {
      * cardinality is bounded and stays bounded.
      */
     private void count(RiskAssessment assessment) {
-        RiskBand band = assessment.getRiskBand();
-        Counter.builder("sentinelflow.risk.assessments")
-                .tag("outcome", assessment.isDegraded() ? "degraded" : "scored")
+        assessments(assessment.isDegraded() ? "degraded" : "scored", assessment.getRiskBand())
+                .increment();
+    }
+
+    /**
+     * Every series this counter can ever produce, registered at zero on startup.
+     *
+     * <p>Micrometer creates a series on its first increment, so before the first degraded
+     * assessment {@code outcome="degraded"} does not exist at all — and in Prometheus an absent
+     * series and a zero look identical on a graph and completely different in an alert rule. A rule
+     * written as "degraded rate above zero" never fires on a stack that has been degrading since it
+     * started, because there is nothing to compare.
+     *
+     * <p>Eight series: four bands, two outcomes, both closed enumerations. The scoring service
+     * already does this for its own three collectors, and {@code OutboxBatchProcessor} for its two;
+     * this is the same decision applied where a dashboard actually noticed the gap.
+     */
+    private void registerAssessmentSeries() {
+        for (RiskBand band : RiskBand.values()) {
+            assessments("scored", band);
+            assessments("degraded", band);
+        }
+    }
+
+    private Counter assessments(String outcome, RiskBand band) {
+        return Counter.builder("sentinelflow.risk.assessments")
+                .tag("outcome", outcome)
                 .tag("band", band.name())
                 .description("Risk assessments written, by whether the model contributed and where they banded")
-                .register(meters)
-                .increment();
+                .register(meters);
     }
 }

@@ -64,6 +64,29 @@ public class OutboxBatchProcessor {
                 .register(meters);
         this.publishTimer = Timer.builder("sentinelflow.outbox.publish.duration")
                 .description("Time spent publishing one outbox event")
+                // Buckets, so a dashboard can compute a percentile with
+                // histogram_quantile (ADR-0016 section 3). Without them this
+                // timer publishes a count, a sum and a max, and a max is the
+                // one summary statistic a single slow send can own for a whole
+                // scrape interval. The panel that wanted a p95 here returned
+                // nothing at all, which is how the omission was found.
+                //
+                // The range is the broker's, not the caller's: an acknowledged
+                // send is single-digit milliseconds on a local broker, and the
+                // top of the range is past the producer's own 20-second
+                // delivery timeout so a send that gave up still lands in a
+                // bucket rather than only in +Inf.
+                .serviceLevelObjectives(
+                        Duration.ofMillis(5),
+                        Duration.ofMillis(10),
+                        Duration.ofMillis(25),
+                        Duration.ofMillis(50),
+                        Duration.ofMillis(100),
+                        Duration.ofMillis(250),
+                        Duration.ofMillis(500),
+                        Duration.ofSeconds(1),
+                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(30))
                 .register(meters);
     }
 

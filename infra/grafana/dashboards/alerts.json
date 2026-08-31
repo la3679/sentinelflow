@@ -1,0 +1,429 @@
+{
+  "uid": "sentinelflow-alerts",
+  "title": "SentinelFlow \u2014 alerts and risk",
+  "description": "What the policy is producing, and what the queue is doing with it. The evidence ADR-0011 says the band thresholds should eventually be revisited against.",
+  "tags": ["sentinelflow", "alerts", "risk"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "graphTooltip": 1,
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "SentinelFlow dashboards",
+      "tags": ["sentinelflow"],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "datasource": null,
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Synthetic data.** SentinelFlow is an independent educational project. Every number on this dashboard describes generated transactions and a demo stack on one machine. None of it describes a real payment portfolio, and no figure here should be quoted as a benchmark."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Alerts raised",
+      "description": "Per hour, over the last five minutes. This is the figure ADR-0011 \u00a74 wants compared against a stated review capacity before the alerting threshold is moved.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sentinelflow-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sentinelflow-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(sentinelflow_alerts_raised_total{application=\"sentinelflow-api\"}[5m])) * 3600",
+          "legendFormat": "alerts/h",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Assessments",
+      "description": "Per hour, all bands.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sentinelflow-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sentinelflow-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(sentinelflow_risk_assessments_total{application=\"sentinelflow-api\"}[5m])) * 3600",
+          "legendFormat": "assessed/h",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Alerting share",
+      "description": "The fraction of assessments that opened an alert. A number this dashboard exists to make visible rather than to judge: what it should be is a capacity decision, not a threshold anyone can read off a graph.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sentinelflow-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sentinelflow-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(sum(rate(sentinelflow_alerts_raised_total{application=\"sentinelflow-api\"}[5m])) or vector(0)) / clamp_min(sum(rate(sentinelflow_risk_assessments_total{application=\"sentinelflow-api\"}[5m])), 0.0001)",
+          "legendFormat": "share",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Closed",
+      "description": "Transitions into a closed state per hour. Compare with alerts raised: a queue that opens faster than it closes grows without anybody deciding that it should.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sentinelflow-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sentinelflow-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(sentinelflow_alerts_transitions_total{application=\"sentinelflow-api\",to=~\"CONFIRMED_SUSPICIOUS|DISMISSED_FALSE_POSITIVE|CLOSED\"}[5m])) * 3600",
+          "legendFormat": "closed/h",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Assessments by band",
+      "description": "Where the final score landed. The distribution is saturated by design of the current model \u2014 docs/ml/EVALUATION.md records that almost nothing scores between 40 and 90 \u2014 so a near-empty MEDIUM band is expected rather than a defect.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sentinelflow-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sentinelflow-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (band) (rate(sentinelflow_risk_assessments_total{application=\"sentinelflow-api\"}[5m]))",
+          "legendFormat": "{{band}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Alerts raised, by priority",
+      "description": "HIGH and URGENT are the only two that exist: a band below the alerting threshold raises nothing, and a priority on a band that does not alert is refused at startup.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sentinelflow-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sentinelflow-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (priority) (rate(sentinelflow_alerts_raised_total{application=\"sentinelflow-api\"}[5m]))",
+          "legendFormat": "{{priority}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue transitions",
+      "description": "Where alerts moved from and to. The shape of the analyst workflow, and the series a false-positive rate would eventually be computed from \u2014 from recorded outcomes, never from a figure written into a slide.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sentinelflow-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sentinelflow-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (from, to) (rate(sentinelflow_alerts_transitions_total{application=\"sentinelflow-api\"}[5m]))",
+          "legendFormat": "{{from}} \u2192 {{to}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -435,6 +435,11 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      # The dashboards themselves, at the path the provider in
+      # infra/grafana/provisioning/dashboards/sentinelflow.yaml points at. A
+      # separate mount because provisioning config and dashboard JSON are two
+      # different things: one says where to look, the other is what is found.
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     healthcheck:
       test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:3000/api/health || exit 1"]

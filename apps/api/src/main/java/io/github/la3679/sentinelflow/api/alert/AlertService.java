@@ -124,6 +124,7 @@ public class AlertService {
         this.users = users;
         this.objectMapper = objectMapper;
         this.meters = meters;
+        registerTransitionSeries();
     }
 
     /**
@@ -466,11 +467,31 @@ public class AlertService {
      * threshold should eventually be revisited against.
      */
     private void count(AlertStatus from, AlertStatus to) {
-        Counter.builder("sentinelflow.alerts.transitions")
+        transitions(from, to).increment();
+    }
+
+    /**
+     * Every legal transition, registered at zero on startup.
+     *
+     * <p>Eleven series, and the number is not a guess: it is {@link AlertTransitions}' own table,
+     * so a transition added there appears here without anybody remembering to add it, and an
+     * illegal pair can never be registered. A dashboard of the analyst workflow is otherwise blank
+     * until somebody happens to make each move, which makes "nobody has escalated anything today"
+     * indistinguishable from "escalation is not instrumented".
+     */
+    private void registerTransitionSeries() {
+        for (AlertStatus from : AlertStatus.values()) {
+            for (AlertStatus to : AlertTransitions.legalTargetsFrom(from)) {
+                transitions(from, to);
+            }
+        }
+    }
+
+    private Counter transitions(AlertStatus from, AlertStatus to) {
+        return Counter.builder("sentinelflow.alerts.transitions")
                 .tag("from", from.name())
                 .tag("to", to.name())
                 .description("Alert status transitions, by where the alert moved from and to")
-                .register(meters)
-                .increment();
+                .register(meters);
     }
 }

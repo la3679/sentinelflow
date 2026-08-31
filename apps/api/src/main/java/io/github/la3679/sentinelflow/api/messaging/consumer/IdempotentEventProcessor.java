@@ -47,6 +47,7 @@ public class IdempotentEventProcessor {
     public IdempotentEventProcessor(ProcessedEventRepository ledger, MeterRegistry meters) {
         this.ledger = ledger;
         this.meters = meters;
+        registerConsumerSeries();
     }
 
     /**
@@ -74,11 +75,31 @@ public class IdempotentEventProcessor {
     }
 
     private void count(String consumerName, String outcome) {
-        Counter.builder("sentinelflow.consumer.events")
+        events(consumerName, outcome).increment();
+    }
+
+    /**
+     * Both outcomes at zero for the one consumer this application runs.
+     *
+     * <p>Registered up front for the reason the other counters are: Micrometer creates a series on
+     * its first increment, so a stack that has just started has no
+     * {@code sentinelflow_consumer_events_total} at all — and on a dashboard that is
+     * indistinguishable from a consumer that is not running, which is the single thing the panel
+     * exists to tell an operator.
+     *
+     * <p>Two series and no more. {@code consumer} is a group name fixed in code, not a value taken
+     * from a record.
+     */
+    private void registerConsumerSeries() {
+        events(TransactionCreatedConsumer.CONSUMER_NAME, "processed");
+        events(TransactionCreatedConsumer.CONSUMER_NAME, "duplicate");
+    }
+
+    private Counter events(String consumerName, String outcome) {
+        return Counter.builder("sentinelflow.consumer.events")
                 .tag("consumer", consumerName)
                 .tag("outcome", outcome)
                 .description("Events a consumer handled, by what it did with them")
-                .register(meters)
-                .increment();
+                .register(meters);
     }
 }
