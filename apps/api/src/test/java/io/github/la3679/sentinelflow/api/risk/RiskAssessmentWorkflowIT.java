@@ -102,14 +102,18 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     /**
-     * Noon UTC on a fixed day, for the tests that need the ruleset to fire.
+     * Noon UTC on a fixed day. Every transaction this suite creates occurs at or before it.
      *
      * <p>Fixed because two of the seven rules read the clock: the velocity window is five minutes
-     * wide, and {@code OFF_HOURS} fires between 02:00 and 04:59 UTC. A history built from
-     * {@code now()} would score 40 by day and 50 overnight, and no assertion can state a number that
-     * depends on when the build started.
+     * wide, and {@code OFF_HOURS} fires between 02:00 and 04:59 UTC. A transaction at {@code now()}
+     * would score 40 by day and 50 overnight, and no assertion can state a number that depends on
+     * when the build started.
+     *
+     * <p><strong>Noon is load-bearing rather than arbitrary.</strong> {@code OFF_HOURS} is the one
+     * rule that needs no history at all, so it fires on a lone transaction that every comment in
+     * this file describes as tripping nothing.
      */
-    private static final Instant ALERTING_INSTANT = Instant.parse("2026-03-14T12:00:00Z");
+    private static final Instant FIXED_INSTANT = Instant.parse("2026-03-14T12:00:00Z");
 
     private static final String SCORED_BODY = """
             {
@@ -210,7 +214,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @Test
     @DisplayName("a scored transaction is assessed, banded, and marked ASSESSED")
     void writesAScoredAssessment() {
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
 
         publish(transactionId);
 
@@ -243,7 +247,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @Test
     @DisplayName("the request carries the transaction and its account context, and nothing else")
     void sendsTheAssembledRequest() {
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
 
         publish(transactionId);
         awaitAssessment(transactionId);
@@ -259,7 +263,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @Test
     @DisplayName("the reasons carry the model's, sourced and explained")
     void carriesTheModelsReasons() {
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
 
         publish(transactionId);
         JsonNode reasons = json(awaitAssessment(transactionId).get("reason_codes"));
@@ -277,7 +281,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @Test
     @DisplayName("the assessment and its risk.assessed event are written in one commit")
     void writesTheOutboxRowBesideTheAssessment() {
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
 
         publish(transactionId);
         Map<String, Object> assessment = awaitAssessment(transactionId);
@@ -309,7 +313,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @DisplayName("an unreachable scoring service degrades the assessment rather than losing it")
     void degradesWhenScoringIsUnavailable() {
         STATUS.set(503);
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
 
         publish(transactionId);
 
@@ -334,7 +338,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @DisplayName("a degraded assessment says so rather than looking like an ordinary one")
     void aDegradedAssessmentExplainsItself() {
         STATUS.set(503);
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
 
         publish(transactionId);
         JsonNode reasons = json(awaitAssessment(transactionId).get("reason_codes"));
@@ -355,7 +359,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @DisplayName("a rejected request is dead-lettered rather than degraded, and writes no assessment")
     void deadLettersWhenScoringRejectsTheRequest() {
         STATUS.set(422);
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
 
         UUID eventId = publish(transactionId);
 
@@ -536,7 +540,7 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
     @Test
     @DisplayName("a redelivered event does not produce a second assessment")
     void isIdempotentUnderRedelivery() {
-        UUID transactionId = fixtures.insertTransaction();
+        UUID transactionId = quietTransaction();
         UUID eventId = UUID.randomUUID();
 
         publish(transactionId, eventId);
@@ -669,10 +673,36 @@ class RiskAssessmentWorkflowIT extends AbstractPostgresTest {
                     merchantId,
                     "idem-" + SchemaFixtures.next6(),
                     "GB",
-                    ALERTING_INSTANT.minus(Duration.ofMinutes(minutesBefore)));
+                    FIXED_INSTANT.minus(Duration.ofMinutes(minutesBefore)));
         }
         return fixtures.insertTransactionFrom(
-                accountId, merchantId, "idem-" + SchemaFixtures.next6(), "BR", ALERTING_INSTANT);
+                accountId, merchantId, "idem-" + SchemaFixtures.next6(), "BR", FIXED_INSTANT);
+    }
+
+    /**
+     * A lone transaction that trips no rule, at an hour that cannot change the answer.
+     *
+     * <p>{@link SchemaFixtures#insertTransaction()} occurs at {@code now()}, which is right for a
+     * schema test and wrong here. Every assertion in this suite that states a rule score of zero, a
+     * reason count, or {@code NO_INDICATORS} rests on "a lone transaction trips nothing" — and
+     * {@code OFF_HOURS} is the one rule that needs no history, so between 02:00 and 04:59 UTC it
+     * fires and all three become false.
+     *
+     * <p><strong>This was not hypothetical.</strong> Three of these tests failed on a run that
+     * started at 02:35 UTC, on a change that touched no Java at all: 59.50 where 55.50 was asserted,
+     * three reasons where two were, and {@code OFF_HOURS} where {@code NO_INDICATORS} was. The suite
+     * was failing for three hours in every day and passing for the other twenty-one.
+     *
+     * <p>No history is inserted against it, so {@link #FIXED_INSTANT}'s date carries no meaning and
+     * only its hour does.
+     */
+    private UUID quietTransaction() {
+        return fixtures.insertTransactionFrom(
+                fixtures.insertAccount(fixtures.insertCustomer()),
+                fixtures.insertMerchant(),
+                "idem-" + SchemaFixtures.next6(),
+                "GB",
+                FIXED_INSTANT);
     }
 
     private Map<String, Object> awaitAlert(UUID transactionId) {
