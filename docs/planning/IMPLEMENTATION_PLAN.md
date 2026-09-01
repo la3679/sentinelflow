@@ -254,8 +254,8 @@ reported `java/sql-injection [high]` at the exact line before that branch was de
 - Clean-clone verification of every README command
 - Demo walkthrough and screenshots
 - Link, badge, and screenshot audit
-- An ADR for the deployment and local-first strategy — number allocated when it is written, for the
-  same reason
+- An ADR for the deployment and local-first strategy — **done**,
+  [ADR-0018](../adr/0018-deployment-and-the-local-first-strategy.md)
 
 ### The README requirement, and it is binding
 

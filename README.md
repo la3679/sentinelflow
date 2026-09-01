@@ -589,21 +589,22 @@ The threat model is STRIDE over four trust boundaries with every control traced 
 
 ## Design decisions
 
-Seventeen ADRs record the decisions that shaped this system, each binding until superseded. The
+Eighteen ADRs record the decisions that shaped this system, each binding until superseded. The
 ones that explain the most:
 
-| Decision                                                                 | What it settles                                                      |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| [ADR-0005](docs/adr/0005-outbox-relay-mechanics.md)                      | Why a polling relay, and what its 500 ms costs                       |
-| [ADR-0006](docs/adr/0006-event-schema-and-versioning.md)                 | Envelope, versioning, and what may never reach a dead-letter topic   |
-| [ADR-0007](docs/adr/0007-money-identifiers-and-schema-migrations.md)     | Money as `NUMERIC`, identifiers, and forward-only migrations         |
-| [ADR-0008](docs/adr/0008-scoring-service-boundary.md)                    | A synchronous call inside the handler, not a second Kafka round trip |
-| [ADR-0010](docs/adr/0010-model-selection-and-evaluation.md)              | The ship-or-not rule, fixed before anything was measured             |
-| [ADR-0011](docs/adr/0011-risk-banding-and-the-final-score.md)            | How a rule score and a model score combine into one banded decision  |
-| [ADR-0012](docs/adr/0012-operator-authentication.md)                     | Stateless bearer tokens, the roles, and what that costs              |
-| [ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) | Bounded polling now; SSE when there is a stream worth carrying       |
-| [ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md)  | What each signal is allowed to be read as saying                     |
-| [ADR-0017](docs/adr/0017-protecting-the-ingestion-surface.md)            | The ingestion credential, the limits, and what they do not solve     |
+| Decision                                                                 | What it settles                                                            |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| [ADR-0005](docs/adr/0005-outbox-relay-mechanics.md)                      | Why a polling relay, and what its 500 ms costs                             |
+| [ADR-0006](docs/adr/0006-event-schema-and-versioning.md)                 | Envelope, versioning, and what may never reach a dead-letter topic         |
+| [ADR-0007](docs/adr/0007-money-identifiers-and-schema-migrations.md)     | Money as `NUMERIC`, identifiers, and forward-only migrations               |
+| [ADR-0008](docs/adr/0008-scoring-service-boundary.md)                    | A synchronous call inside the handler, not a second Kafka round trip       |
+| [ADR-0010](docs/adr/0010-model-selection-and-evaluation.md)              | The ship-or-not rule, fixed before anything was measured                   |
+| [ADR-0011](docs/adr/0011-risk-banding-and-the-final-score.md)            | How a rule score and a model score combine into one banded decision        |
+| [ADR-0012](docs/adr/0012-operator-authentication.md)                     | Stateless bearer tokens, the roles, and what that costs                    |
+| [ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) | Bounded polling now; SSE when there is a stream worth carrying             |
+| [ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md)  | What each signal is allowed to be read as saying                           |
+| [ADR-0017](docs/adr/0017-protecting-the-ingestion-surface.md)            | The ingestion credential, the limits, and what they do not solve           |
+| [ADR-0018](docs/adr/0018-deployment-and-the-local-first-strategy.md)     | Local-first, no hosted demo, and what would have to be true to change that |
 
 ## Documentation
 
@@ -646,8 +647,15 @@ Events stream, once there is a stream worth carrying.
 
 **The local Docker Compose environment is the supported way to run SentinelFlow.** There is no
 hosted demo, and this README will not link to one that does not exist. Public cloud deployment is
-optional, out of scope for v1, and would **incur cost** — nothing in this repository provisions a
-billable resource.
+out of scope for v1 and would **incur cost** — nothing in this repository provisions a billable
+resource.
+
+That is a recorded decision rather than a gap:
+[ADR-0018](docs/adr/0018-deployment-and-the-local-first-strategy.md) sets out why ten containers do
+not fit a free tier, why nothing here was built to be exposed, and the five things that would have
+to be true before it is revisited. It also fixes the clause most easily undone by accident — every
+published port binds to `127.0.0.1`, verified with `docker port` rather than by reading the compose
+file.
 
 ## Development
 
