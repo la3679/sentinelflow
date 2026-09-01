@@ -172,6 +172,7 @@ function Invoke-Help {
         'test-scoring'     = 'Tests for the scoring service'
         'test-integration' = 'Testcontainers PostgreSQL suites (requires Docker)'
         'test-e2e'         = 'Playwright browser, accessibility and responsive checks'
+        'verify-real-stack' = 'Verify operator identity against the running compose stack'
         'lint'             = 'Lint every application'
         'format'           = 'Format everything in place'
         'format-check'     = 'Check formatting without changing anything'
@@ -1044,6 +1045,7 @@ switch ($Target) {
         Invoke-Native $Web 'bun' @('run', 'build')
         Invoke-Native $Web 'bun' @('run', 'test:e2e')
     }
+    'verify-real-stack' { Invoke-Native $Web 'bun' @('run', 'test:real-stack') }
 
     'lint' {
         Invoke-Native $Web 'bun' @('run', 'lint')

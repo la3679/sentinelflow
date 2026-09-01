@@ -23,6 +23,7 @@ SCORING := apps/scoring
 
 .PHONY: help bootstrap up down logs ps reset-demo seed export-dataset train replay \
         build test test-web test-api test-scoring test-integration test-e2e \
+        verify-real-stack \
         lint format format-check security smoke docs-check contracts-check bench clean
 
 ## ---------------------------------------------------------------------------
@@ -162,6 +163,13 @@ test-integration: ## Testcontainers PostgreSQL suites (requires Docker)
 
 test-e2e: ## Playwright browser, accessibility and responsive checks
 	@cd $(WEB) && $(BUN) run build && $(BUN) run test:e2e
+
+# The suites above stub the API in the browser or run against Testcontainers.
+# Neither is the stack a demo runs on, and three defects that a fully green
+# build was blind to were visible only under compose. This drives the console
+# image compose publishes against the API image compose publishes.
+verify-real-stack: ## Verify operator identity against the running compose stack
+	@cd $(WEB) && $(BUN) run test:real-stack
 
 ## ---------------------------------------------------------------------------
 ## Quality gates
