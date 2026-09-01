@@ -86,24 +86,27 @@ function HealthPage() {
 
             {/*
               What this screen used to show here was fabricated: consumer lag per
-              group and a dead-letter depth that no process had measured. Phase 7
-              brings the metric set, the dashboards and the runbooks together, and
-              a number is worth showing when there is something to do about it.
+              group and a dead-letter depth that no process had measured. Both are
+              measured now, and they are still not here - they are read from the
+              broker with an admin client and exported to Prometheus, and a number
+              worth acting on belongs beside the runbook that answers it rather
+              than on a page with no way to act.
             */}
             <Panel
               title="Pipeline depth and consumer lag"
-              description="Not measured yet, so not shown."
+              description="Measured, and deliberately not shown here."
               bodyClassName="p-4"
             >
               <p className="text-sm">
-                Consumer-group lag and dead-letter depth belong to Kafka rather than to this API,
-                and nothing here measures them today.
+                Consumer-group lag and dead-letter depth belong to Kafka rather than to this API.
+                Both are measured and exported to Prometheus, with Grafana dashboards and alerting
+                rules over them.
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                They arrive in Phase 7 with the metric set and the runbooks that say what to do
-                about a number that is climbing. Until then this panel is empty rather than
-                decorative — a figure nobody measured is worse than no figure, because somebody
-                quotes it.
+                They stay there rather than being copied onto this screen, because each one is
+                answered by a runbook and a number with nothing to do about it is decoration. This
+                page answers a different question — whether the components this console depends on
+                are responding right now.
               </p>
             </Panel>
           </div>

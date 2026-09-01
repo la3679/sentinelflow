@@ -330,7 +330,10 @@ export type ComponentState = "OPERATIONAL" | "DEGRADED" | "OUTAGE";
  * Whether each part of the stack is answering, as the API can see it.
  *
  * There is no `UNKNOWN`: a component in this list was asked. Consumer lag and
- * dead-letter depth are deliberately absent until Phase 7 measures them.
+ * dead-letter depth are deliberately absent: both are measured, and they are
+ * measured where they are produced. They belong to Kafka and reach Prometheus,
+ * which has the dashboards and the alerting rules over them; this endpoint
+ * answers whether the components the console depends on are responding now.
  */
 export interface SystemHealth {
   components: {
