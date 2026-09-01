@@ -430,7 +430,7 @@ it costs.
 | Scoring — `uv run pytest`   | **187 passed**                                                        |
 | Console — unit              | **41 passed**                                                         |
 | Console — browser and a11y  | **88 passed**, axe clean on all eight routes at two viewports         |
-| Contracts, docs, format     | **PASS** — 234 links across 49 files, 0 broken                        |
+| Contracts, docs, format     | **PASS** — contracts valid, every link resolves, formatting clean     |
 | CodeQL on `refs/heads/main` | **0 results** — proved by planting a defect and seeing it caught      |
 
 The API's integration suites run against **real PostgreSQL and real Kafka** in Testcontainers, on
@@ -462,8 +462,11 @@ laptop running the whole ten-container stack:
 | `GET /reports/alert-summary` (24 h) | 20 ms | 36 ms | 37 ms  |
 | `GET /reports/alert-summary` (30 d) | 17 ms | 30 ms | 33 ms  |
 
-A burst of 100 transactions at concurrency 8 was accepted in 0.78 s, and all 100 were scored and
-persisted a few seconds later — the relay's 500 ms poll is inside that.
+A burst of 100 transactions at concurrency 8 was accepted in 0.78 s, and all 100 were scored,
+banded and persisted **5.0 s** after that — measured from the database rather than from an endpoint,
+because the question is when the pipeline finished. Kafka, the relay's 500 ms poll, the consumer and
+the scoring call are all inside that one number, and roughly half a second of it is the poll before
+anything else happens. **Nothing in this pipeline is real-time, and the design says so.**
 
 **The one optimization so far, and how it was found.** `GET /transactions` was the slowest endpoint
 by a factor of five. The SQL was captured from PostgreSQL's own statement log rather than
@@ -471,7 +474,9 @@ reconstructed, and `EXPLAIN (ANALYZE, BUFFERS)` moved the page query from **68.0
 its shared buffer hits from **71,256 to 6,155**. The cost was not the sort: it was a correlated
 subquery resolving each transaction's latest assessment version, running **34,629 times** — for 98%
 of the buffers — to return fifty rows, with no index for the query's `ORDER BY` to stop early.
-`V12__transactions_listing_index.sql` adds one and carries both plans and the trade it accepts.
+[`V12__transactions_listing_index.sql`](apps/api/src/main/resources/db/migration/V12__transactions_listing_index.sql)
+adds one, and carries both plans and the trade it accepts — one more index on the highest-volume
+write path.
 
 **What none of this measures:** sustained throughput (the rate limiter's ceiling is the binding
 constraint by design, and the benchmark stays under it rather than raising it to flatter itself),
