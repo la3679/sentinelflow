@@ -224,7 +224,7 @@ git clone https://github.com/la3679/sentinelflow.git
 cd sentinelflow
 make bootstrap     # verify prerequisites, generate a local .env with fresh secrets
 make up            # build and start everything, waiting until every service is healthy
-make smoke         # verify the running stack actually serves
+make smoke         # 23 checks against the running stack
 ```
 
 On Windows without `make`, every target is available natively in PowerShell —
@@ -299,10 +299,11 @@ counted and logged instead.
 
 ### Credentials
 
-There are none to find and none committed. `make bootstrap` generates four random values into the
-git-ignored `.env`: a PostgreSQL password, a Grafana admin password, the API's token-signing
-secret, and the password the seeded demo operators share. Compose refuses to start when the signing
-secret is missing rather than falling back to something guessable.
+There are none to find and none committed. `make bootstrap` generates five random values into the
+git-ignored `.env`: a PostgreSQL password, a Grafana admin password, the API's token-signing secret,
+the password the seeded demo operators share, and the ingestion API key. **Compose refuses to start
+when any of them is missing** rather than falling back to something guessable, so a half-generated
+`.env` fails loudly at the first command rather than quietly at the tenth.
 
 Four operators are seeded — `analyst.one`, `analyst.two`, `administrator.one` and `auditor.one` —
 sharing the password in `SENTINELFLOW_DEMO_OPERATOR_PASSWORD`:

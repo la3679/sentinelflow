@@ -3012,3 +3012,81 @@ Verified before the push, not assumed: `bun run format:check` clean; `bun script
 blocks parsed.
 
 ---
+
+## 2026-09-01 — Phase 9 continued: the clean clone finds four things nobody could have found from here
+
+| Field           | Value                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-09-01T02:25Z / 2026-09-01T03:45Z                                                           |
+| Starting SHA    | `b6ff004` on `main`                                                                             |
+| Ending SHA      | recorded at the merge of the clean-clone documentation pull request                             |
+| Objective       | "Next three actions" items 1 and 3: the clean-clone verification, and the optimization decision |
+
+### Work completed
+
+**A clone into an empty directory, with empty Docker volumes, and every command the README
+publishes.** The existing stack was stopped first, keeping its volumes; the clean run used its own
+Compose project name so it could not attach to them.
+
+Everything the README promises works: `make bootstrap` generates all five secrets and is idempotent,
+`make up` brings up all ten containers healthy, `make smoke` passes **23 of 23** through both the
+shell and PowerShell surfaces, `make seed` writes 2,105 transactions with a checksum, and the
+pipeline behind it assessed **2,105 of 2,105 with none degraded and none failed** on a database that
+had not existed twenty minutes earlier. `make bench` ran, `bun install --frozen-lockfile` took 11
+seconds, and the contract and documentation checks passed.
+
+**Four defects, each merged with the run that proves it:**
+
+| What                                                                                                          | PR   |
+| ------------------------------------------------------------------------------------------------------------- | ---- |
+| The PowerShell bootstrap generated **2 of 5 secrets**, so a Windows first-run wrote an `.env` compose refuses | #107 |
+| `SCENARIO=poison-event make replay` exits **127** in Git Bash — MSYS path conversion                          | #105 |
+| `make bench` misreported its own dataset — 27 alerts published beside a latency measured against 119          | #104 |
+| `make bench` left the tree failing `make format-check`                                                        | #106 |
+
+A fifth was found before any of them and merged the same way: `RiskAssessmentWorkflowIT` failed three
+tests on a documentation-only pull request, because CI ran at 02:35 UTC and `OFF_HOURS` fires between
+02:00 and 04:59. It was reproduced on unmodified `main` in the same window, fixed, and re-run — 13/13
+(#103).
+
+**The optimization question is answered rather than left open.** Three benchmark runs now exist and
+they say the same thing three ways: `p99` equals `max` in all ten rows of both reports, because
+nearest-rank p99 of thirty samples **is** the maximum; the same endpoint on two comparable datasets
+gave 98.15 ms and 33.78 ms an hour apart; and a ninefold difference in dataset size moved the p50 by
+2.5 ms. One measured optimization is enough, and what would have to change before that is worth
+revisiting is written down.
+
+### The lesson worth carrying forward
+
+**Every defect this session found lives in a place no existing check can reach**, and they divide
+into two kinds.
+
+Three of them are in the gap between _a working tree that already exists_ and _a stranger's first
+command_. The PowerShell bootstrap bug is the sharpest: the broken branch is the one that only runs
+when `.env` is absent, which is never true for anybody who has worked here. It had been broken since
+Phase 8 added the ingestion key, on the path the README publishes for Windows, and the script
+reported success while writing a file the stack refuses.
+
+The other kind is time. `OFF_HOURS` made a suite fail for three hours in every day and pass for the
+other twenty-one, and the only reason it had never been seen is that no pull request had happened to
+run overnight.
+
+**A clean clone and an unusual clock are both just inputs nothing had tried.** The build was green
+throughout all of it.
+
+### The exact resume point
+
+Phase 9 has **six of eight criteria met**. The two open ones are small and both are in the gate
+table: the demo walkthrough with screenshots beyond the two that exist, and the ADR for the
+deployment and local-first strategy. The phase cannot close with either open.
+
+After that, Phase 10 — and "Required before v1" §1, operator identity, is the largest remaining
+piece of work in the project and the one Phase 10 cannot ship without.
+
+### State at the stop
+
+Six pull requests merged, #102 through #107, every one with green CI on `main`. Working tree clean,
+`main` in sync. The clean-clone stack and its throwaway clones were removed and the original stack
+was restored to its own volumes, which were never touched.
+
+---

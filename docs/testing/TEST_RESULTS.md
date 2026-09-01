@@ -79,6 +79,65 @@ asserted by Playwright against a real browser, because focus visibility, keyboar
 contrast and axe cannot be checked in jsdom. The unit gate exists to stop that layer silently
 shrinking, not to describe how well the console is tested.
 
+## The clean-clone verification
+
+**2026-09-01.** Every command the README publishes, run from a clone made into an empty directory
+with no `.env`, no `node_modules` and empty Docker volumes. This is the run that checks what a
+stranger gets, and it is the only run in this repository that can: every other check happens in a
+working tree that already exists.
+
+| Step                                  | Result                                                                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `git clone` into an empty directory   | clean                                                                                         |
+| `make bootstrap`                      | **exit 0** — all five secrets generated, including the Phase 8 ingestion key                  |
+| `make bootstrap` a second time        | **exit 0** — ".env exists with every required secret set", not the exit 1 it once gave        |
+| `make up`                             | **exit 0** — all ten containers healthy, built from scratch                                   |
+| `make smoke`                          | **23 passed, 0 failed** — and the same 23 through `.\scripts\dev\sf.ps1 smoke`                |
+| `make seed`                           | 2,105 generated, 2,105 written, 105 planted, with a checksum                                  |
+| The pipeline behind it                | **2,105 transactions, 2,105 ASSESSED, 0 FAILED, 0 degraded, 27 alerts, 0 failed outbox rows** |
+| `SCENARIO=scoring-outage make replay` | 4 degraded at 35.00 with scoring stopped, 4 scored at 74.00 after it returned                 |
+| `SCENARIO=poison-event make replay`   | dead-letter topic 0 → 1; undeliverable counter moved — **after a fix; see below**             |
+| `make bench`                          | **exit 0** — report written, against a dataset it now describes correctly                     |
+| `bun install --frozen-lockfile`       | 602 packages, 11 s                                                                            |
+| `make contracts-check`                | **PASS** — both OpenAPI documents and the AsyncAPI one                                        |
+| `make docs-check`                     | **PASS** — 274 links across 53 files, 0 broken, no placeholders                               |
+| `.\scripts\dev\sf.ps1 bootstrap`      | all five secrets — **after a fix; see below**                                                 |
+
+**The pipeline row is the one worth reading twice.** 2,105 transactions seeded and 2,105 assessed,
+none degraded and none failed, on a database that did not exist twenty minutes earlier. The h2c
+defect that left 13,455 degraded assessments in the older local database does not reproduce.
+
+### What it found
+
+Four defects, none of which any existing check could have caught, because every one of them lives in
+the gap between "a working tree that already exists" and "a stranger's first command".
+
+| Defect                                                                                                                                                      | Fixed in                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **The PowerShell bootstrap generated 2 of 5 secrets.** A Windows first-run produced an `.env` compose refuses outright, so the stack could not start at all | [#107](https://github.com/la3679/sentinelflow/pull/107) |
+| **`SCENARIO=poison-event make replay` exits 127 in Git Bash.** MSYS path conversion mangles the container path, and it had never worked here                | [#105](https://github.com/la3679/sentinelflow/pull/105) |
+| **`make bench` misreported its own dataset**, publishing 27 alerts beside a `GET /alerts` latency measured against 119                                      | [#104](https://github.com/la3679/sentinelflow/pull/104) |
+| **`make bench` left the tree failing `make format-check`**, so benchmarking and committing meant a red Formatting job for whitespace                        | [#106](https://github.com/la3679/sentinelflow/pull/106) |
+
+Two README claims were also checked and one was wrong: the credentials section said `make bootstrap`
+generates **four** secrets, and it generates five — the ingestion key arrived in Phase 8 and that
+sentence had not moved. The `make smoke` count was dropped from the README when it could not be
+verified and is restored here, because this run measured it.
+
+### The limits of this run
+
+- **`make` itself was not exercised.** It is not installed on this machine, so each target's
+  underlying script was run directly, and the README's documented Windows surface —
+  `.\scripts\dev\sf.ps1` — was run for `bootstrap` and `smoke`. The Makefile is exercised by CI on
+  Linux for the checks CI runs.
+- **The clean run used its own Compose project name.** `compose.yaml` pins `name: sentinelflow`, so
+  a second clone on a machine that already has a stack would attach to the **existing volumes** and
+  not be clean at all. The isolation was deliberate, and that behaviour is worth knowing: a clean
+  clone is not a clean stack unless the volumes are new.
+- **`make test`, `make test-integration`, `make test-e2e`, `make lint` and `make build` were not
+  re-run here.** CI runs all of them on every push and their results are above; the value of a clean
+  clone is in the commands CI never runs.
+
 ## Resilience drills
 
 Both run inside `make test-integration`, against a real broker and a real database.
