@@ -3144,3 +3144,76 @@ Phase 10 cannot ship with it open.
 Working tree clean, `main` in sync, all CI green.
 
 ---
+
+## 2026-09-01 — Phase 10 opened: an alert can be given to a person
+
+| Field           | Value                                                                              |
+| --------------- | ---------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-09-01T04:45Z / 2026-09-01T05:35Z                                              |
+| Starting SHA    | `aaf1b3b` on `main`                                                                |
+| Ending SHA      | `main` at `aaf1b3b`; `feat/operator-identity` at the head of PR #111               |
+| Objective       | Phase 10's gating deliverable: real operator identity, per "Required before v1" §1 |
+
+### Work completed
+
+**An alert can be given to a named analyst.** The console could release one and could not give it to
+anybody: `alerts.assignee_id` is a `uuid`, the API published it and nothing that resolved it, so the
+queue said "Assigned" rather than who.
+
+**It was three missing answers rather than one missing control**, which the Phase 6 audit had already
+said and which this session confirmed by having to fix all three: `GET /operators` lists who may hold
+an alert, `Alert.assignee` carries the person the identifier names, and the login response now
+publishes the operator's own identifier — the absence of which is why "assign to me" was not
+buildable at all.
+
+**The assignment endpoint itself needed no change.** It already validated the assignee, refused an
+`AUDITOR`, took an `expectedVersion` and answered `409`, and treated a repeat as a no-op. What was
+missing was everything a client needed in order to use it. That is worth recording, because the
+deficiency read like a backend gap and was not one.
+
+[ADR-0019](../adr/0019-resolving-an-assignee-to-a-person.md) records the decision, including what it
+deliberately does not do: no operator management, no new roles, and no `status` field on an
+`Operator`, because a field whose value is always the same invites a filter that will silently never
+fire.
+
+### The defect worth carrying forward
+
+**`Map.of().get(null)` throws rather than returning null.** Resolving a page of assignees answers an
+all-unassigned page with `Map.of()`, so every queue page holding one unassigned alert answered 500 —
+the ordinary case on a healthy queue.
+
+**The tests written for the change did not catch it. Three older suites did, at once.**
+`AlertQueueIT`, `AlertTransitionIT` and `LogRedactionIT` all read the queue without filtering by
+assignee; the new suite filtered by assignee in every query, so it only ever exercised rows that had
+one. A test that sets up the interesting case can miss the ordinary one, and the suites that were not
+written for this change were the ones that noticed.
+
+Two smaller finds. `TokenResponse` was declared twice and only one copy imported, so the first edit
+went to the dead one and the type error named a property that had just been added to something
+nothing used — the duplicate is deleted. And the new end-to-end journeys navigate in-app rather than
+reloading, because a reload signs the console out by design and the test would otherwise have been
+asserting against the sign-in screen.
+
+### The exact resume point
+
+**PR [#111](https://github.com/la3679/sentinelflow/pull/111) is open and awaiting CI. Merge it, then
+do the one clause it has not satisfied:** "Required before v1" §1 requires operator identity to be
+**verified against the real stack, not only against Testcontainers**, and that clause exists because
+of three defects a fully green build was blind to. `make up --build`, sign in as `analyst.one`, call
+`GET /api/v1/operators`, assign an alert to `analyst.two`, read it back, and then do the same through
+the console's picker.
+
+After that, the rest of Phase 10: changelog and release notes, repository metadata, the `v1.0.0` tag
+**only if every v1 criterion is genuinely met**, and the handoff report.
+
+**The two human-verification items may not be ticked off by any session** — a screen-reader pass and a
+manual authenticated walkthrough. Phase 10's gate says so explicitly.
+
+### State at the stop
+
+`main` clean and in sync at `aaf1b3b`, all CI green. `feat/operator-identity` pushed, three commits,
+with `./mvnw verify` at 259 unit and 337 integration and coverage gates met, `bun run verify` clean,
+92 end-to-end tests and axe clean, contracts valid, and 297 documentation links with none broken.
+Nothing was left half-written.
+
+---
