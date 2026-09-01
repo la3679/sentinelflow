@@ -185,8 +185,16 @@ def psql(sql: str, *, required: bool = True) -> str:
     )
 
 
-def reference_environment() -> dict:
-    """The machine, the runtime and the dataset, all read rather than typed."""
+def dataset_rows() -> dict[str, int]:
+    """How many rows each table holds, right now.
+
+    Read twice per run, and the second reading is the one the report publishes.
+    This benchmark ingests before it measures, so a snapshot taken at the start
+    describes a database that no longer exists by the time a read query runs.
+    On a 20,000-row dataset the hundred it adds is noise; on a freshly seeded
+    one it took the alerts table from 27 rows to 119, and the report still said
+    27 beside a `GET /alerts` latency measured against 119.
+    """
     counts = {}
     rows = psql(
         "SELECT 'transactions', count(*) FROM transactions"
@@ -201,7 +209,14 @@ def reference_environment() -> dict:
         if "|" in line:
             table, value = line.split("|", 1)
             counts[table] = int(value)
+    return counts
 
+
+def reference_environment() -> dict:
+    """The machine and the runtime, read rather than typed.
+
+    The dataset is deliberately not here. See :func:`dataset_rows`.
+    """
     return {
         "measuredAtUtc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "os": f"{platform.system()} {platform.release()}",
@@ -215,7 +230,6 @@ def reference_environment() -> dict:
             ["docker", "compose", "images", "--format", "{{.Service}} {{.Repository}}:{{.Tag}}"]
         ),
         "gitSha": shell(["git", "rev-parse", "--short", "HEAD"]),
-        "datasetRows": counts,
     }
 
 
@@ -431,12 +445,20 @@ def markdown(record: dict) -> str:
     add(f"| Docker Compose | {env['dockerCompose']} |")
     add(f"| PostgreSQL | {env['postgres']} |")
     add("")
-    add("**Dataset the queries ran against:**")
+    add("**Dataset the read queries ran against:**")
     add("")
-    add("| Table | Rows |")
-    add("| --- | --- |")
+    add(
+        "Counted **after** the ingestion below and before the reads, because those are the rows the"
+        " read queries actually saw. A count taken at the start of the run describes a database that"
+        " no longer exists by the time a latency is measured."
+    )
+    add("")
+    before = env.get("datasetRowsBeforeRun") or {}
+    add("| Table | Rows | Added by this run |")
+    add("| --- | --- | --- |")
     for table, count in sorted(env["datasetRows"].items()):
-        add(f"| `{table}` | {count:,} |")
+        delta = count - before.get(table, count)
+        add(f"| `{table}` | {count:,} | {delta:+,} |" if delta else f"| `{table}` | {count:,} | — |")
     add("")
     add("**This is one machine, once.** It is a developer laptop running the whole stack — ten")
     add("containers, a database, a broker and two application services competing for the same")
@@ -585,6 +607,7 @@ def main() -> int:
 
     print("Reading the reference environment")
     environment = reference_environment()
+    rows_before = dataset_rows()
 
     account = reference(
         "SELECT account_reference FROM accounts ORDER BY account_reference LIMIT 1", "account"
@@ -600,6 +623,11 @@ def main() -> int:
 
     print("Waiting for the asynchronous half to finish")
     end_to_end = measure_end_to_end(accepted)
+
+    # After the ingestion and the wait, so it counts the rows this run added.
+    rows_after = dataset_rows()
+    environment["datasetRows"] = rows_after
+    environment["datasetRowsBeforeRun"] = rows_before
 
     print("Signing in for the read benchmarks")
     token = sign_in(args.base, args.username, args.password)
