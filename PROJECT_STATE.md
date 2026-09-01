@@ -9,28 +9,28 @@
 2. Run the verification commands in "Session startup commands".
 3. Confirm branch, HEAD, and remote before editing.
 4. Read **"Required before v1 — carried forward"**. It holds work that is committed rather than
-   optional: real operator identity, the README landing-page rewrite that is part of the Phase 9
-   gate, and two items no session may ever mark complete on a person's behalf.
+   optional: real operator identity, the README landing-page standard the rewrite now has to keep
+   meeting, and two items no session may ever mark complete on a person's behalf.
 5. Continue from "Next three actions"; do not restart completed phases.
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-09-01T00:20Z                                                                                                                                                                                    |
-| Updated by           | Claude                                                                                                                                                                                               |
-| Overall status       | active — **Phase 8 closed** and its CodeQL triage finished (0 open alerts). **Phase 9 opened**: `make bench`, a measured index, and the README's performance section                                 |
-| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (in progress)                                                                                                                       |
-| Current task         | **none in progress; the session stopped deliberately at the user's direction** with the usage window at 89%. Phase 9's next action is the README landing-page rewrite, which is now a gate criterion |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                             |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                 |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                   |
-| Working branch       | `main`                                                                                                                                                                                               |
-| Local clone verified | **yes**                                                                                                                                                                                              |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                     |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                 |
-| Open PRs             | none                                                                                                                                                                                                 |
-| Latest release       | none                                                                                                                                                                                                 |
+| Field                | Value                                                                                                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T02:05Z                                                                                                                                                                               |
+| Updated by           | Claude                                                                                                                                                                                          |
+| Overall status       | active — **Phase 9 in progress.** The README landing-page rewrite is done and its external-reader review is recorded, which closes the largest gate criterion. Clean-clone verification is next |
+| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (in progress)                                                                                                                  |
+| Current task         | **none in progress.** The README rewrite and its three relocation documents are merged. The next action is the clean-clone verification, which has two known traps recorded below               |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                        |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                            |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                              |
+| Working branch       | `main`                                                                                                                                                                                          |
+| Local clone verified | **yes**                                                                                                                                                                                         |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                            |
+| Open PRs             | none                                                                                                                                                                                            |
+| Latest release       | none                                                                                                                                                                                            |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -84,7 +84,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 6 — operations frontend**
 - [x] **Phase 7 — observability and resilience**
 - [x] **Phase 8 — security and quality hardening**
-- [ ] **Phase 9 — performance and documentation** ← in progress: benchmark harness and the first measured optimization merged
+- [ ] **Phase 9 — performance and documentation** ← in progress: benchmark harness, the first measured optimization, and the README landing-page rewrite merged; clean-clone verification next
 - [ ] Phase 10 — release
 
 ## Completed — Phase 1
@@ -1567,6 +1567,76 @@ asserts they are equal.
   payment switch decided something; this system scores and never decides. `AlertPriority: P1–P4`
   against the API's `LOW | MEDIUM | HIGH | URGENT`.
 
+## Acceptance criteria status — Phase 9 gate
+
+**In progress.** The criteria are `docs/planning/IMPLEMENTATION_PLAN.md`'s. Each row says what the
+evidence covers **and what it does not**.
+
+| Criterion                                                 | Status          | Evidence, and what it does not cover                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Benchmarks with a documented reference environment        | **met**         | `make bench` writes `docs/performance/BENCHMARK.md` with the machine, the container runtime and the row counts it ran against. **Not covered:** one machine, once, with the whole stack competing for the same cores; no sustained throughput, no cold start, no console.                                                                                                                   |
+| Measured optimization with before/after query plans       | **met, once**   | `V12__transactions_listing_index.sql`, 68.0 ms to 5.0 ms and 71,256 buffers to 6,155, with both plans in the migration. **Not covered:** whether one optimization is enough for the phase is still an open decision, and `GET /alerts` now has the worst p99 of the five endpoints.                                                                                                         |
+| A polished, professional, industry-standard public README | **met**         | Full editorial and structural rewrite; the external-reader review is recorded below. Diary content, the phase table, the four dated test blocks, PR chronology and the agent workflow details are gone from the front page and relocated rather than deleted. Five Mermaid diagrams, all parsed against mermaid 11.17.2. **Not covered:** the review's own limits, stated at the end of it. |
+| Complete documentation index                              | **met**         | The README's index resolves to every area, and three documents from the required set in §24 of the build prompt now exist that did not: `docs/testing/TEST_RESULTS.md`, `docs/operations/OBSERVABILITY.md`, `docs/operations/TROUBLESHOOTING.md`. **Not covered:** the required set has further names still unfilled.                                                                       |
+| Clean-clone verification of every README command          | **not started** | The next action. Two traps are known: `make bootstrap` gained `SENTINELFLOW_INGEST_API_KEY` in Phase 8, and `make bench` is new. Neither has been run from an actually-empty clone.                                                                                                                                                                                                         |
+| Demo walkthrough and screenshots                          | **partial**     | Two screenshots, generated from the production bundle by the end-to-end suite so they cannot drift from the build. **Not covered:** the investigation workspace, reports and system health are described in the README and not shown.                                                                                                                                                       |
+| Link, badge, and screenshot audit                         | **met**         | `bun scripts/dev/check-docs.mjs` — 274 relative links across 53 Markdown files, 0 broken, no placeholders, on 2026-09-01. Badges reduced from seven to five, each pointing at a workflow that exists. **Not covered:** the checker resolves relative links only; external URLs are not fetched.                                                                                             |
+| An ADR for the deployment and local-first strategy        | **not started** | Number allocated when it is written.                                                                                                                                                                                                                                                                                                                                                        |
+
+### The README review, from an outside reader's point of view
+
+**Recorded 2026-09-01.** The gate asks for the README to be read as an external engineer or
+recruiter seeing SentinelFlow for the first time would read it, and for that review to be written
+down. This is it. `make docs-check` passing is explicitly not this review — a build log with working
+links passes that.
+
+**First thirty seconds, as a recruiter or hiring manager.** The value proposition is in the first
+two sentences and names the mechanism rather than only the domain. Five badges, each a workflow that
+exists, and no vanity metric. The independence and synthetic-data disclaimer is unmissable and
+unambiguous. Two screenshots appear before any architecture prose, so the reader sees the product
+before being asked to read about it. Nothing on the first screen requires already knowing what an
+outbox is.
+
+**Five minutes, as a senior engineer.** The five diagrams answer the questions in the order an
+engineer actually asks them: what are the pieces, what happens to one request, what happens when
+delivery fails, what does an analyst do with the result, and what runs on my laptop. Each is
+followed by its consequence rather than a restatement — the relay's 500 ms poll, the consumer's
+shorter budget and why it is shorter, the three load-bearing properties of the alert graph. The
+technology table gives a reason per row instead of a logo wall. The limitations section is specific
+and technical, which tells a reader more about the author's judgement than the capability list does.
+
+**Five defects the review found, and what was done about each:**
+
+1. **`make smoke` claimed "23 checks".** Last measured 2026-08-28, before Phase 8 changed the
+   endpoints it asserts. Dropped rather than guessed; the clean-clone pass measures it next.
+2. **The burst figures had drifted from the report they came from.** The README said accepted in
+   0.42 s and persisted 3.4 s later; `docs/performance/BENCHMARK.md` says **0.78 s** and **5.0 s**.
+   Corrected to the report, with the note that the second figure is measured from the database
+   rather than from an endpoint.
+3. **"234 links across 49 files" sat in a summary table** where a reader would take it as current,
+   and it changes every time a document is added. Replaced with the pass it actually is; the dated
+   count stays in `docs/testing/TEST_RESULTS.md`.
+4. **The deployment diagram showed seven containers** while two other sections said ten. It now
+   shows all ten, including the one-shot `kafka-topics` service — worth drawing, because the step it
+   performs is the one that was once missing while every health check passed.
+5. **Named but not linked:** the `V12` migration carrying the query plans, and the three contract
+   documents. A reader who wanted either had to grep for it.
+
+**What a reader still cannot do from this page**, recorded so nobody reads this gate as covering it:
+
+- **There is no hosted demo.** Evaluating the console takes Docker and roughly ten minutes. That is
+  a deliberate choice — the README will not link to a demo that does not exist — and it is still a
+  cost the reader pays.
+- **Two screenshots is thin.** The investigation workspace, reports and system health are described
+  and not shown. Phase 9 still owes the demo walkthrough.
+- **No diagram draws the authorization boundary.** It is described in prose and in ADR-0012, but a
+  reader who thinks visually has to assemble it.
+
+**The limit of this review, stated plainly.** It is a careful read against the criterion, performed
+by the same session that wrote the file. **No outside person has read it.** The criterion asks for
+the perspective and for the record, and that is what this is — it is not evidence that a recruiter
+found the file clear, and it must not be quoted as though it were.
+
 ## Acceptance criteria status — Phase 8 gate
 
 **Closed on 2026-08-31.** The four criteria are `docs/planning/IMPLEMENTATION_PLAN.md`'s. Each row
@@ -2758,8 +2828,10 @@ What "done" means here, and every clause is binding:
 
 ### 2. The README must be a public landing page, not a development diary
 
-**Status: not started. Binding, and part of the Phase 9 gate. Recorded 2026-09-01 at the user's
-direction.**
+**Status: the rewrite is done and the external-reader review is recorded** — see "Acceptance
+criteria status — Phase 9 gate" below for both. Recorded 2026-09-01 at the user's direction; the
+requirement below is kept verbatim, because it is the standard the result has to keep meeting as the
+file changes again.
 
 The README is the first and often the only thing an outside reader sees. It must read as a
 **polished, professional, industry-standard front page for a public open-source project**, written
@@ -2826,45 +2898,40 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 8 is closed**, its CodeQL triage is finished — **0 open alerts**, 2 fixed in code, 10
-dismissed with recorded reasons — and **Phase 9 is in progress**. The benchmark harness, the first
-measured optimization and the README's performance section are merged (PR
-[#99](https://github.com/la3679/sentinelflow/pull/99)).
+**Phase 9 is in progress and its largest criterion is met.** The README is now a landing page
+rather than a development diary, the external-reader review is recorded under "Acceptance criteria
+status — Phase 9 gate", and the detail it stopped carrying moved into three documents that did not
+exist before: `docs/testing/TEST_RESULTS.md`, `docs/operations/OBSERVABILITY.md` and
+`docs/operations/TROUBLESHOOTING.md`.
 
 **Read this before quoting any CodeQL number.** A pull-request analysis and a branch analysis do not
-answer the same question. The gate's first draft recorded "0 results" from the merge refs while
-`refs/heads/main` had 12 alerts. Check `refs/heads/main`.
+answer the same question. The Phase 8 gate's first draft recorded "0 results" from the merge refs
+while `refs/heads/main` had 12 alerts. Check `refs/heads/main`.
 
-**The session that ended 2026-09-01T00:20Z stopped deliberately, at the user's direction**, with the
-5-hour usage window at 89%. Nothing is half-finished: the working tree was clean, `main` was in
-sync, every workflow was green and no pull request was open. The three actions below are the resume
-point, in order.
+The three actions below are the resume point, in order.
 
-1. **The README rewrite. Start here — it is the largest single piece of Phase 9 and it is now a gate
-   criterion.** The full requirement is "Required before v1 — carried forward" §2, and it is binding
-   rather than a preference: the README must read as a polished, professional public landing page
-   for recruiters, hiring managers, senior engineers and open-source reviewers, and **technical
-   completeness alone does not satisfy it**. Expect a full editorial and structural rewrite, not a
-   trim — development diary content, phase history, checkpoint language, PR chronology, agent
-   workflow details and duplicated explanation all come out. **Nothing useful is deleted to shorten
-   the file**; detail moves into `docs/` and is linked. Phase 9 cannot be marked complete until the
-   result has been read from an outside engineer's or recruiter's point of view and that review
-   recorded. Five Mermaid diagrams belong in it, and the material to relocate into already exists —
-   `PROJECT_STATE.md`, `docs/security/THREAT_MODEL.md`, `docs/performance/BENCHMARK.md`,
-   `docs/adr/`, `docs/operations/RUNBOOKS.md`, `docs/architecture/`.
+1. **The clean-clone verification. Start here.** Clone the repository into an empty directory and
+   run every command the rewritten README publishes, in the order it publishes them. **Two traps are
+   already known and neither has ever been exercised from an actually-empty clone:** `make bootstrap`
+   gained a required secret in Phase 8 (`SENTINELFLOW_INGEST_API_KEY`) along with a fix for the bug
+   that made it exit 1 against an existing `.env`, and `make bench` is new. **Two numbers are
+   deliberately missing from the README until this run produces them** — the `make smoke` check
+   count, dropped because the last measurement predates the endpoints Phase 8 added, and any claim
+   that the quick start works end to end on a machine that has never built this project.
+   `bun install` on a deep Windows path is the third thing to watch, and the README already warns
+   about it.
 
-2. **The clean-clone verification, once the README is settled** — the two are the same work, because
-   the clean-clone pass checks the commands the rewritten README ends up publishing. **Two traps are
-   already known.** `make bootstrap` gained a required secret in Phase 8
-   (`SENTINELFLOW_INGEST_API_KEY`) and a fix for the bug that made it exit 1 against an existing
-   `.env`; `make bench` is new. **Neither has ever been run from an actually-empty clone.**
-
-3. **Decide whether one measured optimization is enough for the phase, and say so either way.**
+2. **Decide whether one measured optimization is enough for the phase, and say so either way.**
    `GET /alerts` now has the worst p99 of the five endpoints. **Do not benchmark against the current
-   local database without reading "Before resuming" below**: it holds 7,260 `FAILED` transactions
-   and 13,455 `degraded` assessments from the h2c defect, and `make bench` itself now adds
-   alert-raising rows on every run, so the dataset drifts under measurement. That drift is a
-   property of the harness worth fixing or documenting before more numbers are published.
+   local database without reading "Before resuming" below**: it holds 7,260 `FAILED` transactions and
+   13,455 `degraded` assessments from the h2c defect, and `make bench` itself adds alert-raising rows
+   on every run, so the dataset drifts under measurement. That drift is a property of the harness
+   worth fixing or documenting before more numbers are published.
+
+3. **The two Phase 9 deliverables still open**, both small and both listed in the gate table: the
+   demo walkthrough with screenshots beyond the two that exist — the investigation workspace,
+   reports and system health are described in the README and not shown — and the ADR for the
+   deployment and local-first strategy, whose number is allocated when it is written.
 
 **Still open and owned, from the threat model:** T-04 (`/actuator/prometheus` unauthenticated),
 T-05 (the scoring service has no credential), T-08 (no token revocation, accepted), T-09 (ingestion

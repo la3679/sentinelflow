@@ -1,148 +1,27 @@
 # SentinelFlow
 
-**An event-driven transaction-risk and fraud-operations platform — built end to end on synthetic
-data, to be read as engineering rather than as a product.**
+**An event-driven transaction-risk and fraud-operations platform, built end to end on synthetic
+data.** A transaction arrives, is published exactly once through a transactional outbox, scored by
+a calibrated model and a transparent ruleset, and — when it bands high enough — becomes an alert an
+analyst works to a defensible verdict.
 
-[![CI — repository](https://github.com/la3679/sentinelflow/actions/workflows/ci-repo.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-repo.yml)
 [![CI — api](https://github.com/la3679/sentinelflow/actions/workflows/ci-api.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-api.yml)
 [![CI — scoring](https://github.com/la3679/sentinelflow/actions/workflows/ci-scoring.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-scoring.yml)
 [![CI — web](https://github.com/la3679/sentinelflow/actions/workflows/ci-web.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-web.yml)
-[![CI — containers](https://github.com/la3679/sentinelflow/actions/workflows/ci-containers.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/ci-containers.yml)
 [![Security](https://github.com/la3679/sentinelflow/actions/workflows/security-scan.yml/badge.svg)](https://github.com/la3679/sentinelflow/actions/workflows/security-scan.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
----
-
-> ### Please read this first
->
-> SentinelFlow is an **independent, educational, open-source portfolio project**. It is **not**
-> affiliated with, endorsed by, or derived from any bank, financial institution, or employer.
->
-> It runs entirely on **fictional synthetic data** that it generates itself. It contains no real
-> accounts, no real transactions, and no personal data of any kind. It executes no financial
-> transaction, makes no financial decision, and is not a regulatory compliance product or a
+> **Read this first.** SentinelFlow is an **independent, educational, open-source portfolio
+> project**. It is not affiliated with, endorsed by, or derived from any bank, financial
+> institution, or employer. It runs entirely on **fictional synthetic data that it generates
+> itself** — no real accounts, no real transactions, no personal data. It executes no financial
+> transaction, makes no financial decision, and is neither a regulatory compliance product nor a
 > production fraud-decision engine.
 >
-> Every figure in this README came from a command that was actually run. The date and the command
-> are recorded next to it.
+> Every figure in this README came from a command that was actually run, with the date recorded
+> beside it.
 
 ---
-
-## Current status — Phases 0 to 6 complete, Phase 7 in progress
-
-This is an in-progress build, and the README says where it actually is rather than describing the
-finished system as though it were running.
-
-| Phase | Scope                                              | State        |
-| ----- | -------------------------------------------------- | ------------ |
-| 0     | Research gate, product baseline, repository        | **complete** |
-| 1     | Monorepo, developer foundation, CI, containers     | **complete** |
-| 2     | Contracts, domain model, PostgreSQL migrations     | **complete** |
-| 3     | Transaction ingestion, transactional outbox, Kafka | **complete** |
-| 4     | Synthetic data generation and risk scoring         | **complete** |
-| 5     | Alert lifecycle, investigations, audit             | **complete** |
-| 6     | Operations console wired to the real API           | **complete** |
-| 7     | Observability and resilience                       | **complete** |
-| 8     | Security and release-quality hardening             | **complete** |
-| 9     | Performance, documentation, clean-clone check      | in progress  |
-| 10    | v1.0.0 release                                     | not started  |
-
-**What runs today:** `docker compose up` starts PostgreSQL, Kafka, the Spring Boot API, the FastAPI
-scoring service, the console, Prometheus, Grafana, an OpenTelemetry Collector and Tempo. Prometheus
-scrapes both services, five dashboards are provisioned from files, and one transaction can be
-followed as a single trace from the HTTP request through the outbox and Kafka to the scoring call.
-
-**Two failures are drilled rather than described.** `ScoringOutageDrillIT` fails the scoring service
-under load and asserts that every transaction is still assessed, degraded, and that the outage's cost
-is bounded by the circuit breaker rather than by the number of transactions.
-`BrokerOutageDrillIT` freezes the broker mid-run and asserts that ingestion keeps accepting, the
-outbox retains, and the backlog drains exactly once when the broker returns. Both run in
-`make test-integration`.
-
-The pipeline is end to end. A transaction posted to `/api/v1/transactions` is written with its
-outbox row in one database transaction, published to Kafka by the relay, consumed idempotently, and
-either handled or dead-lettered with a classified reason. `make seed` fills the stack with
-deterministic synthetic traffic that travels that same path.
-
-**Scoring answers.** A model is trained, evaluated and committed to the registry, and the scoring
-service serves it: `POST /v1/score` returns a score, bounded reason codes, the model and feature
-versions, and a measured inference duration; `GET /v1/model` publishes what that model was measured
-at. Every figure comes from the run recorded in [`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md), on
-synthetic data.
-
-**The rules answer too, in-process.** Seven transparent indicators run inside `apps/api` — velocity,
-an amount against the account's own baseline, a new device, a country change, the small hours, a
-balance drain, distinct merchants within the hour — because that is what has to answer when the
-scoring service cannot be reached. They are also the floor the model is measured against: the same
-engine scores every example as the labelled dataset is exported, so the margin in the model card is
-a margin over the ruleset that actually ships rather than over a reimplementation of it.
-
-**The two halves are joined, and the decision is persisted.** The consumer assembles a bounded
-account context, evaluates the ruleset in process, calls `POST /v1/score` inside a budget under ten
-seconds, combines the two scores under a versioned policy, bands the result, and writes a
-`risk_assessments` row with every version that contributed — model, feature, ruleset and policy — in
-the same database transaction as the ledger row that records the event as handled. `make replay`
-demonstrates the failure behaviour rather than describing it: it stops the scoring container, shows
-assessments degrade to the rules alone, restarts it, and shows them scored again.
-
-An assessment that bands at or above the alerting threshold now opens an alert, its first history
-row and its `alert.created` event in the same transaction. From there an analyst reads the queue,
-picks an alert up, assigns it, annotates it, moves it through the investigation state machine and
-records a verdict on the decision behind it — every one of those audited with the actor and the
-moment, and every mutation checked against a concurrent one. Logging in exchanges a password for a
-short-lived bearer token ([ADR-0012](docs/adr/0012-operator-authentication.md)); an auditor reads
-everything and is refused by the server on every mutation, which is where that boundary belongs.
-
-**One consequence worth knowing about the alerting rule.** Because the final score is floored by the
-rule score, a transaction that trips no transparent indicator cannot reach the alerting band however
-confident the model is. That is a stated policy rather than an accident —
-[ADR-0011 §4](docs/adr/0011-risk-banding-and-the-final-score.md) writes out the arithmetic, why it is
-wanted, and what it costs.
-
-**Reporting answers too.** `GET /reports/alert-summary` counts alerts by status, priority and band
-over a half-open window with every key present including the zeroes, and `GET /reports/alerts.csv`
-exports the same window as a file — capped at 10,000 rows and refused with a `413` naming both the
-row count and the limit, because a report somebody opens in a spreadsheet is a file rather than a
-cursor. Every field a spreadsheet would treat as a formula is escaped, which matters because an
-alert summary is generated text built from a reference that arrived through an open ingestion
-endpoint. Both were exercised over HTTP against the running stack on 2026-08-28, not only in
-Testcontainers.
-
-**The console reads the API, and there is no fixture layer left.** Every screen — the overview, the
-transaction feed, the alert queue and its investigation workspace, reports, model and policy, system
-health — sends real requests with the operator's token and renders what comes back.
-`apps/web/src/mocks/` is deleted. The migration is recorded endpoint by endpoint in
-[`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md), now closed.
-
-**What is not on those screens is as deliberate as what is.** Transaction throughput per hour,
-scoring latency percentiles, consumer-group lag and dead-letter depth were four charts and four
-tiles, and nothing had measured any of them. They are gone, and the screens say which phase brings
-them back with the signals behind them. A figure nobody measured is worse than no figure, because
-somebody quotes it.
-
-Detail: [`PROJECT_STATE.md`](PROJECT_STATE.md) · [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md)
-
-## Why this project exists
-
-Most portfolio projects are a CRUD application with a login screen. The interesting problems in
-transaction risk are not CRUD problems:
-
-- **A state change and the event announcing it must be atomic.** Writing a row and then publishing
-  to Kafka is two operations with a window between them; a crash in that window loses the event
-  silently. SentinelFlow uses a transactional outbox.
-- **Delivery is at-least-once, so consumers must be idempotent.** A duplicate is normal traffic,
-  not an incident.
-- **Money is not a float**, anywhere — not in the database, the API, the events, or the UI.
-- **Fraud labels are extremely imbalanced**, so accuracy is close to meaningless. Precision, recall,
-  PR-AUC and an explicit operating threshold are what mean anything.
-- **An alert is a workflow, not a row.** It has valid transitions, an assignee, an audit trail, and
-  a reviewer whose decision has to be defensible later.
-- **An analyst stares at the console for a whole shift.** Density, keyboard operation and
-  accessibility are functional requirements, not polish.
-
-It draws on the kinds of responsibilities involved in enterprise transaction services, event
-streaming, and anomaly detection. It reproduces **no** proprietary code, schema, rule, metric, or
-workflow from any employer.
 
 ## The console
 
@@ -150,14 +29,45 @@ workflow from any employer.
 
 ![The SentinelFlow alert queue, a dense filterable table of synthetic alerts](docs/frontend/screenshots/alert-queue.png)
 
-Generated from the production bundle by
+Both images are generated from the production bundle by
 [`apps/web/tests/e2e/screenshots.spec.ts`](apps/web/tests/e2e/screenshots.spec.ts), so they cannot
-drift from the build.
+drift from the build. Every alert and score in them is synthetic.
 
-**Every alert and score in those images is synthetic**, served to the browser by the end-to-end
-suite's stub, which answers in the contract's own shapes. No performance figure appears on either
-screen: SentinelFlow has measured none, that is Phase 9's work, and the panels that used to show
-invented latency and lag are gone rather than filled in.
+## Why this project exists
+
+Most portfolio projects are a CRUD application with a login screen. The interesting problems in
+transaction risk are not CRUD problems:
+
+- **A state change and the event announcing it must be atomic.** Writing a row and then publishing
+  to Kafka is two operations with a window between them, and a crash in that window loses the event
+  silently. SentinelFlow uses a transactional outbox.
+- **Delivery is at-least-once, so consumers must be idempotent.** A duplicate is normal traffic,
+  not an incident.
+- **Money is never a float** — not in the database, the API, the events, or the UI.
+- **Fraud labels are extremely imbalanced**, which makes accuracy close to meaningless. PR-AUC,
+  precision, recall and an explicit operating threshold are what mean anything.
+- **An alert is a workflow, not a row.** It has legal transitions, an assignee, an audit trail, and
+  a verdict that has to be defensible months later.
+- **An analyst stares at the console for a whole shift.** Density, keyboard operation and
+  accessibility are functional requirements, not polish.
+
+It draws on the kinds of responsibilities involved in enterprise transaction services, event
+streaming and anomaly detection. It reproduces **no** proprietary code, schema, rule, metric or
+workflow from any employer.
+
+## What it does
+
+| Capability                | What runs today                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Ingestion**             | `POST /api/v1/transactions` behind an API key, idempotent per account, size-capped and rate-limited; the row and its outbox event commit together.     |
+| **Exactly-once handoff**  | A polling relay publishes each outbox row to Kafka keyed by account; the consumer claims every event in `processed_events` before doing any work.      |
+| **Risk scoring**          | Seven transparent in-process indicators, plus a calibrated scikit-learn model over HTTP, combined under a versioned policy and banded.                 |
+| **Graceful degradation**  | An unreachable scoring service degrades an assessment to the rules alone rather than losing it, behind a timeout, a bounded retry and a breaker.       |
+| **Alert lifecycle**       | A banded assessment opens an alert, its first history row and its `alert.created` event in one transaction; an analyst then works a state machine.     |
+| **Audit and concurrency** | Every mutation records the actor and the moment, and every one is checked against a concurrent change with a version and a `409`.                      |
+| **Reporting**             | `GET /reports/alert-summary` over a half-open window with every key present including the zeroes, and a CSV export capped at 10,000 rows.              |
+| **Operations console**    | Overview, transaction feed, alert queue and investigation workspace, reports, model and policy, and system health — every screen against the real API. |
+| **Observability**         | Prometheus, five provisioned Grafana dashboards, thirteen alerting rules, ten runbooks, and W3C trace context that survives the asynchronous hop.      |
 
 ## Architecture
 
@@ -168,7 +78,7 @@ flowchart LR
     A --> P[("PostgreSQL 18")]
     A -->|"transactional outbox"| K[("Apache Kafka 4.2<br/>KRaft")]
     K --> C["Risk consumer<br/>in apps/api"]
-    C -->|"HTTP"| M["FastAPI + scikit-learn<br/>apps/scoring"]
+    C -->|"HTTP, budgeted"| M["FastAPI + scikit-learn<br/>apps/scoring"]
     C --> P
     A --> O["Prometheus"]
     M --> O
@@ -178,91 +88,122 @@ flowchart LR
     class U,W,A,P,K,C,O,G,M built
 ```
 
-Every box exists and runs today, and so does every link between them. The consumer's call to the
-scoring service was the last one to be drawn solid: it is synchronous HTTP from inside the handler,
-with a timeout, a bounded retry and a circuit breaker, and an unreachable scoring service degrades
-an assessment to the rules rather than losing it
+Every box and every link exists and runs. **The API is the only backend the console talks to**;
+scoring is reached through the API and never directly by the browser, which leaves one
+authorization boundary, one audit trail and one place to rate-limit
+([ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md)).
+
+The consumer's call to the scoring service is synchronous HTTP from inside the handler, with a
+timeout, a bounded retry and a circuit breaker
 ([ADR-0008](docs/adr/0008-scoring-service-boundary.md)).
 
-The API is the only backend the console talks to; scoring is reached through the API and never
-directly by the browser. One authorization boundary, one audit trail, one place to rate-limit. See
-[ADR-0002](docs/adr/0002-monorepo-and-service-boundaries.md). The console-to-API link is drawn
-solid because it carries real traffic, and every screen now uses it: `apps/web/src/mocks/` was
-deleted with the last of them in Phase 6.
-
-### Local deployment
+### How a transaction becomes an alert
 
 ```mermaid
-flowchart TB
-    subgraph host["Developer machine — docker compose"]
-        direction TB
-        web["web · nginx-unprivileged<br/>:5173 → 8080"]
-        api["api · Temurin 25 JRE<br/>:8080"]
-        scoring["scoring · Python 3.13<br/>:8000"]
-        pg[("postgres :5432")]
-        kafka[("kafka :29092 · KRaft")]
-        prom["prometheus :9090"]
-        graf["grafana :3000"]
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant A as API
+    participant DB as PostgreSQL
+    participant K as Kafka
+    participant S as Scoring
+
+    C->>A: POST /api/v1/transactions<br/>X-API-Key, idempotencyKey
+    A->>DB: transactions + outbox_events, one transaction
+    A-->>C: 202 Accepted
+    A->>K: the relay publishes, keyed by account
+    K->>A: transaction.created
+    A->>DB: claim in processed_events — a duplicate is a no-op
+    A->>A: rule engine, seven transparent indicators
+    A->>S: POST /v1/score, bounded account context
+    alt answers inside the budget
+        S-->>A: modelScore, reason codes, model and feature versions
+    else unreachable, or the breaker is open
+        S--xA: no answer — the assessment degrades to the rules alone
     end
-    web --> api
-    api --> pg
-    api --> kafka
-    api --> scoring
-    prom --> api
-    prom --> scoring
-    graf --> prom
+    A->>DB: risk_assessments + the ledger row, one transaction
+    A->>DB: at or above the threshold: alert + history + alert.created
 ```
 
-Every container runs as a non-root user and declares a health check; CI asserts the non-root user
-against the built image rather than trusting the Dockerfile.
+The full annotated version, with the schema each step writes, is in
+[`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md).
 
-Diagrams arrive with the behaviour they describe. The ER diagram and the transaction-to-alert flow
-exist — [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md) and
-[`TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md), both generated from
-`information_schema` on a database the migrations built, with a test asserting the ER diagram's
-entities are exactly the tables that exist. The investigation state machine and what each move
-means are documented in `AlertTransitions`, beside the graph itself.
+### Delivery, and what happens when it fails
 
-## Technology
-
-Chosen with a reason, and recorded. Every version below is pinned and justified in
-[`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md).
-
-| Choice                                   | Why this and not something else                                                                                                              |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Java 25 LTS + Spring Boot 4.1.1**      | Transactional integrity and the outbox belong where mature transaction management lives. LTS because a stranger has to build this in a year. |
-| **PostgreSQL 18.6**                      | `NUMERIC` for money, real constraints, and partial indexes. Tested against real PostgreSQL — **H2 is never accepted as evidence**.           |
-| **Apache Kafka 4.2.1, KRaft**            | The exact broker version the Spring Boot BOM's client targets. KRaft removes ZooKeeper from the stack entirely.                              |
-| **Flyway**                               | Versioned, immutable, forward-only migrations. `ddl-auto` is `validate`, never `update`.                                                     |
-| **Python 3.13 + FastAPI + scikit-learn** | The model belongs in the scientific stack. 3.13 exactly, because numpy needs ≥3.12 and joblib declares support only through 3.13.            |
-| **uv**                                   | Provisions the interpreter and locks the tree, so the reference machine's system Python 3.11 is irrelevant.                                  |
-| **React 19 + TanStack Router**           | Lovable's generated foundation, adopted after audit rather than rewritten. [ADR-0009](docs/adr/0009-frontend-component-library.md).          |
-| **Redux Toolkit + RTK Query**            | One data layer, over one transport that attaches the token and maps every RFC 9457 body to one error shape.                                  |
-| **shadcn/ui on Radix**                   | Radix supplies the focus management, keyboard interaction and ARIA semantics WCAG 2.2 AA needs. MIT, no paid tier.                           |
-| **Bun**                                  | One package manager, one lockfile, one workspace root.                                                                                       |
-| **Prometheus + Grafana**                 | Scraping and dashboards without an account or an egress dependency.                                                                          |
-
-Deliberately **not** used: Redis, Kubernetes, GraphQL, a graph database, and an LLM. None has
-demonstrated a need here, and adding one for appearance is how a portfolio project stops being
-credible.
-
-## Repository structure
-
-```text
-apps/api/        Spring Boot — transactions, outbox, alerts, audit
-apps/scoring/    FastAPI — features, inference, model registry
-apps/web/        React operations console
-infra/           Prometheus, Grafana, and container configuration
-scripts/         Developer, smoke, and checkpoint scripts
-docs/            ADRs, research, planning, operations, frontend
-compose.yaml     The whole local stack
-Makefile         The command surface (PowerShell equivalent in scripts/dev/sf.ps1)
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: written in the same transaction as the row it announces
+    PENDING --> PENDING: publish failed — attempt + 1, backoff 1 s to 5 m
+    PENDING --> PUBLISHED: relay published it, keyed by account
+    PENDING --> FAILED: 10 attempts, about 25 minutes
+    PUBLISHED --> [*]
+    FAILED --> [*]: terminal for the relay — a person looks
 ```
 
-`contracts/` and `data/` appear in Phases 2 and 4, with their first real files. Empty placeholder
-directories are not created.
+The relay polls every 500 ms in batches of 100, which is the honest cost of an outbox: **nothing in
+this pipeline is real-time** ([ADR-0005](docs/adr/0005-outbox-relay-mechanics.md)).
 
-## Quickstart
+On the consuming side the budget is deliberately an order of magnitude shorter — five deliveries,
+roughly half a minute — because a consumer's retry blocks its partition and is spent against every
+record queued behind the failing one. After that the record is dead-lettered with a classified
+failure reason and coordinates, and the partition moves on. A record that is not a readable
+envelope at all is **not** dead-lettered: the dead-letter schema requires a valid envelope, and
+[ADR-0006 §4](docs/adr/0006-event-schema-and-versioning.md) forbids copying unsanitised content
+onto an operational topic, so it is counted and logged instead.
+
+### The investigation workflow
+
+```mermaid
+stateDiagram-v2
+    [*] --> NEW: an assessment bands at or above the alerting threshold
+    NEW --> IN_REVIEW: picked up
+    IN_REVIEW --> NEW: released back to the queue
+    IN_REVIEW --> ESCALATED
+    ESCALATED --> IN_REVIEW: handed back
+    IN_REVIEW --> CONFIRMED_SUSPICIOUS
+    IN_REVIEW --> DISMISSED_FALSE_POSITIVE
+    ESCALATED --> CONFIRMED_SUSPICIOUS
+    ESCALATED --> DISMISSED_FALSE_POSITIVE
+    NEW --> CLOSED: administrator only
+    IN_REVIEW --> CLOSED: administrator only
+    ESCALATED --> CLOSED: administrator only
+    CONFIRMED_SUSPICIOUS --> [*]
+    DISMISSED_FALSE_POSITIVE --> [*]
+    CLOSED --> [*]
+```
+
+Three properties of that graph are load-bearing rather than decorative:
+
+- **A disposition needs a review.** `NEW` cannot go straight to a verdict. A queue that lets an
+  alert be dismissed without being picked up is a queue that will be cleared rather than worked.
+- **`CLOSED` is an administrative close and an administrator's alone.** It ends an investigation
+  _without_ a disposition, which is the one move that removes work from a queue while recording
+  nothing about the transaction.
+- **Terminal means terminal.** No state with a close time has an outgoing move, because that
+  timestamp is what "how long did this take to resolve" is computed from. Reopening is not a
+  transition; it would be a new alert citing the same assessment, and it does not exist.
+
+The graph and the roles that may walk it are defined in one place,
+`apps/api/.../alert/AlertTransitions.java`, so the console renders controls from the same source
+the API enforces.
+
+### The contracts
+
+`contracts/` is authoritative: changing one means updating the producers, the consumers, the tests
+and the docs in the same change.
+
+- [`contracts/openapi/sentinelflow-api.yaml`](contracts/openapi/sentinelflow-api.yaml) — the
+  operator and ingestion API
+- [`contracts/openapi/sentinelflow-scoring.yaml`](contracts/openapi/sentinelflow-scoring.yaml) —
+  the scoring service, also browsable at <http://localhost:8000/docs> when the stack is up
+- [`contracts/asyncapi/sentinelflow-events.yaml`](contracts/asyncapi/sentinelflow-events.yaml) —
+  the Kafka topics and the event envelope
+- [`contracts/schemas/`](contracts/schemas/) — the JSON Schemas each event payload is validated
+  against
+
+`make contracts-check` validates all three documents and every schema and example in them.
+
+## Quick start
 
 ### Prerequisites
 
@@ -274,7 +215,7 @@ directories are not created.
 | Git                             | —                                            | yes                                |
 | JDK 25 (Temurin)                | Only to build `apps/api` outside a container | no — `make up` builds it in Docker |
 
-`make bootstrap` checks all of these and tells you which are missing.
+`make bootstrap` checks all of these and names the ones that are missing.
 
 ### Run it
 
@@ -282,19 +223,48 @@ directories are not created.
 git clone https://github.com/la3679/sentinelflow.git
 cd sentinelflow
 make bootstrap     # verify prerequisites, generate a local .env with fresh secrets
-make up            # build and start everything, waiting until all seven are healthy
-make smoke         # 23 checks against the running stack
+make up            # build and start everything, waiting until every service is healthy
+make smoke         # verify the running stack actually serves
 ```
 
-On Windows without `make`, every target is available natively in PowerShell:
+On Windows without `make`, every target is available natively in PowerShell —
+`.\scripts\dev\sf.ps1 bootstrap`, `.\scripts\dev\sf.ps1 up`, and so on.
 
-```powershell
-.\scripts\dev\sf.ps1 bootstrap
-.\scripts\dev\sf.ps1 up
-.\scripts\dev\sf.ps1 smoke
+```mermaid
+flowchart TB
+    subgraph host["Developer machine — docker compose, ten containers"]
+        direction TB
+        web["web · nginx-unprivileged<br/>:5173 → 8080"]
+        api["api · Temurin 25 JRE<br/>:8080"]
+        scoring["scoring · Python 3.13<br/>:8000"]
+        pg[("postgres :5432")]
+        kafka[("kafka :29092 · KRaft")]
+        topics["kafka-topics<br/>one-shot, the api waits for it"]
+        otel["otel-collector"]
+        tempo["tempo :3200"]
+        prom["prometheus :9090"]
+        graf["grafana :3000"]
+    end
+    web --> api
+    api --> pg
+    api --> kafka
+    api --> scoring
+    topics --> kafka
+    api --> otel
+    otel --> tempo
+    prom --> api
+    prom --> scoring
+    graf --> prom
+    graf --> tempo
 ```
 
-Then:
+Every container runs as a non-root user and declares a health check, and CI asserts the non-root
+user against the **built image** rather than trusting the Dockerfile.
+
+**Nothing creates the Kafka topics implicitly.** Auto-creation is disabled, a one-shot
+`kafka-topics` service creates them explicitly and the API waits for it — a decision
+([ADR-0006 §3](docs/adr/0006-event-schema-and-versioning.md)) whose missing implementation step once
+left every service reporting healthy while no message could be published.
 
 | Service          | URL                                     |
 | ---------------- | --------------------------------------- |
@@ -308,237 +278,172 @@ Then:
 `make down` stops the stack and keeps your data. `make reset-demo` deletes the volumes, and asks
 you to type `reset` first.
 
+### The two-minute demo
+
+```bash
+make seed                          # deterministic synthetic parties and traffic
+open http://localhost:5173         # sign in as analyst.one, work an alert
+SCENARIO=scoring-outage make replay # watch assessments degrade, then recover
+```
+
+`make seed` writes the parties and the synthetic traffic the scenario generator lays over them,
+through the same validation and the same outbox row as a posted transaction. Running it twice is a
+no-op.
+
+`make replay` runs the two things nothing else produces: a **scoring-service outage**, which stops
+the scoring container, prints the degraded assessments the pipeline produced, restarts it, waits
+out the circuit breaker's open window and prints the scored ones; and a **poison event**, which
+publishes one well-formed envelope at an unsupported schema version — dead-lettered with its
+failure class — and one record that is not a readable envelope at all, which is deliberately
+counted and logged instead.
+
 ### Credentials
 
 There are none to find and none committed. `make bootstrap` generates four random values into the
-git-ignored `.env`: a PostgreSQL password, a Grafana admin password, the API's token-signing secret,
-and the password the seeded demo operators share. Compose refuses to start when the signing secret
-is missing rather than falling back to something guessable — you can see this in
-[`compose.yaml`](compose.yaml).
+git-ignored `.env`: a PostgreSQL password, a Grafana admin password, the API's token-signing
+secret, and the password the seeded demo operators share. Compose refuses to start when the signing
+secret is missing rather than falling back to something guessable.
 
-**To call an operator endpoint,** log in as one of the four seeded operators — `analyst.one`,
-`analyst.two`, `administrator.one` or `auditor.one` — with the password in
-`SENTINELFLOW_DEMO_OPERATOR_PASSWORD`, and send the token back as a bearer:
+Four operators are seeded — `analyst.one`, `analyst.two`, `administrator.one` and `auditor.one` —
+sharing the password in `SENTINELFLOW_DEMO_OPERATOR_PASSWORD`:
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d "{\"username\":\"analyst.one\",\"password\":\"$SENTINELFLOW_DEMO_OPERATOR_PASSWORD\"}"
+curl -sS -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"analyst.one\",\"password\":\"$SENTINELFLOW_DEMO_OPERATOR_PASSWORD\"}"
 ```
 
 The token lasts thirty minutes and cannot be revoked before it expires, which is the trade
-[ADR-0012](docs/adr/0012-operator-authentication.md) takes for keeping the API stateless.
-
-**The console signs in against that same endpoint.** It holds the token in memory for the tab and
-writes nothing to browser storage, so a reload signs you out — the honest consequence of there
-being no refresh token. Roles come from the login response and decide which controls are offered;
-every authorization decision is still the API's, made from the token.
-
-The console and the API are separate origins, so the API answers a browser only from the origins in
-`SENTINELFLOW_CORS_ALLOWED_ORIGINS`
-([ADR-0013](docs/adr/0013-console-to-api-cross-origin-access.md)). If you change `API_PORT` or
-`WEB_PORT`, change `VITE_API_BASE_URL` and that list to match.
-
-Every variable is documented in [`.env.example`](.env.example) with its default, whether it is
+[ADR-0012](docs/adr/0012-operator-authentication.md) takes for a stateless API. The console signs in
+against that same endpoint and holds the token in memory for the tab only, so a reload signs you
+out. Every variable is documented in [`.env.example`](.env.example) with its default, whether it is
 required, whether it is sensitive, and which component reads it.
+
+### If something will not start
+
+| Symptom                                             | Fix                                                                                 |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `make up` fails on a missing secret                 | `.env` is missing or blank. Run `make bootstrap`.                                   |
+| A port is already in use                            | Change it in `.env` — every published port is a variable.                           |
+| PostgreSQL or Kafka refuses to start after a change | The volume was formatted differently. `make reset-demo`.                            |
+| `bun install` fails with `ENAMETOOLONG` on Windows  | The clone path is too deep. Clone somewhere shorter, such as `C:\src\sentinelflow`. |
+| Every assessment comes back `degraded`              | The scoring service is refusing the call. Runbook 4 has the sequence.               |
+
+The rest, including how to get back to a clean database safely, is in
+[`docs/operations/TROUBLESHOOTING.md`](docs/operations/TROUBLESHOOTING.md).
 
 ## Commands
 
 ```bash
 make help              # every target, with a description
 make up / down / ps / logs
-make reset-demo        # destructive, with confirmation
 make build             # build all three applications
 make test              # every standard suite
+make test-integration  # Testcontainers PostgreSQL + Kafka
 make test-e2e          # Playwright, accessibility, responsive
-make lint              # eslint · ruff · mypy · spotless
-make format-check
-make security          # gitleaks over the whole history
-make smoke             # verify the running stack actually serves
-make clean
+make lint / format-check / security / smoke / docs-check / contracts-check
+make bench             # benchmark the running stack, write the report
+make seed / replay / reset-demo
 ```
 
-`make seed` loads the deterministic demo dataset: the parties, and the synthetic traffic the scenario
-generator lays over them. Running it twice is a no-op —
-[`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md) records what it writes, what it
-deliberately does not, and why the labels never reach the database.
+## Technology
 
-`make replay` replays the two **operational** scenarios, which is a deliberately narrower thing
-than it sounds. The transaction shapes — velocity, amount spikes, card testing, drains, off-hours —
-are what `make seed` generates, through the same validation and the same outbox row as a posted
-transaction, so replaying them again here would be a second implementation of something that exists.
-What nothing else produces is a scoring-service outage and a malformed event reaching the
-dead-letter path, and those are what it runs:
+Every version is pinned, and justified in
+[`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md).
 
-```bash
-make replay                       # both scenarios
-SCENARIO=scoring-outage make replay
-SCENARIO=poison-event make replay
+| Choice                                   | Why this and not something else                                                                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Java 25 LTS + Spring Boot 4.1.1**      | Transactional integrity and the outbox belong where mature transaction management lives. LTS, because a stranger has to build this in a year. |
+| **PostgreSQL 18.6**                      | `NUMERIC` for money, real constraints, partial indexes. Tested against real PostgreSQL — **H2 is never accepted as evidence**.                |
+| **Apache Kafka 4.2.1, KRaft**            | The exact broker version the Spring Boot BOM's client targets. KRaft removes ZooKeeper from the stack entirely.                               |
+| **Flyway**                               | Versioned, immutable, forward-only migrations. `ddl-auto` is `validate`, never `update`.                                                      |
+| **Python 3.13 + FastAPI + scikit-learn** | The model belongs in the scientific stack. 3.13 exactly, because numpy needs ≥ 3.12 and joblib declares support only through 3.13.            |
+| **uv**                                   | Provisions the interpreter and locks the tree, so the machine's system Python is irrelevant.                                                  |
+| **React 19 + TanStack Router**           | Lovable's generated foundation, adopted after audit rather than rewritten ([ADR-0009](docs/adr/0009-frontend-component-library.md)).          |
+| **Redux Toolkit + RTK Query**            | One data layer over one transport that attaches the token and maps every RFC 9457 body to one error shape.                                    |
+| **shadcn/ui on Radix**                   | Radix supplies the focus management, keyboard interaction and ARIA semantics WCAG 2.2 AA needs. MIT, no paid tier.                            |
+| **Prometheus + Grafana + Tempo**         | Scraping, dashboards and traces without an account or an egress dependency.                                                                   |
+
+Deliberately **not** used: Redis, Kubernetes, GraphQL, a graph database, and an LLM. None has
+demonstrated a need here, and adding one for appearance is how a portfolio project stops being
+credible.
+
+## Repository structure
+
+```text
+apps/api/        Spring Boot — ingestion, outbox, consumer, rules, alerts, audit, reports
+apps/scoring/    FastAPI — features, inference, model registry
+apps/web/        React operations console
+contracts/       OpenAPI, AsyncAPI, and the event schemas — authoritative
+data/            Synthetic generation profiles and exported datasets
+infra/           Prometheus rules, Grafana dashboards, container configuration
+scripts/         Bootstrap, smoke, benchmark, and checkpoint scripts
+docs/            ADRs, architecture, ML, operations, security, testing, performance
+compose.yaml     The whole local stack
+Makefile         The command surface (PowerShell equivalent in scripts/dev/sf.ps1)
 ```
 
-The outage scenario stops the scoring container, posts transactions, prints the degraded assessments
-the pipeline produced, restarts it, waits out the circuit breaker's open window, and prints the
-scored ones. The poison scenario publishes two records, because there are two outcomes and only one
-is a dead letter: a well-formed envelope at an unsupported schema version is dead-lettered with its
-failure class and coordinates, while a record that is not a readable envelope at all is deliberately
-**not** — the dead-letter schema requires a valid envelope and ADR-0006 §4 forbids copying
-unsanitised content onto an operational topic, so it is counted and logged instead.
+## Data and model methodology
 
-The HTTP replay endpoint the requirements list is a separate thing on a separate schedule: it is API
-surface that needs authorization and rate limiting, and shipping an unbounded replay endpoint with
-no role behind it to satisfy a Makefile target would be the wrong trade.
+**All data is generated by SentinelFlow's own code.** The generator plants six suspicious shapes —
+velocity bursts, amount spikes, card testing, account drains, improbable geography and off-hours
+activity on a new device — and its labels are recovered through an offline export so they never
+enter the operational schema
+([ADR-0010 §1](docs/adr/0010-model-selection-and-evaluation.md)).
 
-## Testing
+**The ruleset is not a fallback bolted on afterwards.** Seven transparent indicators run in process
+inside `apps/api` — `VELOCITY_5M_HIGH`, `AMOUNT_RATIO_HIGH`, `NEW_DEVICE`, `COUNTRY_CHANGE`,
+`OFF_HOURS`, `BALANCE_DRAIN_HIGH` and `DISTINCT_MERCHANTS_1H_HIGH` — because something has to answer
+when the scoring service cannot be reached. They are also the floor the model is measured against.
 
-Every figure below came from a run that actually happened, and each block says when. Nothing here
-is estimated, and a figure that has not been re-measured keeps the date it was measured on rather
-than being quietly refreshed.
+The shipped model is **calibrated logistic regression**, chosen against a rule fixed before
+anything was measured: a model ships only if it beats the rules baseline by at least 0.05 PR-AUC,
+and a gap inside the cross-validation fold spread goes to the simpler model. The baseline is the
+**ruleset `apps/api` actually runs**, scoring every example as it was exported — not a Python
+reimplementation, because two implementations drift and the drift presents as a model beating a
+baseline nobody runs.
 
-**2026-08-28**, on the commit that closed Phase 5 by putting the reporting endpoints under contract:
+On a group-disjoint, time-ordered holdout of 2,499 rows: **PR-AUC 0.8327 against the ruleset's
+0.2611**. Precision 1.0000 and recall 0.2000 at an operating point chosen to match a 1% review
+budget from out-of-fold scores. **Accuracy is not reported at all** — under this class imbalance a
+model answering "not suspicious" to everything scores extremely well on it, and a number that
+exists gets quoted.
 
-| Suite                             | Command                     | Result                                                        |
-| --------------------------------- | --------------------------- | ------------------------------------------------------------- |
-| API — full verify                 | `./mvnw -B verify`          | **189 unit + 250 integration passed**, 0 failures             |
-| API — coverage                    | JaCoCo, both suites         | 89.7% lines, 79.5% branches — gate is 80% and 70%             |
-| Scoring — unit                    | `uv run pytest`             | **169 passed**                                                |
-| Console — unit                    | `bun run test` (`apps/web`) | **38 passed / 38**, 6 files                                   |
-| Contracts                         | `make contracts-check`      | **PASS** — every schema, example and API document             |
-| Documentation links, placeholders | `make docs-check`           | **PASS** — 160 links, 0 broken, no placeholders               |
-| Running stack                     | `make smoke`                | **23 passed / 0 failed**, both the shell and PowerShell       |
-| Reporting, over HTTP              | `curl` against `make up`    | summary and CSV both 200; `from` after `to` 422; no token 401 |
+Full detail, including recall by planted shape and what the model must not be used for:
+[`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md) and
+[`docs/ml/EVALUATION.md`](docs/ml/EVALUATION.md). Provenance:
+[`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md).
 
-The console figure is this session's own run; the rest are the run recorded against the Phase 5
-merge in [`PROJECT_STATE.md`](PROJECT_STATE.md).
+**One consequence of the banding policy is worth knowing.** Because the final score is floored by
+the rule score, a transaction that trips no transparent indicator cannot reach the alerting band
+however confident the model is. That is a stated policy rather than an accident, and
+[ADR-0011 §4](docs/adr/0011-risk-banding-and-the-final-score.md) writes out the arithmetic and what
+it costs.
 
-**2026-08-28**, later, on the commit that gave the console its real transport and sign-in:
+## Testing and quality
 
-| Suite                    | Command                                            | Result                                                             |
-| ------------------------ | -------------------------------------------------- | ------------------------------------------------------------------ |
-| Console — verify         | `bun run verify` (`apps/web`)                      | **PASS** — lint clean, typecheck clean, 38 unit tests, build built |
-| Console — browser + a11y | `bun run test:e2e` (`apps/web`)                    | **68 passed**, desktop and tablet, axe clean on all eight routes   |
-| API — authentication     | `./mvnw verify -Dit.test=OperatorAuthenticationIT` | **12 integration tests passed**                                    |
-| API — CORS properties    | `./mvnw test -Dtest=CorsPropertiesTests`           | **9 unit tests passed**                                            |
+**2026-08-31**, on the commit that closed the security-hardening phase:
 
-Only the two API suites that the change touched were re-run in that session; the full API numbers
-are in the block above.
+| Suite                       | Result                                                                |
+| --------------------------- | --------------------------------------------------------------------- |
+| API — `./mvnw verify`       | **259 unit + 322 integration passed**, 0 failures, coverage gates met |
+| Scoring — `uv run pytest`   | **187 passed**                                                        |
+| Console — unit              | **41 passed**                                                         |
+| Console — browser and a11y  | **88 passed**, axe clean on all eight routes at two viewports         |
+| Contracts, docs, format     | **PASS** — contracts valid, every link resolves, formatting clean     |
+| CodeQL on `refs/heads/main` | **0 results** — proved by planting a defect and seeing it caught      |
 
-**2026-08-27**, on the commit that joined the ruleset, the model and the policy into a persisted
-assessment:
+The API's integration suites run against **real PostgreSQL and real Kafka** in Testcontainers, on
+the GitHub runner as well as locally. Two failures are drilled rather than described:
+`ScoringOutageDrillIT` fails the scoring service under load and asserts every transaction is still
+assessed and that the outage's cost is bounded by the breaker, and `BrokerOutageDrillIT` freezes the
+broker mid-run and asserts ingestion keeps accepting and the backlog drains exactly once.
 
-| Suite                             | Command                | Result                                            |
-| --------------------------------- | ---------------------- | ------------------------------------------------- |
-| API — full verify                 | `./mvnw verify`        | **147 unit + 172 integration passed**, gate met   |
-| API — coverage                    | JaCoCo, both suites    | 85.7% lines (1794/2093), 76.9% branches (362/471) |
-| Documentation links, placeholders | `make docs-check`      | **PASS** — 154 links across 41 files, 0 broken    |
-| Contracts                         | `make contracts-check` | **PASS** — every schema, example and API document |
-| Formatting, repository-wide       | `make format-check`    | **PASS**                                          |
+Coverage gates are ratchets: measured, set below the measurement, raised when a change genuinely
+raises coverage, and never lowered to go green.
 
-The whole pipeline was also run against the local stack rather than only against Testcontainers,
-which is how three defects were found that every suite was green through: no process created the
-Kafka topics, so nothing could be published on a stack whose health checks all passed; the scoring
-client negotiated HTTP/2 against an HTTP/1.1-only service, so every request was refused; and the
-Makefile's PowerShell equivalent could not run two of its targets at all. Each is fixed in this
-branch, and the commit messages say what the symptom looked like.
-
-**2026-08-27**, earlier, on the commit that added the scoring endpoints and the rules baseline:
-
-| Suite              | Command                     | Result                                                         |
-| ------------------ | --------------------------- | -------------------------------------------------------------- |
-| Scoring — unit     | `make test-scoring`         | **171 passed / 171**                                           |
-| Scoring — coverage | `uv run pytest --cov`       | 97.36% statements, floor 90                                    |
-| Scoring — types    | `uv run mypy`               | strict, **0 issues**, 42 files                                 |
-| Scoring image      | `docker build apps/scoring` | **PASS** — 610 MB; serves `/v1/score` with the committed model |
-
-**2026-08-26**, on the commit that finished Phase 3:
-
-| Suite                             | Command                | Result                                                  |
-| --------------------------------- | ---------------------- | ------------------------------------------------------- |
-| API — full verify                 | `./mvnw verify`        | **57 unit + 116 integration passed**, coverage gate met |
-| API — coverage                    | JaCoCo, both suites    | 80.5% lines (1168/1451), 70.0% branches (191/273)       |
-| Console — unit                    | `make test-web`        | **24 passed / 24**, 5 files                             |
-| Contracts                         | `make contracts-check` | **PASS** — every schema, example and API document       |
-| Documentation links, placeholders | `make docs-check`      | **PASS** — 98 links across 35 files, 0 broken           |
-| Formatting, repository-wide       | `make format-check`    | **PASS**                                                |
-
-The API's integration suites run against **real PostgreSQL 18.6 and real Kafka 4.2.1** in
-Testcontainers, on the GitHub runner as well as locally — the runner's log shows the migrations
-applied and the same test counts. H2 is never accepted as evidence, and neither is a mocked broker.
-
-**2026-08-25**, and not re-measured since:
-
-| Suite                 | Command                 | Result                         |
-| --------------------- | ----------------------- | ------------------------------ |
-| Console — coverage    | `bun run test:coverage` | 40.4% lines                    |
-| Secrets, full history | `make security`         | **0 leaks**                    |
-| Container scan        | Trivy in CI             | **0 fixable HIGH or CRITICAL** |
-
-The console's 40.4% line coverage was measured when its unit suite was 24 tests rather than the
-current 38, and it keeps that date rather than being refreshed by assumption. It is honest rather
-than flattering either way: the routes are covered by the Playwright suite instead, and writing
-unit tests purely to move that number would be
-[exactly the shortcut this project refuses](CONTRIBUTING.md).
-
-Both coverage gates are ratchets — measured, then set below the measurement, raised only when a
-change genuinely raises coverage, and never lowered to go green. `apps/api` is at LINE 0.80 and
-BRANCH 0.70, raised on 2026-08-27 from 0.70 and 0.60 after the assessment workflow measured 85.7%
-and 76.9%; `apps/scoring` is at 90% of statements, set when the feature pipeline gave it a baseline
-that meant something. `apps/web` is at 25% of statements and 17% of branches, set on 2026-08-29
-below a measured 26.79% and 18.61%. **That number is not a claim that the console is a quarter
-tested**: most of its behaviour is asserted by Playwright against a real browser, because focus
-visibility, keyboard operation, contrast and axe cannot be checked in jsdom. The gate exists to stop
-the unit layer silently shrinking.
-
-**No latency, throughput, or false-positive figure is claimed anywhere in this repository.** None
-has been measured. Phase 9 measures them and reports the method alongside the result.
-
-## Observability
-
-Prometheus scrapes both services on every `make up`; Grafana comes up with the Prometheus
-datasource already provisioned from
-[`infra/grafana/provisioning/`](infra/grafana/provisioning/), so a fresh clone needs no clicking.
-
-- API metrics: <http://localhost:8080/actuator/prometheus>
-- Scoring metrics: <http://localhost:8000/metrics>
-- Targets: <http://localhost:9090/targets>
-
-Five dashboards are provisioned from [`infra/grafana/dashboards/`](infra/grafana/dashboards/):
-platform, API and database, Kafka and outbox, scoring, and alerts and risk. Every panel carries a
-description saying what the number means and what it does not — the dead-letter panel, for instance,
-says it is a depth rather than a backlog, because nothing consumes that topic and the figure falls
-when retention expires rather than when somebody fixes something.
-
-Every panel query was run against the live Prometheus before this was written: 48 queries, none
-empty, none malformed.
-
-**Thirteen alerting rules** live in
-[`infra/prometheus/rules/sentinelflow.yml`](infra/prometheus/rules/sentinelflow.yml), each annotated
-with the section of [`docs/operations/RUNBOOKS.md`](docs/operations/RUNBOOKS.md) that answers it.
-They waited for the runbooks rather than landing beside the dashboards, because a rule with no
-runbook is a pager nobody knows how to answer.
-
-There is no Alertmanager in this stack, so nothing pages anybody: a firing rule appears on
-Prometheus's own Alerts page at <http://localhost:9090/alerts>. Adding Alertmanager would be a
-service with no recipient; the rules are worth having because they put the thresholds somewhere they
-can be read and argued with. No threshold is calibrated against a measured baseline — most are
-derived from a configured budget or interval and name it, and the two that are conventions say so.
-
-**Ten runbooks** cover dead-letter growth, consumer lag, outbox backlog, scoring degradation, the
-API being down, connection saturation, a high server error rate, a slow report query, a model that
-will not load, and a caller being rate limited. Each names real metrics, real dashboard panels and
-commands that were run.
-
-### Tracing
-
-W3C trace context crosses every hop, including the asynchronous one — the outbox stores the
-originating `traceparent` and the relay replays it onto the Kafka record, so the consumer continues
-the trace rather than starting a second one nothing joins to the first
-([ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md) §5).
-
-- Tempo: <http://localhost:3200> — `GET /api/traces/<traceId>` returns a trace
-- Traces are also reachable through Grafana's provisioned Tempo datasource
-
-The API exports OTLP to an OpenTelemetry Collector, which forwards to Tempo. Neither container gates
-anything: a tracing backend that is down must not stop the pipeline, so no application depends on
-them and the exporter fails quietly. Export is off outside `compose`, so a local `./mvnw
-spring-boot:run` still puts trace ids on its log lines without retrying a collector nobody started.
+Method, history, coverage figures and what the suites do not cover:
+[`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
 
 ## Performance
 
@@ -546,7 +451,7 @@ spring-boot:run` still puts trace ids on its log lines without retrying a collec
 [`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md) with the machine, the container
 runtime and the dataset it ran against — a latency figure without those three is not reproducible.
 
-Read latency, 2026-08-31, against 21,000 transactions and 13,700 assessments on one developer
+Read latency, **2026-08-31**, against 20,947 transactions and 13,682 assessments on one developer
 laptop running the whole ten-container stack:
 
 | Endpoint                            | p50   | p95   | p99    |
@@ -557,159 +462,177 @@ laptop running the whole ten-container stack:
 | `GET /reports/alert-summary` (24 h) | 20 ms | 36 ms | 37 ms  |
 | `GET /reports/alert-summary` (30 d) | 17 ms | 30 ms | 33 ms  |
 
-A burst of 100 transactions at concurrency 8 was accepted in 0.42 s, and all 100 were scored and
-persisted 3.4 s later — the outbox relay's 500 ms poll (ADR-0005) is inside that, and nothing in
-this pipeline is real-time.
+A burst of 100 transactions at concurrency 8 was accepted in 0.78 s, and all 100 were scored,
+banded and persisted **5.0 s** after that — measured from the database rather than from an endpoint,
+because the question is when the pipeline finished. Kafka, the relay's 500 ms poll, the consumer and
+the scoring call are all inside that one number, and roughly half a second of it is the poll before
+anything else happens. **Nothing in this pipeline is real-time, and the design says so.**
 
-### The one optimization so far, and how it was found
-
-`GET /transactions` was the slowest endpoint by a factor of five. The SQL was captured from
-PostgreSQL's own statement log rather than reconstructed, and `EXPLAIN (ANALYZE, BUFFERS)` showed
-where the time went:
-
-|                    | before      | after      |
-| ------------------ | ----------- | ---------- |
-| Page query         | **68.0 ms** | **5.0 ms** |
-| Shared buffer hits | **71,256**  | **6,155**  |
-
-**The cost was not the sort.** It was the correlated subquery resolving each transaction's latest
-assessment version: it ran **34,629 times** — once per row of a join that had to be fully
-materialised before anything could be discarded — for 98% of the buffers, to return fifty rows.
-There was no index for the query's `ORDER BY occurred_at DESC, id DESC`, so the planner had no way
-to stop early. `V12__transactions_listing_index.sql` adds one; the migration carries both plans and
-the trade it accepts, which is one more index on the highest-volume write path.
+**The one optimization so far, and how it was found.** `GET /transactions` was the slowest endpoint
+by a factor of five. The SQL was captured from PostgreSQL's own statement log rather than
+reconstructed, and `EXPLAIN (ANALYZE, BUFFERS)` moved the page query from **68.0 ms to 5.0 ms** and
+its shared buffer hits from **71,256 to 6,155**. The cost was not the sort: it was a correlated
+subquery resolving each transaction's latest assessment version, running **34,629 times** — for 98%
+of the buffers — to return fifty rows, with no index for the query's `ORDER BY` to stop early.
+[`V12__transactions_listing_index.sql`](apps/api/src/main/resources/db/migration/V12__transactions_listing_index.sql)
+adds one, and carries both plans and the trade it accepts — one more index on the highest-volume
+write path.
 
 **What none of this measures:** sustained throughput (the rate limiter's ceiling is the binding
 constraint by design, and the benchmark stays under it rather than raising it to flatter itself),
 cold starts, the console, or any hardware but the one named in the report.
 
+## Observability
+
+`make up` brings up Prometheus, Grafana, an OpenTelemetry Collector and Tempo alongside the
+applications, with the datasources and **five dashboards provisioned from files** — a fresh clone
+needs no clicking. Prometheus is at <http://localhost:9090>, Grafana at <http://localhost:3000>.
+
+**Thirteen alerting rules** live in
+[`infra/prometheus/rules/sentinelflow.yml`](infra/prometheus/rules/sentinelflow.yml), each
+annotated with the runbook section that answers it; there is no Alertmanager, so a firing rule
+appears on Prometheus's own Alerts page rather than paging anybody. **Ten runbooks** cover
+dead-letter growth, consumer lag, outbox backlog, scoring degradation, and six more, each naming
+real metrics and commands that were run.
+
+**W3C trace context survives the asynchronous hop.** The outbox stores the originating
+`traceparent` and the relay replays it onto the Kafka record, so one transaction is a single trace
+from the HTTP request through Kafka to the scoring call rather than two traces nothing joins
+([ADR-0016 §5](docs/adr/0016-observability-signals-and-their-boundaries.md)). Neither the collector
+nor Tempo gates anything: a tracing backend that is down must not stop the pipeline.
+
+Every panel carries a description saying what its number means and what it does not, and what is
+deliberately _not_ instrumented is explained in
+[`docs/operations/OBSERVABILITY.md`](docs/operations/OBSERVABILITY.md).
+
 ## Security
 
 Full policy: [`SECURITY.md`](SECURITY.md). **Report a vulnerability privately**, through
-[a GitHub security advisory](https://github.com/la3679/sentinelflow/security/advisories/new) —
-never as a public issue.
+[a GitHub security advisory](https://github.com/la3679/sentinelflow/security/advisories/new) — never
+as a public issue.
 
-Controls that exist today, not aspirations:
+The threat model is STRIDE over four trust boundaries with every control traced to a test:
+[`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md).
 
-| Control                     | Where                                                                     |
-| --------------------------- | ------------------------------------------------------------------------- |
-| Threat model                | STRIDE over four trust boundaries, with every control traced to a test    |
-| Ingestion credential        | `X-API-Key` on `POST /transactions`, compared in constant time            |
-| Rate limiting               | Token bucket per caller; the strictest allowance is on `POST /auth/login` |
-| Request size bound          | 64 KiB, on the declared length and on the bytes delivered                 |
-| Secret scanning             | gitleaks over full history, every push and pull request, plus weekly      |
-| Push protection             | Enabled on the repository                                                 |
-| Dependency review           | Fails a pull request on a high-severity or copyleft addition              |
-| Dependabot                  | Weekly across all five ecosystems                                         |
-| Container scanning          | Trivy on every image; fails on any fixable HIGH or CRITICAL               |
-| Static analysis             | CodeQL over Java, Python and TypeScript, every push and weekly            |
-| SBOM                        | CycloneDX per image and for the source tree, with `SHA256SUMS`            |
-| Non-root containers         | Asserted in CI against the built image                                    |
-| Pinned actions              | Third-party actions pinned to an immutable commit SHA                     |
-| Verified build tooling      | The Maven Wrapper validates a SHA-256 verified against two sources        |
-| Least-privilege workflows   | `permissions: contents: read` unless a job needs more                     |
-| Closed management endpoints | Only health, info and prometheus — asserted by test _and_ by smoke        |
-| Protected `main`            | Pull requests and nine passing checks, with no bypass actors              |
+| Control                     | Where                                                                      |
+| --------------------------- | -------------------------------------------------------------------------- |
+| Ingestion credential        | `X-API-Key` on `POST /transactions`, compared in constant time             |
+| Operator authentication     | Password for a short-lived bearer token; the server decides every mutation |
+| Rate limiting               | Token bucket per caller; the strictest allowance is on `POST /auth/login`  |
+| Request size bound          | 64 KiB, on the declared length **and** on the bytes delivered              |
+| CSV export escaping         | Every field a spreadsheet would treat as a formula is escaped              |
+| Log redaction               | Asserted at `logging.level.root=DEBUG` over five paths                     |
+| Secret scanning             | gitleaks over full history, every push and pull request, plus weekly       |
+| Static analysis             | CodeQL over Java, Python and TypeScript, every push and weekly             |
+| Dependency review           | Fails a pull request on a high-severity or copyleft addition               |
+| Container scanning          | Trivy on every image; fails on any fixable HIGH or CRITICAL                |
+| SBOM                        | CycloneDX per image and for the source tree, with `SHA256SUMS`             |
+| Non-root containers         | Asserted in CI against the built image                                     |
+| Pinned actions              | Third-party actions pinned to an immutable commit SHA                      |
+| Closed management endpoints | Only health, info and prometheus — asserted by test **and** by smoke       |
+| Protected `main`            | Pull requests and nine passing checks, with no bypass actors               |
 
-### Known limitations, stated plainly
+### Limitations, stated plainly
 
-- **Ingestion carries a shared secret, not a per-caller identity.** `POST /api/v1/transactions`
-  requires `X-API-Key` ([ADR-0017 §1](docs/adr/0017-protecting-the-ingestion-surface.md)) — a
-  machine-to-machine surface with its own credential rather than an operator's password. It is one
-  key for one caller: nothing distinguishes two pipelines, and an ingested transaction is not
-  attributed to anybody in the audit trail. A real deployment would want a service account with a
-  lifecycle, which the ADR names as what to revisit.
-- **The rate limit is per API instance.** A token bucket in memory, so two instances behind a load
-  balancer would permit twice the configured rate, and a restart forgets who was being limited.
-  That is the right trade for a single-instance demo and the wrong one for a real edge, where the
-  limiter belongs in front ([ADR-0017 §2](docs/adr/0017-protecting-the-ingestion-surface.md)).
-- **`/actuator/prometheus` is still open.** A scrape cannot hold a token that expires every thirty
-  minutes. The series are aggregate counters and timers with closed label sets, so what it
-  discloses is the shape of the traffic; the real fix is a management port that is not published
-  to the host. Tracked as T-04 in the
-  [threat model](docs/security/THREAT_MODEL.md), open and owned.
-- **A token cannot be revoked before it expires.** Thirty minutes is the whole of how long a
-  withdrawn role keeps working. That is the cost of a stateless token and it is deliberate.
-- **A reload signs the console out.** It signs in against the real API, and holds the token in the
-  tab's memory and nowhere else — never in browser storage. Refreshing therefore loses it. That is
-  the honest consequence of a stateless token with no refresh token
-  ([ADR-0012 §3](docs/adr/0012-operator-authentication.md)), and the sign-in screen says so rather
-  than letting an analyst discover it mid-review.
-- **The console cannot assign an alert to a person.** Assignment takes an identifier, nothing
-  resolves a name to one, and the login response carries the operator's roles but not their own
-  identifier — so not even "assign to me" is buildable. Releasing an alert back to the queue is the
-  only assignment it can make, and the screen says why.
-- **Nothing goes from a transaction to its alert.** The alert queue filters on status, priority and
-  assignee, and there is no lookup by transaction. The route that exists is alert to transaction.
+- **Ingestion carries a shared secret, not a per-caller identity.** One key for one caller: nothing
+  distinguishes two pipelines, and an ingested transaction is not attributed to anybody in the audit
+  trail ([ADR-0017 §1](docs/adr/0017-protecting-the-ingestion-surface.md)).
+- **The rate limit is per API instance.** Two instances behind a load balancer would permit twice
+  the configured rate, and a restart forgets who was being limited. Right for a single-instance
+  demo, wrong for a real edge, where the limiter belongs in front.
+- **`/actuator/prometheus` is unauthenticated.** A scrape cannot hold a token that expires every
+  thirty minutes. Tracked as T-04 in the threat model, open and owned.
+- **A token cannot be revoked before it expires**, so thirty minutes is the whole of how long a
+  withdrawn role keeps working. That is the cost of a stateless token, and it is deliberate.
+- **A reload signs the console out**, because the token lives in the tab's memory and never in
+  browser storage. The sign-in screen says so rather than letting an analyst discover it mid-review.
+- **The console cannot assign an alert to a person.** `assigneeId` is a UUID and nothing resolves it
+  to a name, so releasing an alert back to the queue is the only assignment it can make — and the
+  screen says why instead of offering a control that cannot work.
+- **Nothing navigates from a transaction to its alert.** The route that exists is alert to
+  transaction.
 - **Role handling in the console is a UX affordance, never a security boundary.** Disabling a
-  control authorizes nothing.
+  control authorizes nothing; the API decides.
 - **The local stack is not a deployment target.** It binds to your machine, holds only synthetic
-  data, and has never been hardened for exposure. Do not put it on a network you do not control.
-- **Screen-reader behaviour is unverified, and Phase 6 closed without verifying it.** axe finds
-  roughly a third of real accessibility issues, and every automated check this repository has —
-  axe on eight routes at two viewports, keyboard operation, focus visibility — is one of the
-  cheaper two-thirds. A pass with an actual screen reader needs a person using one; it has not
-  happened, it is not scheduled, and nothing here should be read as saying otherwise.
+  data, and has never been hardened for exposure.
+- **Screen-reader behaviour is unverified.** axe finds roughly a third of real accessibility
+  issues, and every accessibility check here is one of the cheaper two-thirds. A pass with an actual
+  screen reader needs a person using one; it has not happened, and nothing here should be read as
+  saying otherwise.
 
-## Development workflow
+## Design decisions
 
-This repository was created by [Lovable](https://lovable.dev), which built the reviewed frontend
-foundation; everything since has been built locally with Claude Code. The full history, including
-Lovable's original root commit, is preserved — nothing has been squashed or rewritten.
+Seventeen ADRs record the decisions that shaped this system, each binding until superseded. The
+ones that explain the most:
 
-Phase 1 moved the console to `apps/web/`, which ends Lovable's ability to regenerate this project,
-because Lovable has no documented support for an application outside the repository root. That
-trade-off, and the two honest routes back to a design session, are recorded in
-[`docs/operations/LOVABLE_GITHUB_WORKFLOW.md`](docs/operations/LOVABLE_GITHUB_WORKFLOW.md).
+| Decision                                                                 | What it settles                                                      |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| [ADR-0005](docs/adr/0005-outbox-relay-mechanics.md)                      | Why a polling relay, and what its 500 ms costs                       |
+| [ADR-0006](docs/adr/0006-event-schema-and-versioning.md)                 | Envelope, versioning, and what may never reach a dead-letter topic   |
+| [ADR-0007](docs/adr/0007-money-identifiers-and-schema-migrations.md)     | Money as `NUMERIC`, identifiers, and forward-only migrations         |
+| [ADR-0008](docs/adr/0008-scoring-service-boundary.md)                    | A synchronous call inside the handler, not a second Kafka round trip |
+| [ADR-0010](docs/adr/0010-model-selection-and-evaluation.md)              | The ship-or-not rule, fixed before anything was measured             |
+| [ADR-0011](docs/adr/0011-risk-banding-and-the-final-score.md)            | How a rule score and a model score combine into one banded decision  |
+| [ADR-0012](docs/adr/0012-operator-authentication.md)                     | Stateless bearer tokens, the roles, and what that costs              |
+| [ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) | Bounded polling now; SSE when there is a stream worth carrying       |
+| [ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md)  | What each signal is allowed to be read as saying                     |
+| [ADR-0017](docs/adr/0017-protecting-the-ingestion-surface.md)            | The ingestion credential, the limits, and what they do not solve     |
+
+## Documentation
+
+| Area                     | Start here                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| The main flow            | [`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) |
+| Data model               | [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md)                     |
+| API and event contracts  | [`contracts/`](contracts/)                                                               |
+| Decisions                | [`docs/adr/`](docs/adr/)                                                                 |
+| Model and evaluation     | [`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md)                                         |
+| Data provenance          | [`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md)                           |
+| Test results             | [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md)                           |
+| Benchmarks               | [`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md)                         |
+| Observability            | [`docs/operations/OBSERVABILITY.md`](docs/operations/OBSERVABILITY.md)                   |
+| Runbooks                 | [`docs/operations/RUNBOOKS.md`](docs/operations/RUNBOOKS.md)                             |
+| Troubleshooting          | [`docs/operations/TROUBLESHOOTING.md`](docs/operations/TROUBLESHOOTING.md)               |
+| Threat model             | [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md)                         |
+| Research and versions    | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                         |
+| Planning and phase state | [`docs/planning/`](docs/planning/) · [`PROJECT_STATE.md`](PROJECT_STATE.md)              |
+| Frontend audits          | [`docs/frontend/`](docs/frontend/)                                                       |
+| Development environment  | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md)         |
+| Contributing             | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                     |
+
+## Status and roadmap
+
+The pipeline, the console, observability and security hardening are built and tested. The current
+work is performance, documentation and a clean-clone verification; after that comes the v1.0.0
+release. Phase-by-phase state, with the evidence behind each gate, is in
+[`PROJECT_STATE.md`](PROJECT_STATE.md) and
+[`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md).
+
+**Named and not yet built**, each deferred deliberately rather than forgotten: operator identity,
+so an alert can be given to a person rather than to a UUID; endpoints for reprocessing a
+dead-lettered event, reviving a failed outbox row and rescoring a degraded assessment, which today
+have only a manual procedure in the runbooks; an authenticated, rate-limited HTTP replay endpoint,
+which is API surface rather than a Makefile target and is scheduled as such; and a Server-Sent
+Events stream, once there is a stream worth carrying.
 
 ## Deployment
 
 **The local Docker Compose environment is the supported way to run SentinelFlow.** There is no
-hosted demo, and this README will not link to one that does not exist.
+hosted demo, and this README will not link to one that does not exist. Public cloud deployment is
+optional, out of scope for v1, and would **incur cost** — nothing in this repository provisions a
+billable resource.
 
-Public cloud deployment is optional, out of scope for v1, and would **incur cost**. Nothing in this
-repository provisions a billable resource.
+## Development
 
-## Troubleshooting
+This repository was created by [Lovable](https://lovable.dev), which built the reviewed frontend
+foundation; everything since has been built locally with Claude Code. The full history, including
+Lovable's original root commit, is preserved — nothing has been squashed or rewritten. Moving the
+console to `apps/web/` ended Lovable's ability to regenerate the project, a trade recorded with its
+two honest routes back in
+[`docs/operations/LOVABLE_GITHUB_WORKFLOW.md`](docs/operations/LOVABLE_GITHUB_WORKFLOW.md).
 
-| Symptom                                             | Cause and fix                                                                                                                                        |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `make up` fails on `POSTGRES_PASSWORD`              | `.env` is missing or the secret is blank. Run `make bootstrap`.                                                                                      |
-| A port is already in use                            | Change it in `.env` — every published port is a variable.                                                                                            |
-| PostgreSQL refuses to start after a version change  | The volume was formatted by a different major version. `make reset-demo`.                                                                            |
-| Kafka refuses to start after editing the cluster id | Same cause. `make reset-demo`.                                                                                                                       |
-| `./mvnw` fails with permission denied               | The executable bit was lost. `git update-index --chmod=+x apps/api/mvnw`.                                                                            |
-| Playwright times out on every test                  | A stale `vite preview` is holding port 4173. Kill it and rerun.                                                                                      |
-| `bun install` fails with `ENAMETOOLONG` on Windows  | The clone path is too deep. Nested `node_modules` paths exceed Windows' 260-character limit. Clone somewhere shorter, such as `C:\src\sentinelflow`. |
-| `make smoke` fails on Kafka in Git Bash             | Path conversion. The script scopes `MSYS_NO_PATHCONV`; run it rather than the commands by hand.                                                      |
-
-## Documentation
-
-| Area            | Start here                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------- |
-| Resume state    | [`PROJECT_STATE.md`](PROJECT_STATE.md)                                                   |
-| Data model      | [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md)                     |
-| The main flow   | [`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) |
-| Data provenance | [`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md)                           |
-| Decisions       | [`docs/adr/`](docs/adr/)                                                                 |
-| Research        | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                         |
-| Planning        | [`docs/planning/`](docs/planning/)                                                       |
-| Operations      | [`docs/operations/`](docs/operations/)                                                   |
-| Threat model    | [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md)                         |
-| Benchmarks      | [`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md)                         |
-| Frontend audit  | [`docs/frontend/FOUNDATION_AUDIT.md`](docs/frontend/FOUNDATION_AUDIT.md)                 |
-| API migration   | [`docs/frontend/API_MIGRATION_AUDIT.md`](docs/frontend/API_MIGRATION_AUDIT.md)           |
-| Development     | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md)         |
-| Contributing    | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                     |
-| Security        | [`SECURITY.md`](SECURITY.md)                                                             |
-
-## Roadmap
-
-Phases 2 through 10 in [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md),
-tracked against milestones M0–M5. Eight of eleven phases are closed: contracts and schema,
-ingestion and the outbox, synthetic data and scoring, the alert workflow, the console against the
-real API, observability, and security hardening. **Phase 9 is in progress** — benchmarks, the
-documentation audit and a clean-clone check — and Phase 10 is the release.
+Contributions are welcome: [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Licence and acknowledgements
 

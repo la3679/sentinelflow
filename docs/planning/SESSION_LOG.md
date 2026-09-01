@@ -2924,3 +2924,91 @@ The README rewrite, the clean-clone validation, further benchmarking, and any Ph
 session stopped on instruction with the usage window at 89%, not because anything blocked.
 
 ---
+
+## 2026-09-01 — Phase 9: the README becomes a landing page, and three documents get written to hold what it stopped carrying
+
+| Field           | Value                                                                                                                         |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-09-01T01:10Z / 2026-09-01T02:20Z                                                                                         |
+| Starting SHA    | `9a2d900` on `main`                                                                                                           |
+| Ending SHA      | recorded at the merge; the work landed as a pull request from `docs/readme-landing-page`                                      |
+| Objective       | The first incomplete item in "Next three actions": the README landing-page rewrite, which is a binding Phase 9 gate criterion |
+
+### Work completed
+
+**Three documents first, because the requirement forbids shortening by deletion.** "Required before
+v1" §2 is explicit that detail comes out of the README and goes into `docs/`, and that dropping it
+is the failure the clause exists to prevent. All three are names from §24 of the build prompt, so
+this filled gaps in the required set rather than inventing a filing scheme:
+
+- `docs/testing/TEST_RESULTS.md` — the four dated test blocks, the coverage table and its ratchet
+  policy, the two resilience drills, the log-redaction result, and what the suites do not cover.
+- `docs/operations/OBSERVABILITY.md` — dashboards, the thirteen alerting rules, the ten runbooks,
+  tracing across the asynchronous hop, and what is deliberately not instrumented.
+- `docs/operations/TROUBLESHOOTING.md` — every symptom the README carried, plus two that were only
+  in `PROJECT_STATE.md`: the reference-data check that refuses to start against a truncated `users`
+  table, and the safe way back to a clean database.
+
+**Then the rewrite.** 724 lines of front page became 647, and the change is structural rather than
+arithmetic: the phase-status table, the "what runs today" narrative, the four dated evidence blocks,
+the pull-request chronology and the agent-workflow detail are gone from the landing page and live
+where a reader who wants them will find them.
+
+**Five diagrams, where there had been two.** The transaction-to-alert sequence, condensed from the
+architecture document; outbox delivery as a state machine, drawn from `OutboxStatus` and the relay's
+own configuration; the investigation state machine, drawn from `AlertTransitions` rather than from
+memory; and the existing architecture and local-deployment views. All five parse against mermaid
+11.17.2 — validated by installing mermaid in a scratch directory and calling `mermaid.parse` on each
+fenced block, because a diagram that does not render is worse than no diagram on a page a recruiter
+opens once.
+
+**The external-reader review is recorded** under "Acceptance criteria status — Phase 9 gate" in
+`PROJECT_STATE.md`, which is the criterion the plan says Phase 9 cannot close without. It states its
+own limit: it is a careful read against the criterion by the session that wrote the file, and no
+outside person has read it.
+
+### What the review found, and why it matters more than the rewrite
+
+**The README had drifted from its own benchmark report.** It claimed a burst was accepted in 0.42 s
+and persisted 3.4 s later; `docs/performance/BENCHMARK.md` says **0.78 s** and **5.0 s**. Both
+numbers were real once. Neither was current, and nothing had caught it because `make docs-check`
+checks links and placeholders — a stale figure with a working link passes it.
+
+**Two other numbers were dropped rather than guessed.** `make smoke` was described as 23 checks,
+last measured 2026-08-28 and before Phase 8 changed the endpoints it asserts; and a link count in a
+summary table would be read as current when it changes with every document added. The clean-clone
+pass measures the first properly.
+
+**The deployment diagram showed seven containers** while two other sections of the same file said
+ten. It now shows all ten, including the one-shot `kafka-topics` service — which is worth drawing,
+because the step it performs is the one that was once missing while every health check passed.
+
+**A drive-by fix:** `docs/planning/IMPLEMENTATION_PLAN.md` had the Phase 10 heading twice.
+
+### The lesson worth carrying forward
+
+**A documentation checker that passes is not a documentation review.** Three of the five defects the
+review found were numbers that were true when written and false when read, and every one of them
+passed `make docs-check` on every run since. The gate criterion asking for a recorded human-
+perspective read is not ceremony; it is the only check in this repository that could have found
+them.
+
+### The exact resume point
+
+**The clean-clone verification.** Clone into an empty directory and run every command the rewritten
+README publishes, in the order it publishes them. **Two traps, neither ever exercised from an
+actually-empty clone:** `make bootstrap` gained `SENTINELFLOW_INGEST_API_KEY` in Phase 8 along with
+the fix for the exit-1-against-an-existing-`.env` bug, and `make bench` is new. `bun install` on a
+deep Windows path is the third thing to watch.
+
+Then: whether one measured optimization is enough for the phase — `GET /alerts` now has the worst
+p99 — and the two small deliverables still open, the demo walkthrough with more screenshots and the
+deployment ADR.
+
+### State at the stop
+
+Verified before the push, not assumed: `bun run format:check` clean; `bun scripts/dev/check-docs.mjs`
+274 relative links across 53 Markdown files, 0 broken, no placeholders; all five README mermaid
+blocks parsed.
+
+---
