@@ -15,22 +15,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-09-01T05:30Z                                                                                                                                                                                                                                 |
-| Updated by           | Claude                                                                                                                                                                                                                                            |
-| Overall status       | active — **Phase 9 closed, Phase 10 open.** Operator identity, its gating deliverable, is built and under review as PR [#111](https://github.com/la3679/sentinelflow/pull/111). Real-stack verification, the release artefacts and the tag remain |
-| Current phase        | Phase 10 — release (not started)                                                                                                                                                                                                                  |
-| Current task         | **none in progress; the session checkpointed deliberately at the user's direction.** Nothing is half-written — `feat/operator-identity` is pushed with every suite on it green, and the one required step it has not had is action 1 below        |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                          |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                              |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                                |
-| Working branch       | `feat/operator-identity`                                                                                                                                                                                                                          |
-| Local clone verified | **yes**                                                                                                                                                                                                                                           |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                                  |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                              |
-| Open PRs             | [#111](https://github.com/la3679/sentinelflow/pull/111) — `feat/operator-identity`, awaiting CI                                                                                                                                                   |
-| Latest release       | none                                                                                                                                                                                                                                              |
+| Field                | Value                                                                                                                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T05:55Z                                                                                                                                                                                                                            |
+| Updated by           | Claude                                                                                                                                                                                                                                       |
+| Overall status       | active — **Phase 9 closed, Phase 10 open.** Operator identity is **merged** ([#111](https://github.com/la3679/sentinelflow/pull/111)) with every automated gate green; its real-stack verification, the release artefacts and the tag remain |
+| Current phase        | Phase 10 — release (not started)                                                                                                                                                                                                             |
+| Current task         | **none in progress; the session checkpointed deliberately at the user's direction.** `main` is clean, in sync and green, and no pull request is open. The resume point is action 1 below                                                     |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                     |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                         |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                           |
+| Working branch       | `main`                                                                                                                                                                                                                                       |
+| Local clone verified | **yes**                                                                                                                                                                                                                                      |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                             |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                         |
+| Open PRs             | none                                                                                                                                                                                                                                         |
+| Latest release       | none                                                                                                                                                                                                                                         |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -85,7 +85,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 7 — observability and resilience**
 - [x] **Phase 8 — security and quality hardening**
 - [x] **Phase 9 — performance and documentation**
-- [ ] **Phase 10 — release** ← in progress: operator identity built and under review ([#111](https://github.com/la3679/sentinelflow/pull/111)); real-stack verification, the changelog and release notes, repository metadata and the tag all remain
+- [ ] **Phase 10 — release** ← in progress: operator identity merged ([#111](https://github.com/la3679/sentinelflow/pull/111)); its real-stack verification, the changelog and release notes, repository metadata and the tag all remain
 
 ## Completed — Phase 1
 
@@ -2839,8 +2839,8 @@ and a quality bar with no test behind it is the kind of requirement a session sa
 
 ### 1. Real operator identity, so an alert can be given to a named analyst
 
-**Status: built and under review as PR [#111](https://github.com/la3679/sentinelflow/pull/111);
-one clause is not yet satisfied.** [ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md)
+**Status: merged as PR [#111](https://github.com/la3679/sentinelflow/pull/111); one clause is not
+yet satisfied.** [ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md)
 records the decision. Every clause below is met except the last one — **"verified against the real
 stack"** — which is action 1 in "Next three actions". Until that is done this item is not closed,
 and the requirement below is kept verbatim because it is the standard the result has to meet.
@@ -2951,10 +2951,9 @@ but they are also not things any session may tick off on a person's behalf.
 ## Next three actions
 
 **Phase 9 is closed** with all eight criteria met. **Phase 10 is open**, and its gating deliverable —
-operator identity — is **built and under review as PR
-[#111](https://github.com/la3679/sentinelflow/pull/111)**, not yet merged. Nothing is half-written:
-the branch is pushed, every suite on it is green, and the one required step it has not had is named
-in action 1 below.
+operator identity — is **merged** as PR [#111](https://github.com/la3679/sentinelflow/pull/111),
+with all eighteen required checks green. **It is not finished**: the one required step it has not had
+is named in action 1 below, and until that is done "Required before v1" §1 stays open.
 
 **What #111 does.** An alert can be given to a named analyst. `GET /operators` lists who may hold
 one, `Alert.assignee` carries the person the identifier names, and the login response now publishes
@@ -2967,8 +2966,8 @@ end-to-end tests, up from 88, axe clean.
 answer the same question. The Phase 8 gate's first draft recorded "0 results" from the merge refs
 while `refs/heads/main` had 12 alerts. Check `refs/heads/main`.
 
-1. **Merge #111 once CI is green, then verify operator identity against the real stack.** This is the
-   one clause of "Required before v1" §1 that PR #111 has **not** satisfied, and it is binding:
+1. **Verify operator identity against the real stack.** This is the one clause of "Required before
+   v1" §1 that #111 did **not** satisfy, and it is binding:
    _"verified against the real stack, not only against Testcontainers"_. That clause exists because
    of three defects a fully green build was blind to — nothing created the Kafka topics, the scoring
    client negotiated HTTP/2 against an HTTP/1.1-only service, and two PowerShell targets had never
