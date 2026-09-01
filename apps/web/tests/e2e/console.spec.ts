@@ -281,7 +281,7 @@ test.describe("the screens that describe the platform", () => {
     await expect(page.getByRole("cell", { name: "70" })).toBeVisible();
   });
 
-  test("the health screen says what is not measured rather than inventing it", async ({
+  test("the health screen says where the numbers it does not show are, rather than inventing them", async ({
     page,
     api,
     signIn,
@@ -291,9 +291,14 @@ test.describe("the screens that describe the platform", () => {
 
     await expect(page.getByText(/operations api/i)).toBeVisible();
     await expect(page.getByText(/not answering/i).first()).toBeVisible();
+
     // Consumer lag and dead-letter depth used to be shown here as figures
-    // nothing had measured.
-    await expect(page.getByText(/not measured yet, so not shown/i)).toBeVisible();
+    // nothing had measured. They are measured now, and this screen still does
+    // not show them - it says so, and says where they are, which is the claim
+    // worth holding: the screen must never carry an unmeasured number and must
+    // never leave a reader thinking one does not exist.
+    await expect(page.getByText(/measured, and deliberately not shown here/i)).toBeVisible();
+    await expect(page.getByText(/exported to prometheus/i)).toBeVisible();
   });
 
   test("the reports screen counts a window and offers the same window as a file", async ({

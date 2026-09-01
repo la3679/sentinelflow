@@ -246,25 +246,26 @@ function OverviewPage() {
 
         {/*
           Throughput per hour, scoring latency percentiles, consumer lag and
-          dead-letter depth used to be four charts and four tiles here. Every
-          number in them was invented: no process measured any of them, and
-          three of the four belong to Prometheus and Kafka rather than to this
-          API. They are absent rather than decorative until Phase 7 measures
-          them.
+          dead-letter depth used to be four charts and four tiles here, and every
+          number in them was invented. They are measured now, and three of the
+          four still belong to Prometheus and Kafka rather than to this API, so
+          they are read where they are produced instead of copied here.
         */}
         <Panel
           title="Throughput, latency and pipeline depth"
-          description="Not measured yet, so not shown."
+          description="Measured, and deliberately not shown here."
           bodyClassName="p-4"
         >
           <p className="text-sm">
             Scored-transaction throughput, scoring latency percentiles, consumer-group lag and
-            dead-letter depth are not on this screen.
+            dead-letter depth are not on this screen. All four are measured and exported to
+            Prometheus, with Grafana dashboards and alerting rules over them.
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            They arrive in Phase 7 with the metric set, the dashboards and the runbooks that say
-            what to do about a number that is climbing. Showing a figure nobody measured would be
-            worse than showing none, because somebody would quote it.
+            They are read where they are produced rather than copied here, because each is answered
+            by a runbook and a number with nothing to do about it is decoration. This screen answers
+            what an analyst starting a shift needs — what is in the queue, and what the risk looks
+            like.
           </p>
         </Panel>
 
