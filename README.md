@@ -25,13 +25,39 @@ analyst works to a defensible verdict.
 
 ## The console
 
-![The SentinelFlow operations overview, showing throughput, risk-band distribution, alert counts and pipeline health](docs/frontend/screenshots/overview.png)
+**The overview** — what an analyst sees at the start of a shift: what is in the queue, and what the
+risk looks like.
+
+![The SentinelFlow operations overview, showing risk-band distribution, alert counts and pipeline health](docs/frontend/screenshots/overview.png)
+
+**The alert queue** — dense, filterable, and keyboard-operable, because an analyst is in it all day.
 
 ![The SentinelFlow alert queue, a dense filterable table of synthetic alerts](docs/frontend/screenshots/alert-queue.png)
 
-Both images are generated from the production bundle by
+**The investigation workspace** — one alert, the rule and model scores that produced it, the reason
+codes behind each, the transaction underneath, and the moves this operator may actually make.
+
+![The SentinelFlow investigation workspace for a single alert, showing rule, model and final scores, reason codes, the transaction, and the case actions available](docs/frontend/screenshots/investigation.png)
+
+**Reports** — a half-open window counted rather than sampled, with every key present including the
+zeroes, and the same window downloadable as a file.
+
+![The SentinelFlow reports screen, counting alerts over a window by risk band and by status, with a CSV export](docs/frontend/screenshots/reports.png)
+
+**System health** — each component asked when the page loads, and an honest account of the numbers
+this screen deliberately does not carry.
+
+![The SentinelFlow system health screen, showing each component's state and explaining which pipeline figures live in Prometheus instead](docs/frontend/screenshots/system-health.png)
+
+All five are generated from the production bundle by
 [`apps/web/tests/e2e/screenshots.spec.ts`](apps/web/tests/e2e/screenshots.spec.ts), so they cannot
-drift from the build. Every alert and score in them is synthetic.
+drift from the build. **Every alert, score and figure in them is synthetic**, served by the
+end-to-end suite's stub in the contract's own shapes.
+
+Two things in these images are worth noticing because they are deliberate. The investigation screen
+**says it cannot assign an alert to a person** rather than offering a control that would not work,
+and the health screen **says where the pipeline figures actually live** rather than copying a number
+onto a page with nothing to do about it.
 
 ## Why this project exists
 

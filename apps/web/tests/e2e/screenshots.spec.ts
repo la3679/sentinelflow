@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { ALERT_ID, ALERT_REFERENCE, expect, test } from "./fixtures";
 
 /**
  * Captures the screenshots the README uses.
@@ -17,9 +17,23 @@ import { expect, test } from "./fixtures";
  * writing files is not a test and does not belong in a check that gates a merge.
  */
 
+/**
+ * One entry per screen the README shows.
+ *
+ * The list is the README's, not the router's: a screen the front page describes
+ * and does not show is the gap this covers, and a screen nobody writes about
+ * does not need an image that has to be kept current.
+ */
 const SHOTS = [
   { path: "/", name: "overview", heading: /operations overview/i },
   { path: "/alerts", name: "alert-queue", heading: /alert queue/i },
+  {
+    path: `/alerts/${ALERT_ID}`,
+    name: "investigation",
+    heading: new RegExp(`alert ${ALERT_REFERENCE}`, "i"),
+  },
+  { path: "/reports", name: "reports", heading: /^reports$/i },
+  { path: "/health", name: "system-health", heading: /system health/i },
 ] as const;
 
 test.describe("README screenshots", () => {
