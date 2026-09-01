@@ -193,7 +193,18 @@ jobs:
       # `gh release upload` rather than a third-party action: this is the one
       # job in the repository that writes, and what it writes should be legible
       # in the diff rather than delegated.
+      #
+      # --repo is required, and its absence was not theoretical. This job runs
+      # only on a release, so its first run was the v1.0.0 release and it failed
+      # there: it downloads an artifact and never checks out the source, so `gh`
+      # had no git remote to infer a repository from and exited with "fatal: not
+      # a git repository". Naming the repository is the fix rather than adding a
+      # checkout, because this job does not need the source - it needs somewhere
+      # to put five files.
       - name: Upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" sbom-*.cdx.json SHA256SUMS --clobber
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          sbom-*.cdx.json SHA256SUMS
+          --repo "${{ github.repository }}" --clobber
