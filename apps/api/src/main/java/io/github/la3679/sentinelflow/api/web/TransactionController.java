@@ -38,7 +38,7 @@ import io.github.la3679.sentinelflow.api.web.dto.TransactionResponse;
  * Transaction ingestion.
  *
  * <p>The controller validates, delegates, and maps. No business rule, no repository call, no
- * transaction boundary — those are the service's, per {@code .claude/rules/java.md}. A JPA entity
+ * transaction boundary — those are the service's, per {@code docs/development/ENGINEERING_STANDARDS.md}. A JPA entity
  * never crosses this boundary either: the response is built from one, and is not one.
  *
  * <p><strong>202, not 201.</strong> The transaction is durable when this returns; its assessment is

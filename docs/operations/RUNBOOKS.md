@@ -8,12 +8,11 @@ a safe mitigation, how to validate the fix, and what it deliberately does not co
 
 **This file grows with the system, and only ever documents behaviour that exists.** A runbook for a
 component that has not been built would be a guess, and a guess in a runbook is worse than a gap
-because somebody follows it. **Ten runbooks are written below.** Nine are the set
-`docs/planning/IMPLEMENTATION_PLAN.md` asks Phase 7 for: dead-letter growth, consumer lag, outbox
-backlog and scoring degradation cover the pipeline Phases 3 and 4 built; the API being down,
-connection saturation, a high server error rate, a slow report query and a model that will not load
-cover the rest of what this stack can do wrong. The tenth arrived with the control that made it
-possible — Phase 8's rate limiting adds a way for the stack to refuse a caller on purpose, and a
+because somebody follows it. **Ten runbooks are written below.** Dead-letter growth, consumer lag,
+outbox backlog and scoring degradation cover the pipeline; the API being down, connection
+saturation, a high server error rate, a slow report query and a model that will not load cover the
+rest of what this stack can do wrong. The tenth arrived with the control that made it
+possible — rate limiting adds a way for the stack to refuse a caller on purpose, and a
 refusal nobody can diagnose is a defect wearing a status code.
 
 **Every runbook names metrics that exist and dashboard panels that are provisioned.** Five
@@ -179,10 +178,9 @@ fails identically and produces a second dead-letter record.
 Reprocessing is deliberately not a script. ADR-0005 §5 makes it an administrator-only, audited
 operation.
 
-**No endpoint exposes it, and no phase currently owns building one.** An earlier version of this
-runbook said Phase 5 did; Phase 5 shipped, its deliverable list never contained it, and nothing in
-`docs/planning/IMPLEMENTATION_PLAN.md` allocates it now. Corrected here rather than left pointing at
-a phase that has already closed. Until an endpoint exists, reprocessing means republishing the
+**No endpoint exposes it, and nothing currently owns building one.** It is tracked in
+[`KNOWN_ISSUES.md`](../development/KNOWN_ISSUES.md) as one of three operator actions with a manual
+procedure and no endpoint. Until one exists, reprocessing means republishing the
 `originalEvent` from the dead-letter record to its source topic, and that should be a considered act
 with a record of who did it and why.
 

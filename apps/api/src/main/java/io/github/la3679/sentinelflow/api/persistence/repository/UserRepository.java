@@ -68,7 +68,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      *
      * <p>This is the same rule the assignment path enforces, and that is the point: a picker that
      * offered somebody the server would refuse would be drawing a control that does not work, which
-     * {@code .claude/rules/frontend.md} forbids. <strong>It is an affordance and not the
+     * {@code docs/development/ENGINEERING_STANDARDS.md} forbids. <strong>It is an affordance and not the
      * authorization</strong> - the server still checks on the way in, and
      * {@code AlertOperationsIT} proves it by assigning to an auditor and getting a refusal.
      *

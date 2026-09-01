@@ -655,7 +655,7 @@ function Invoke-Replay {
         # The crash loop worth naming: an export or seed flag left set makes the
         # service fail startup, restart, and fail again, and every symptom after
         # that is a symptom of the wrong thing.
-        Write-Fail 'the api container is restarting. See PROJECT_STATE.md on the export flag.'
+        Write-Fail 'the api container is restarting. See docs/operations/TROUBLESHOOTING.md on the export flag.'
         exit 1
     }
     try {
@@ -999,14 +999,6 @@ function Invoke-ResetDemo {
     }
     Invoke-Native $RepoRoot 'docker' @('compose', 'down', '-v')
     Write-Host "Volumes deleted. Run '.\scripts\dev\sf.ps1 up' for a clean stack."
-}
-
-function Invoke-NotImplemented {
-    param($Name, $Phase, $What)
-    Write-Host "$Name is not implemented yet."
-    Write-Host "$What is delivered in $Phase."
-    Write-Host 'See docs/planning/IMPLEMENTATION_PLAN.md.'
-    exit 1
 }
 
 # ---------------------------------------------------------------------------

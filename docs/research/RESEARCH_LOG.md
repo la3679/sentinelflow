@@ -253,7 +253,7 @@ Kafka runs in **KRaft mode** — ZooKeeper is not part of the stack.
 2. Strict `main` protection is enabled **after** the initial Lovable phase, and Lovable is
    pointed at a dedicated `design/lovable-*` branch for subsequent design sessions so that
    protection on `main` cannot silently divert its pushes.
-3. Lovable and Claude never edit the same branch concurrently.
+3. Lovable and local development never edit the same branch concurrently.
 
 **Impact:** drives the choreography in §15 and is recorded in
 [ADR-0001](../adr/0001-lovable-first-repository-creation.md).
@@ -407,49 +407,6 @@ row of R-2026-08-25-06.
 
 ---
 
-## R-2026-08-25-14 — Claude Code hook and status-line schema
-
-**Date (UTC):** 2026-08-25
-**Sources:** <https://code.claude.com/docs/en/hooks>, <https://code.claude.com/docs/en/statusline>.
-Closes the Phase 1 open item.
-
-**Status-line findings.** Configured as `statusLine: { type: "command", command, padding }` in
-project settings. The command receives a JSON session object on stdin containing `model`,
-`workspace`, `cost`, `context_window` and `rate_limits`, among others.
-`context_window.used_percentage` and `context_window.remaining_percentage` are pre-calculated —
-and are **`null` early in a session and again after `/compact`** until the next API call
-repopulates them, so a status line must render an unknown state rather than a misleading `0`.
-`rate_limits` appears only for subscription sessions and each window may be independently absent.
-
-**Hook findings.**
-
-| Event          | Decision control                                    | Used here                              |
-| -------------- | --------------------------------------------------- | -------------------------------------- |
-| `SessionStart` | `hookSpecificOutput.additionalContext`, no blocking | injects verified Git state             |
-| `Stop`         | top-level `decision: "block"` with `reason`         | one checkpoint reminder per session    |
-| `PreCompact`   | top-level `decision`                                | snapshot plus a reminder; never blocks |
-| `SessionEnd`   | **none** — side effects only                        | snapshot only                          |
-| `PostCompact`  | **none** — side effects only                        | **not used**                           |
-
-Two findings that changed the design:
-
-1. **`PostCompact` cannot inject context.** It is a real event, but it has no decision control:
-   it can log, it cannot add to the context window. The post-compaction reminder is therefore
-   registered on **`SessionStart` with the `compact` matcher**, which is the supported route.
-2. **`stop_hook_active` exists** and is `true` whenever Claude Code is already continuing because
-   of a stop hook. Claude Code additionally overrides a stop hook after **8 consecutive blocks**.
-   SentinelFlow's Stop hook uses that field, plus a per-session marker file, plus that built-in
-   ceiling — three independent guards.
-
-`SessionEnd` hooks share a **1.5-second budget** across all of them, which is why the SentinelFlow
-one writes a file and returns nothing.
-
-**Decision:** implement the status line and four hooks as described, in JavaScript run by Bun
-rather than shell — `jq` is not a project prerequisite and the reference machine is Windows.
-Recorded in `docs/development/CLAUDE_CODE_SETUP.md`.
-
----
-
 ## R-2026-08-26-01 — matplotlib for the evaluation plots, and where it belongs
 
 **Date (UTC):** 2026-08-26
@@ -495,8 +452,6 @@ not oblige one to appear.
 
 - [ ] Security advisories affecting the pinned versions — run the dependency and CodeQL scans in
       Phase 8 and record findings here.
-- [x] Claude Code hook / status-line / memory schema — verified 2026-08-25 in R-2026-08-25-14 and
-      exercised locally before commit.
 - [ ] Node.js 24 present on the reference machine before the frontend gate is declared verified.
       Still **22.19.0**; Bun runs the frontend so nothing is blocked.
 - [ ] Charting library licence re-check once the Recharts version is pinned by the lockfile.

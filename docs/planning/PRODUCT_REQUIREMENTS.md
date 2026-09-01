@@ -25,7 +25,7 @@ Synthetic transaction generator or REST client
   → Spring Boot risk orchestration consumer
   → Python FastAPI / scikit-learn scoring service
   → risk assessment + alert + audit history in PostgreSQL
-  → Kafka risk/alert events + authenticated SSE live updates
+  → Kafka risk/alert events + console polling for live updates
   → React operations console
 ```
 

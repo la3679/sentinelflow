@@ -101,6 +101,24 @@ lerna-debug.log*
 .dev.vars
 
 # ---------------------------------------------------------------------------
-# Machine-specific Claude runtime state
+# Local development-assistant workspace
+#
+# These files exist so the maintainer's local tooling can pick work back up.
+# They are working notes and machine configuration, not part of the software:
+# nothing here is needed to build, test, run, review or deploy SentinelFlow,
+# and a reader looking for how the system works is better served by docs/.
+#
+# They stay on disk and out of the published repository. Anything in them that
+# an external engineer needs was moved into permanent documentation first -
+# the coding standards to docs/development/ENGINEERING_STANDARDS.md, the debt
+# register to docs/development/KNOWN_ISSUES.md, and the operational lessons to
+# the runbooks and troubleshooting guide.
 # ---------------------------------------------------------------------------
-.claude/runtime/
+.claude/
+CLAUDE.md
+AGENTS.md
+PROJECT_STATE.md
+scripts/claude/
+docs/planning/SESSION_LOG.md
+docs/planning/IMPLEMENTATION_PLAN.md
+docs/development/CLAUDE_CODE_SETUP.md

@@ -91,7 +91,10 @@ AI-generation boilerplate to every message.
 ## Standards this repository enforces
 
 These are not style preferences; a pull request that breaks one will be asked to
-change.
+change. The per-application rules — Java layering, Python typing and model
+discipline, console state and accessibility — are in
+[`docs/development/ENGINEERING_STANDARDS.md`](docs/development/ENGINEERING_STANDARDS.md).
+What follows applies everywhere.
 
 - **Money is never a floating-point number.** Decimal, with an explicit currency
   code, everywhere — database, API, events, and UI.
@@ -125,10 +128,14 @@ A change to behaviour ships with tests for that behaviour.
 | Browser and a11y | `make test-e2e`     | Playwright plus axe, two viewports |
 | Running stack    | `make smoke`        | Every service over the network     |
 
-PostgreSQL and Kafka are tested against real instances through Testcontainers
-from Phase 2 onward. H2 is not acceptable as evidence that a PostgreSQL
-migration works, and a test suite that mocks away both the database and the
-broker is not an integration test.
+PostgreSQL and Kafka are tested against real instances through Testcontainers.
+H2 is not acceptable as evidence that a PostgreSQL migration works, and a test
+suite that mocks away both the database and the broker is not an integration
+test.
+
+`make verify-real-stack` goes one step further and drives the console against
+the running Compose stack with nothing stubbed. It needs `make up` first, and it
+is the check that catches what a green build cannot see.
 
 ## Documentation
 

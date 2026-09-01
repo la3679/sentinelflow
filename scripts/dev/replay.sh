@@ -95,7 +95,7 @@ require_stack() {
     local state
     state="$(compose ps --format '{{.Service}} {{.Status}}' | awk '$1 == "api" {$1=""; print}')"
     case "$state" in
-    *Restarting*) fail "the api container is restarting: ${state}. See PROJECT_STATE.md on the export flag." ;;
+    *Restarting*) fail "the api container is restarting: ${state}. See docs/operations/TROUBLESHOOTING.md on the export flag." ;;
     esac
     curl -fsS "${API_BASE}/actuator/health/readiness" >/dev/null ||
         fail "the api is not ready at ${API_BASE}"

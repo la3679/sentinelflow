@@ -7,7 +7,7 @@
 ## Context
 
 SentinelFlow's operations console is designed and iterated in Lovable, and the rest of the
-platform is built locally with Claude Code. Both need to write to the same repository.
+platform is built locally. Both need to write to the same repository.
 
 Lovable's GitHub integration **creates a new repository when a project is connected and cannot
 import an existing repository**. It synchronises **one branch at a time** — by default the
@@ -30,7 +30,7 @@ to it. We would be left choosing between abandoning Lovable or abandoning the re
    to a rejected protected-branch push by silently diverting the change to a backup branch, which
    would produce confusing orphaned work. Afterwards, Lovable is pointed at a dedicated
    `design/lovable-*` branch and its output is merged through pull requests.
-7. **Lovable and Claude never edit the same branch concurrently.**
+7. **Lovable and local development never edit the same branch concurrently.**
 
 ## Consequences
 

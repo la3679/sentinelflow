@@ -5,7 +5,7 @@
 - **Related:** [ADR-0012](0012-operator-authentication.md),
   [ADR-0014](0014-where-the-console-s-remaining-screens-get-their-data.md),
   [ADR-0002](0002-monorepo-and-service-boundaries.md),
-  `PROJECT_STATE.md` §"Required before v1 — carried forward" §1
+  the v1 release requirement that an alert can be given to a named analyst
 
 ## Context
 
@@ -31,7 +31,7 @@ validated that the assignee exists, is active, and holds a role that can work an
 assignment as a no-op. **None of that changes here.** What was missing was everything a client needed
 in order to use it.
 
-`PROJECT_STATE.md` §1 fixes what "done" means, and every clause of it is binding.
+That requirement fixes what "done" means, and every clause of it is binding.
 
 ## Decision
 
@@ -49,7 +49,8 @@ A paged, bounded list of **active** operators holding a role that can work an al
 The `system` principal is excluded by both, and could not hold a token in any case.
 
 **This is the same rule the assignment endpoint enforces, and that is the point.** A picker that
-offered somebody the server would refuse is a dead control, which `.claude/rules/frontend.md`
+offered somebody the server would refuse is a dead control, which
+[`ENGINEERING_STANDARDS.md`](../development/ENGINEERING_STANDARDS.md)
 forbids. It is **an affordance and never an authorization**: the server checks again on the way in,
 because a client is free to send an identifier this endpoint never gave it, and
 `OperatorDirectoryIT` proves it by assigning an auditor the directory never listed and asserting the

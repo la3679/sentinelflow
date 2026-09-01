@@ -1,6 +1,6 @@
 # API migration audit — what the console asks for, and what the API answers
 
-**Audited:** 2026-08-28 · **Auditor:** Claude · **Opens:** Phase 6 · **Status:** closed — all four
+**Audited:** 2026-08-28 · **Status:** closed — all four
 pieces done
 
 > **Closed on 2026-08-28.** All four pieces landed the same day: the transport and authentication,
@@ -26,14 +26,14 @@ tests, so the table below is now accurate — but the lesson is the general one,
 shape as the reference collision and the seed's idempotency guard: **a check that reads one of two
 documents and reports on both is a check that has not been made.**
 
-Phase 6's first deliverable is "typed RTK Query API layer replacing the Lovable mock fixtures".
-[`AGENTS.md`](../../AGENTS.md) describes that migration as "limited to replacing `mockBaseQuery`
+The console's first backend deliverable was a typed RTK Query API layer replacing the Lovable mock
+fixtures, and the standing description of that migration was "limited to replacing `mockBaseQuery`
 with `fetchBaseQuery`". **It is not**, and this audit is the evidence, endpoint by endpoint, before
-a line of client code is written against a shape that does not exist.
+a line of client code was written against a shape that does not exist.
 
 Every claim below was checked against
 [`contracts/openapi/sentinelflow-api.yaml`](../../contracts/openapi/sentinelflow-api.yaml) — the
-authoritative contract per [`CLAUDE.md`](../../CLAUDE.md) — and against the handlers themselves,
+authoritative contract — and against the handlers themselves,
 not against either document's description of the other.
 
 ## Verdict
@@ -89,7 +89,8 @@ closing an already-dispositioned alert, because those states are terminal), and 
 that are legal (`NEW → CLOSED`, `IN_REVIEW → NEW`, `IN_REVIEW → CLOSED`, `ESCALATED → IN_REVIEW`).
 
 **Phase 6's gate is "no dead controls".** A button that always fails is the definition of one, and
-this is not a bug to fix in the map — it is the map. `.claude/rules/frontend.md` already says it:
+this is not a bug to fix in the map — it is the map.
+[`ENGINEERING_STANDARDS.md`](../development/ENGINEERING_STANDARDS.md) already says it:
 "No business logic in a component. Risk rules, thresholds, and state transitions belong to the API."
 
 **The fix is to delete `ALLOWED_TRANSITIONS`, not to correct it.** A corrected copy is still a copy,
@@ -113,8 +114,8 @@ the API's four. The console's four must go.
 `AUTHORIZED | DECLINED | PENDING | REVERSED`, which describes what a payment switch decided. The API
 has `processingStatus: PENDING | ASSESSED | FAILED`, which describes how far _this_ system has got
 with it. SentinelFlow never authorizes or declines anything — it scores. The console's enum
-describes a product this is not, and showing it would be the kind of claim
-[`CLAUDE.md`](../../CLAUDE.md) forbids.
+describes a product this is not, and showing it would be the kind of claim this repository
+forbids.
 
 **`Role` gains a fourth value.** `AlertAction.actorRole` includes `SYSTEM`, because the alert-raising
 path is attributed to the system principal. A console that types roles as the three human ones
@@ -207,7 +208,7 @@ actor.
 
 ## What this audit changes about the plan
 
-The migration is four pieces of work, not one, and only the first is what `AGENTS.md` describes:
+The migration is four pieces of work, not one, and only the first is what that description covers:
 
 1. **Transport and authentication** — `fetchBaseQuery`, the login flow, the bearer header, `401`
    handling. Prerequisite for everything else. **Done, 2026-08-28.** `src/api/transport.ts` carries

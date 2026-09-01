@@ -49,5 +49,5 @@
 - [ ] Documentation and diagrams match the code
 - [ ] No secrets, credentials, or real personal data
 - [ ] No invented figures - every number quoted came from a run
-- [ ] Contracts, ADRs, and `PROJECT_STATE.md` updated where affected
+- [ ] Contracts, ADRs, and `docs/development/KNOWN_ISSUES.md` updated where affected
 - [ ] Self-reviewed the full diff

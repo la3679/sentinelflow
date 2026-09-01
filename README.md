@@ -407,7 +407,7 @@ apps/web/        React operations console
 contracts/       OpenAPI, AsyncAPI, and the event schemas — authoritative
 data/            Synthetic generation profiles and exported datasets
 infra/           Prometheus rules, Grafana dashboards, container configuration
-scripts/         Bootstrap, smoke, benchmark, and checkpoint scripts
+scripts/         Bootstrap, smoke, benchmark, and developer scripts
 docs/            ADRs, architecture, ML, operations, security, testing, performance
 compose.yaml     The whole local stack
 Makefile         The command surface (PowerShell equivalent in scripts/dev/sf.ps1)
@@ -617,44 +617,48 @@ ones that explain the most:
 
 ## Documentation
 
-| Area                     | Start here                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------- |
-| The main flow            | [`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) |
-| Data model               | [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md)                     |
-| API and event contracts  | [`contracts/`](contracts/)                                                               |
-| Decisions                | [`docs/adr/`](docs/adr/)                                                                 |
-| Model and evaluation     | [`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md)                                         |
-| Data provenance          | [`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md)                           |
-| Test results             | [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md)                           |
-| Release notes            | [`CHANGELOG.md`](CHANGELOG.md)                                                           |
-| Benchmarks               | [`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md)                         |
-| Observability            | [`docs/operations/OBSERVABILITY.md`](docs/operations/OBSERVABILITY.md)                   |
-| Runbooks                 | [`docs/operations/RUNBOOKS.md`](docs/operations/RUNBOOKS.md)                             |
-| Troubleshooting          | [`docs/operations/TROUBLESHOOTING.md`](docs/operations/TROUBLESHOOTING.md)               |
-| Threat model             | [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md)                         |
-| Research and versions    | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                         |
-| Planning and phase state | [`docs/planning/`](docs/planning/) · [`PROJECT_STATE.md`](PROJECT_STATE.md)              |
-| Frontend audits          | [`docs/frontend/`](docs/frontend/)                                                       |
-| Development environment  | [`docs/development/CLAUDE_CODE_SETUP.md`](docs/development/CLAUDE_CODE_SETUP.md)         |
-| Contributing             | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                     |
+| Area                    | Start here                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| The main flow           | [`docs/architecture/TRANSACTION_TO_ALERT.md`](docs/architecture/TRANSACTION_TO_ALERT.md) |
+| Data model              | [`docs/architecture/DATA_MODEL.md`](docs/architecture/DATA_MODEL.md)                     |
+| API and event contracts | [`contracts/`](contracts/)                                                               |
+| Decisions               | [`docs/adr/`](docs/adr/)                                                                 |
+| Model and evaluation    | [`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md)                                         |
+| Data provenance         | [`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md)                           |
+| Test results            | [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md)                           |
+| Release notes           | [`CHANGELOG.md`](CHANGELOG.md)                                                           |
+| Benchmarks              | [`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md)                         |
+| Observability           | [`docs/operations/OBSERVABILITY.md`](docs/operations/OBSERVABILITY.md)                   |
+| Runbooks                | [`docs/operations/RUNBOOKS.md`](docs/operations/RUNBOOKS.md)                             |
+| Troubleshooting         | [`docs/operations/TROUBLESHOOTING.md`](docs/operations/TROUBLESHOOTING.md)               |
+| Threat model            | [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md)                         |
+| Research and versions   | [`docs/research/RESEARCH_LOG.md`](docs/research/RESEARCH_LOG.md)                         |
+| Product requirements    | [`docs/planning/PRODUCT_REQUIREMENTS.md`](docs/planning/PRODUCT_REQUIREMENTS.md)         |
+| Frontend audits         | [`docs/frontend/`](docs/frontend/)                                                       |
+| Engineering standards   | [`docs/development/ENGINEERING_STANDARDS.md`](docs/development/ENGINEERING_STANDARDS.md) |
+| Known issues            | [`docs/development/KNOWN_ISSUES.md`](docs/development/KNOWN_ISSUES.md)                   |
+| Contributing            | [`CONTRIBUTING.md`](CONTRIBUTING.md)                                                     |
 
 ## Status and roadmap
 
 **v1.0.0 is released.** The pipeline, the console, observability, security hardening, performance
-work and the documentation are built, tested and measured; [`CHANGELOG.md`](CHANGELOG.md) is what
-the release contains and what it does not. Phase-by-phase state, with the evidence behind each gate,
-is in [`PROJECT_STATE.md`](PROJECT_STATE.md) and
-[`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md).
+work and the documentation are built, tested and measured. [`CHANGELOG.md`](CHANGELOG.md) is what
+the release contains and what it does not; the evidence behind every figure is in
+[`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md), and what is still open is in
+[`docs/development/KNOWN_ISSUES.md`](docs/development/KNOWN_ISSUES.md).
 
 **Two verification items are outstanding and need a person**: a screen-reader pass, and a manual
 authenticated walkthrough of the console in a browser. Both are named in the release notes rather
 than quietly satisfied by an automated run.
 
 **Named and not yet built**, each deferred deliberately rather than forgotten: endpoints for
-reprocessing a dead-lettered event, reviving a failed outbox row and rescoring a degraded assessment, which today
-have only a manual procedure in the runbooks; an authenticated, rate-limited HTTP replay endpoint,
-which is API surface rather than a Makefile target and is scheduled as such; and a Server-Sent
-Events stream, once there is a stream worth carrying.
+reprocessing a dead-lettered event, reviving a failed outbox row and rescoring a degraded
+assessment, which today have only a manual procedure in the runbooks; an authenticated,
+rate-limited HTTP replay endpoint, which is API surface rather than a Makefile target; and a
+Server-Sent Events stream, once there is a stream worth carrying.
+
+**Considered for after v1**, and neither started nor promised: a synthetic customer-onboarding
+demonstration, and a MySQL-to-PostgreSQL migration lab. Neither may destabilise what is released.
 
 ## Deployment
 
@@ -673,7 +677,7 @@ file.
 ## Development
 
 This repository was created by [Lovable](https://lovable.dev), which built the reviewed frontend
-foundation; everything since has been built locally with Claude Code. The full history, including
+foundation; everything since has been built locally. The full history, including
 Lovable's original root commit, is preserved — nothing has been squashed or rewritten. Moving the
 console to `apps/web/` ended Lovable's ability to regenerate the project, a trade recorded with its
 two honest routes back in

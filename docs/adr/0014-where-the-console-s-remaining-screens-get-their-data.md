@@ -34,7 +34,8 @@ Three facts established while building the rest of the migration, none of which 
    lag.
 
 The rule that decides most of this is already written down and is not negotiable:
-[`CLAUDE.md`](../../CLAUDE.md) forbids invented numbers, and `.claude/rules/frontend.md` forbids
+This repository forbids invented numbers, and
+[`ENGINEERING_STANDARDS.md`](../development/ENGINEERING_STANDARDS.md) forbids
 dead controls and requires every screen to make it discoverable that the data is synthetic. A panel
 of made-up latency percentiles fails both.
 
@@ -64,7 +65,7 @@ rate-limit.
 **The empty table is recorded as debt rather than quietly left.** `model_registry` and its
 constraints stay, because the decision they anticipate — a registry with promotion and rollback —
 is a real one for a later phase. Until then nothing reads it, and
-[`PROJECT_STATE.md`](../../PROJECT_STATE.md) says so.
+[`KNOWN_ISSUES.md`](../development/KNOWN_ISSUES.md) says so.
 
 **A degraded answer is a real answer.** If the scoring service cannot be reached, the endpoint
 returns the policy half with the model half absent and says which, rather than failing. The console

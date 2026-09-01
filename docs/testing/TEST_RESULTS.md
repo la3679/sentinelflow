@@ -5,8 +5,8 @@ it. Nothing here is estimated, and a figure that has not been re-measured keeps 
 rather than being quietly refreshed.
 
 This is the reader-facing record. The per-phase gate evidence, including what each run was allowed
-to close, lives in [`PROJECT_STATE.md`](../../PROJECT_STATE.md) under "Test and verification
-evidence".
+to close, is summarised in [`../../CHANGELOG.md`](../../CHANGELOG.md); what remains open is in
+[`../development/KNOWN_ISSUES.md`](../development/KNOWN_ISSUES.md).
 
 ## Reproducing these numbers
 

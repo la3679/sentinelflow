@@ -17,13 +17,14 @@ signal that is firing on the running stack rather than a command that will not r
 
 ## Running the tooling
 
-| Symptom                                            | Cause and fix                                                                                                                                         |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `./mvnw` fails with permission denied              | The executable bit was lost. `git update-index --chmod=+x apps/api/mvnw`.                                                                             |
-| Playwright times out on every test                 | A stale `vite preview` is holding port 4173. Kill it and rerun.                                                                                       |
-| `bun install` fails with `ENAMETOOLONG` on Windows | The clone path is too deep — nested `node_modules` paths exceed Windows' 260-character limit. Clone somewhere shorter, such as `C:\src\sentinelflow`. |
-| `make smoke` fails on Kafka in Git Bash            | Path conversion. The script scopes `MSYS_NO_PATHCONV`; run the script rather than the commands by hand.                                               |
-| `make` is not installed                            | Every target has a PowerShell equivalent: `.\scripts\dev\sf.ps1 <target>`.                                                                            |
+| Symptom                                            | Cause and fix                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./mvnw` fails with permission denied              | The executable bit was lost. `git update-index --chmod=+x apps/api/mvnw`.                                                                                                                                                                                                              |
+| Playwright times out on every test                 | A stale `vite preview` is holding port 4173. Kill it and rerun.                                                                                                                                                                                                                        |
+| `bun install` fails with `ENAMETOOLONG` on Windows | The clone path is too deep — nested `node_modules` paths exceed Windows' 260-character limit. Clone somewhere shorter, such as `C:\src\sentinelflow`.                                                                                                                                  |
+| `make smoke` fails on Kafka in Git Bash            | Path conversion. The script scopes `MSYS_NO_PATHCONV`; run the script rather than the commands by hand.                                                                                                                                                                                |
+| `make` is not installed                            | Every target has a PowerShell equivalent: `.\scripts\dev\sf.ps1 <target>`.                                                                                                                                                                                                             |
+| The API container is stuck in `Restarting`         | `SENTINELFLOW_SCORING_EXPORT_ENABLED` is still set on the service from a `make export-dataset`, and the export runner refuses to overwrite an existing dataset — so startup fails, restarts, and fails again. Run `docker compose up -d --force-recreate --wait api` without the flag. |
 
 ## The pipeline is running but nothing is scored
 

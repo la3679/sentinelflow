@@ -230,7 +230,7 @@ Recorded so that no result measured on it is over-claimed:
   about any production system, and no figure from it should be presented as one.
 
 Every performance number this project ever reports carries the command, the date, and the profile
-it was measured on. See [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md).
+it was measured on. See [`../testing/TEST_RESULTS.md`](../testing/TEST_RESULTS.md).
 
 ---
 

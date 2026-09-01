@@ -1,7 +1,6 @@
 # Frontend foundation audit — Lovable Phase 0 output
 
 **Audited:** 2026-08-25 · **Lovable project:** `e1341a35-a595-4af4-b0a5-c158ba286897` ·
-**Auditor:** Claude (engineering lead)
 
 The Phase 0 frontend was explicitly scoped as a **presentational foundation with deterministic
 synthetic fixtures and no authentication**. This audit checks the generated code against that
