@@ -3,9 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 /**
  * Operator identity, verified against the Docker Compose stack.
  *
- * `PROJECT_STATE.md`, "Required before v1" §1 makes one clause binding that no
- * other suite in this repository can satisfy: operator identity must be
- * **verified against the real stack, not only against Testcontainers**. The
+ * One requirement of named assignment is binding and no other suite in this
+ * repository can satisfy it: operator identity must be **verified against the
+ * real stack, not only against Testcontainers**. The
  * console suite in `tests/e2e` stubs the API in the browser, and the API suite
  * runs against Testcontainers. Both were green on code that could not start
  * under compose, which is how three defects reached a demo unnoticed.

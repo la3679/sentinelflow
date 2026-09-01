@@ -53,7 +53,7 @@ import io.github.la3679.sentinelflow.api.web.limit.RequestTooLargeException;
  * which in a real deployment includes people who should learn nothing from it. That is also why
  * this class exists at all rather than the exception reaching Spring's default handler.
  *
- * <p>Handled once, here. Per {@code .claude/rules/java.md}, no layer below catches and logs and
+ * <p>Handled once, here. Per {@code docs/development/ENGINEERING_STANDARDS.md}, no layer below catches and logs and
  * rethrows on the way up: one log line, written where the decision about what to do is made.
  */
 @RestControllerAdvice

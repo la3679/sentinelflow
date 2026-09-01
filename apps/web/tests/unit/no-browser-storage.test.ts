@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 /**
  * The token is a credential, and it lives in memory or nowhere.
  *
- * `.claude/rules/frontend.md` forbids session or authorization state in browser
+ * `docs/development/ENGINEERING_STANDARDS.md` forbids session or authorization state in browser
  * storage. This was a scope guard while the console had no session at all; now
  * that it holds a real bearer token it is the thing that stops a reload-survives
  * convenience from becoming a credential on disk. A reload signing the operator

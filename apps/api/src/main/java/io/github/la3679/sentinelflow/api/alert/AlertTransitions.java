@@ -90,7 +90,7 @@ public final class AlertTransitions {
      *
      * {@code CLOSED} is legal from every live status and is an administrator's alone
      * ({@link #requiresAdministrator}), so an analyst offered it gets a {@code 403} for a button the
-     * interface drew. {@code .claude/rules/frontend.md} calls that a dead control and Phase 6's gate
+     * interface drew. {@code docs/development/ENGINEERING_STANDARDS.md} calls that a dead control, and the console's gate
      * forbids one. Answering "legal from here" and leaving the caller to subtract the
      * administrator's move would put a second copy of that rule in the console, which is the thing
      * this method exists to prevent.

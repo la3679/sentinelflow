@@ -628,7 +628,7 @@ function ConflictNotice({
  *
  * <h2>Four states, because it is a data view</h2>
  *
- * `.claude/rules/frontend.md` requires loading, empty, error-with-retry and
+ * `docs/development/ENGINEERING_STANDARDS.md` requires loading, empty, error-with-retry and
  * bounded of every data view, and this is one — it reads `GET /operators`.
  * Bounded is the API's doing: it caps the page and refuses more, so this cannot
  * grow into an unbounded list however many operators exist.

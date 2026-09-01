@@ -2,7 +2,7 @@
  * SentinelFlow domain model, as `contracts/openapi/sentinelflow-api.yaml`
  * describes it.
  *
- * The contract is authoritative (`CLAUDE.md`), so where this file and the
+ * The contract is authoritative, so where this file and the
  * contract disagree, this file is wrong. Everything here describes SYNTHETIC
  * data only.
  *

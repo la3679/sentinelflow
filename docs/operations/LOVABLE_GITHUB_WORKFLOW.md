@@ -44,7 +44,7 @@ and nothing ever should be — a rewrite corrupts Lovable's side of the sync as 
 
 - **GitHub is the source of truth** once the connection exists.
 - Lovable syncs **one branch at a time**, by default the repository default branch.
-- **Lovable and Claude never edit the same branch concurrently.**
+- **Lovable and local development never edit the same branch concurrently.**
 - Before a Lovable session: fetch, ensure a clean tree, push everything, and record the branch.
 - After a Lovable session: fetch, review **every** diff for accessibility, security, API
   boundaries, duplicate dependencies, broken types and dead mock code, run the frontend build and
@@ -84,6 +84,19 @@ The cost was accepted deliberately. Lovable's role — creating the repository a
 reviewed frontend foundation — was complete at the end of Phase 0. Phase 6 develops the console
 in the local clone, wired to the real API: that is engineering work against a live backend, not
 generation work.
+
+### `.lovable/project.json` stays in the repository
+
+It is four lines naming the template and revision the project was scaffolded from, written by
+Lovable's own first commit and never touched since. It was reviewed during the post-v1 repository
+cleanup and **deliberately kept**, for three reasons: it is Lovable's metadata rather than a
+development artefact, the repository connection is documented above as intact and must stay that
+way, and the first of the two routes below puts the console back at the repository root for a
+generation session — which is exactly the situation where a scaffold marker is likely to matter.
+
+Nothing was found that proves removing it would break the linkage, and nothing was found that proves
+it would not. **The uncertainty is the reason it stays**: the file costs nothing, and the failure it
+could cause is one nobody would notice until a design session was already going wrong.
 
 ### If a future design session is wanted
 

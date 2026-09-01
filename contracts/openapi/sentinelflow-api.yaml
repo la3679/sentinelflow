@@ -10,10 +10,9 @@ info:
     financial decision.
 
     This document is the **baseline contract** for `/api/v1`, written before the
-    handlers exist so that implementation is reviewed against it rather than
-    the reverse. Endpoints are marked with the phase that delivers them; an
-    endpoint present here is not necessarily running yet. See
-    `docs/planning/IMPLEMENTATION_PLAN.md`.
+    handlers existed so that implementation was reviewed against it rather than
+    the reverse. Every endpoint here ships in v1.0.0; the phase annotations
+    record when each was delivered.
 
     ## Conventions
 

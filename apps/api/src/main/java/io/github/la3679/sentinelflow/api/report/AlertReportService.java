@@ -46,7 +46,7 @@ public class AlertReportService {
      *
      * <p>Ten thousand is roughly what a spreadsheet handles comfortably and is far more than any
      * review window this demo produces. It exists so the endpoint cannot become a way to pull the
-     * whole table into memory in one request — {@code .claude/rules/java.md} calls an endpoint whose
+     * whole table into memory in one request — {@code docs/development/ENGINEERING_STANDARDS.md} calls an endpoint whose
      * result grows with the dataset a denial-of-service primitive, and an export is the most
      * tempting place to make that exception.
      */

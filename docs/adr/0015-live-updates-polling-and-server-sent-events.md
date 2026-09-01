@@ -99,7 +99,7 @@ per-message overhead and bidirectionality — are worth nothing at the message r
 header. The two ways round that are both refused:
 
 - **Rejected: the token in the query string.** It would be written into access logs, proxy logs and
-  `Referer` headers. [`CLAUDE.md`](../../CLAUDE.md) forbids secrets in logs, and a credential in a
+  `Referer` headers. This repository forbids secrets in logs, and a credential in a
   URL is a credential in every log that URL touches.
 - **Rejected: a session cookie for the stream alone.** ADR-0012 §1 rejected cookies for this console
   and named the CSRF surface they drag across origins. Reintroducing one for a single endpoint would

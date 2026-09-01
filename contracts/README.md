@@ -87,6 +87,7 @@ deploy simultaneously.
 
 ## Implementation status
 
-These describe the v1 target. Endpoints and topics are annotated with the phase that delivers them
-— a contract entry is not a claim that something is running. Current state is in
-[`PROJECT_STATE.md`](../PROJECT_STATE.md).
+Everything described here ships in **v1.0.0**. Some entries still carry the phase annotation they
+were written with, which records when an endpoint or topic was delivered rather than whether it is
+running. What is _not_ built is named in
+[`docs/development/KNOWN_ISSUES.md`](../docs/development/KNOWN_ISSUES.md).

@@ -141,7 +141,7 @@ There is no upgrade path to write, because there is no earlier release to upgrad
   throughput, cold starts and the console are not measured at all.
 
 The full list, including entries too small for release notes, is under "Known issues and technical
-debt" in [`PROJECT_STATE.md`](PROJECT_STATE.md).
+debt" in [`docs/development/KNOWN_ISSUES.md`](docs/development/KNOWN_ISSUES.md).
 
 ### Evidence
 

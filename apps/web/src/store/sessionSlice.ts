@@ -7,7 +7,7 @@ import { ROLES, type Role } from "@/domain/types";
  *
  * <h2>Nothing here is persisted, and that is the design</h2>
  *
- * The token is a credential. `.claude/rules/frontend.md` forbids session or
+ * The token is a credential. `docs/development/ENGINEERING_STANDARDS.md` forbids session or
  * authorization state in browser storage and a test enforces it, so a reload
  * signs the operator out. That is the honest consequence of ADR-0012 §3's
  * decision to take a short expiry instead of a refresh token: there is nothing

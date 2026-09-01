@@ -111,10 +111,11 @@ machine-to-machine surface whose caller is a payment pipeline rather than a pers
 password buys nothing there; giving it the operator's authentication would be modelling it as
 something it is not. It needs its own credential — a service account or a signed request — together
 with the rate limits and payload bounds that belong beside it, and that is
-[Phase 8's](../planning/IMPLEMENTATION_PLAN.md) work.
+later security-hardening work.
 
 **This is a real gap and it is stated rather than glossed:** until Phase 8, anything that can reach
-the API can submit a synthetic transaction. It is recorded in `PROJECT_STATE.md` under known issues,
+the API can submit a synthetic transaction. It is recorded in
+[`KNOWN_ISSUES.md`](../development/KNOWN_ISSUES.md),
 and the demo stack binds to localhost.
 
 > **Correction, 2026-08-31.** That last clause was not true when it was written. `compose.yaml`
