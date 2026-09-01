@@ -14,22 +14,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last updated UTC     | 2026-08-31T23:05Z                                                                                                                                |
-| Updated by           | Claude                                                                                                                                           |
-| Overall status       | active — **Phase 8 closed.** All seven deliverables merged, all four gate criteria evidenced. Phase 9 is not started                             |
-| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (not started)                                                                   |
-| Current task         | **none in progress.** The Dependabot round is finished and no pull request is open                                                               |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                         |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                             |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                               |
-| Working branch       | `main`                                                                                                                                           |
-| Local clone verified | **yes**                                                                                                                                          |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json` |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                             |
-| Open PRs             | none                                                                                                                                             |
-| Latest release       | none                                                                                                                                             |
+| Field                | Value                                                                                                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T00:05Z                                                                                                                                                    |
+| Updated by           | Claude                                                                                                                                                               |
+| Overall status       | active — **Phase 8 closed** and its CodeQL triage finished (0 open alerts). **Phase 9 opened**: `make bench`, a measured index, and the README's performance section |
+| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (in progress)                                                                                       |
+| Current task         | **none in progress.** Phase 9 has its benchmark harness and its first measured optimization; the README, diagrams audit and clean-clone check are not started        |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                             |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                 |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                   |
+| Working branch       | `main`                                                                                                                                                               |
+| Local clone verified | **yes**                                                                                                                                                              |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                     |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                 |
+| Open PRs             | none                                                                                                                                                                 |
+| Latest release       | none                                                                                                                                                                 |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -83,7 +83,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 6 — operations frontend**
 - [x] **Phase 7 — observability and resilience**
 - [x] **Phase 8 — security and quality hardening**
-- [ ] **Phase 9 — performance and documentation** ← next
+- [ ] **Phase 9 — performance and documentation** ← in progress: benchmark harness and the first measured optimization merged
 - [ ] Phase 10 — release
 
 ## Completed — Phase 1
@@ -2774,43 +2774,37 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 8 is closed** — all seven deliverables merged as PRs
-[#91](https://github.com/la3679/sentinelflow/pull/91) to
-[#96](https://github.com/la3679/sentinelflow/pull/96), all four gate criteria evidenced with their
-limits stated, and the Dependabot round finished with no pull request open. **Phase 9 is not
-started.**
+**Phase 8 is closed**, and its CodeQL triage is finished: **0 open alerts**, 2 fixed in code, 10
+dismissed with recorded reasons. **Phase 9 is in progress** — the benchmark harness, the first
+measured optimization and the README's performance section are merged (PR
+[#99](https://github.com/la3679/sentinelflow/pull/99)).
 
-Read "Acceptance criteria status — Phase 8 gate" before reopening anything from it. Four threat-model
-items are open **on purpose and with owners** — T-04, T-05, T-08 and T-09 — and none of them is a
-gap somebody forgot.
+**Read this before quoting any CodeQL number.** A pull-request analysis and a branch analysis do not
+answer the same question. The gate's first draft recorded "0 results" from the merge refs while
+`refs/heads/main` had 12 alerts. Check `refs/heads/main`.
 
-1. **Benchmark the pipeline, which is Phase 9's first deliverable and the one everything else in the
-   phase depends on.** It needs a documented reference environment before a single number is
-   recorded, because a figure without the machine it was measured on is not reproducible and this
-   file forbids inventing one. Two things are already waiting on it: the rate-limit defaults in
-   `application.yaml` are **starting points rather than measurements** — ADR-0017 §2 says so and says
-   this table moves if a benchmark shows a default shaping legitimate throughput — and every alerting
-   threshold in `infra/prometheus/rules/sentinelflow.yml` is derived from a configured budget rather
-   than from a baseline. **Do not seed the numbers from the local database**: it holds 7,260 `FAILED`
-   transactions and 13,455 `degraded` assessments from the h2c defect, and the distribution in it is
-   not one anyone should read anything into. `make reset-demo` then `make seed` gives a clean one;
-   read "Before resuming, note the local database is on the LOCAL profile" first.
+1. **The README's five Mermaid diagrams and the documentation index audit.** The plan asks for
+   diagrams that match the code, a complete index and no broken links or placeholders. The index
+   gained three entries this session (the threat model, ADR-0017, the benchmark) and the README
+   gained a performance section, so there is more to check rather than less. `make docs-check`
+   passes at 239 links across 49 files; what it cannot check is whether a diagram still describes
+   the system.
 
-2. **The README's diagrams and the clean-clone verification.** The plan asks for five Mermaid
-   diagrams that match the code, a complete documentation index, and every README command run from a
-   fresh clone. The index gained two entries in Phase 8 (the threat model, and ADR-0017), and the
-   README's security table and known-limitations list were rewritten — so a clean-clone pass now has
-   more to check, not less. **`make bootstrap` is the first command a clean clone runs**, and it
-   gained a required secret this phase (`SENTINELFLOW_INGEST_API_KEY`); the bug that made it exit 1
-   against an existing `.env` was fixed in the same phase, but neither has been exercised from an
-   actually-empty clone.
+2. **The clean-clone verification.** Every README command run from a fresh clone. **`make bootstrap`
+   is the first one**, and it gained a required secret in Phase 8 (`SENTINELFLOW_INGEST_API_KEY`)
+   plus a fix for the bug that made it exit 1 against an existing `.env` — neither has been
+   exercised from an actually-empty clone. `make bench` is new and needs the same treatment.
 
-3. **"Required before v1 — carried forward" is still the thing that decides whether Phase 10 can
-   ship.** Real operator identity has not been started and Phase 10 cannot ship without it; the two
-   human-verification items — a screen-reader pass and a manual authenticated walkthrough — are
-   nobody's to tick off on a person's behalf. Neither is Phase 9 work, and both are close enough now
-   that a session reaching Phase 9's end without a plan for them is a session that will discover them
-   in Phase 10.
+3. **More measured optimizations, or an honest statement that one was enough.** `GET /alerts` now
+   has the worst p99 of the five endpoints (110 ms against a table of six rows plus whatever the
+   benchmark raised), which is worth a plan before it is worth an index. **Do not benchmark against
+   the current local database without reading "Before resuming" below**: it holds 7,260 `FAILED`
+   transactions and 13,455 `degraded` assessments from the h2c defect, and the benchmark itself now
+   adds alert-raising rows on every run.
+
+**Still open and owned, from the threat model:** T-04 (`/actuator/prometheus` unauthenticated),
+T-05 (the scoring service has no credential), T-08 (no token revocation, accepted), T-09 (ingestion
+is one shared key, not a per-caller identity).
 
 ### Five things this session learned the hard way, worth carrying forward
 
