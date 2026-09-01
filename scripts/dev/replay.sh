@@ -60,6 +60,22 @@ fail() {
 
 compose() { docker compose "$@"; }
 
+# Every call that names a path inside the Kafka container goes through this.
+#
+# Git Bash rewrites an argument that looks like an absolute POSIX path into a
+# Windows one before handing it to a native binary, so
+# /opt/kafka/bin/kafka-console-producer.sh arrives at the daemon as
+# C:/Program Files/Git/opt/kafka/bin/kafka-console-producer.sh and the exec
+# fails with 127. MSYS_NO_PATHCONV is scoped to these calls rather than
+# exported, because curl elsewhere in this script needs the ordinary conversion.
+#
+# smoke.sh already carried this guard for kafka-topics.sh. This script did not,
+# so `SCENARIO=poison-event make replay` had never worked in Git Bash - found by
+# running it from a clean clone, which is the only place nobody had run it yet.
+kafka_exec() {
+    MSYS_NO_PATHCONV=1 compose exec -T kafka "$@"
+}
+
 # A read-only query against the demo database. Reading, never editing: a replay
 # that edited rows behind the pipeline would be demonstrating the script rather
 # than the system.
@@ -306,7 +322,7 @@ uuid() {
 
 publish_raw() {
     printf 'replay-%s:%s\n' "$RUN_ID" "$1" |
-        compose exec -T kafka /opt/kafka/bin/kafka-console-producer.sh \
+        kafka_exec /opt/kafka/bin/kafka-console-producer.sh \
             --bootstrap-server localhost:9092 \
             --topic transaction.created.v1 \
             --property 'parse.key=true' \
@@ -330,7 +346,7 @@ undeliverable_count() {
 # string rather than as a non-zero exit through a pipe.
 dlq_depth() {
     local output
-    output="$(compose exec -T kafka /opt/kafka/bin/kafka-get-offsets.sh \
+    output="$(kafka_exec /opt/kafka/bin/kafka-get-offsets.sh \
         --bootstrap-server localhost:9092 --topic transaction.processing.dlq.v1 2>/dev/null || true)"
     [ -n "$output" ] || fail "could not read the dead-letter topic's offsets"
     printf '%s\n' "$output" | awk -F: '{ total += $3 } END { print total + 0 }'
