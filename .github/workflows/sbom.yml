@@ -32,6 +32,18 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        # A release event runs this workflow from the tag's own commit, so a
+        # defect in the attach step cannot be fixed for a release that already
+        # exists by fixing `main` and republishing - the republish would run the
+        # broken copy again. That is what happened at v1.0.0. This input makes
+        # the attach step re-runnable against an existing tag, from whatever
+        # `main` says today, which is what a release-artefact job needs to be.
+        description: "Attach the SBOMs and checksums to this existing release tag. Leave empty to build them only."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -181,7 +193,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: source
-    if: github.event_name == 'release'
+    # A published release, or a deliberate re-run naming a tag that already has
+    # one. Nothing else: a push to `main` must not touch a release.
+    if: github.event_name == 'release' || inputs.release_tag != ''
     permissions:
       contents: write
     steps:
@@ -204,7 +218,8 @@ jobs:
       - name: Upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
         run: >-
-          gh release upload "${{ github.event.release.tag_name }}"
+          gh release upload "$TAG"
           sbom-*.cdx.json SHA256SUMS
           --repo "${{ github.repository }}" --clobber
