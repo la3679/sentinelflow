@@ -3211,9 +3211,14 @@ manual authenticated walkthrough. Phase 10's gate says so explicitly.
 
 ### State at the stop
 
-`main` clean and in sync at `aaf1b3b`, all CI green. `feat/operator-identity` pushed, three commits,
-with `./mvnw verify` at 259 unit and 337 integration and coverage gates met, `bun run verify` clean,
-92 end-to-end tests and axe clean, contracts valid, and 297 documentation links with none broken.
-Nothing was left half-written.
+**PR #111 was merged before the session ended**, after all eighteen required checks passed on it.
+`main` is clean, in sync, green, with no pull request open and 0 open code-scanning alerts.
+
+Evidence behind the merge: `./mvnw verify` at 259 unit and 337 integration with coverage gates met,
+`bun run verify` clean, 92 end-to-end tests and axe clean at both viewports, contracts valid, and 303
+documentation links with none broken. Nothing was left half-written.
+
+**Merged is not finished.** "Required before v1" §1 stays open until operator identity has been
+verified against the real stack, which is action 1.
 
 ---
