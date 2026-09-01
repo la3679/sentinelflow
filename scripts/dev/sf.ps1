@@ -1045,7 +1045,23 @@ switch ($Target) {
         Invoke-Native $Web 'bun' @('run', 'build')
         Invoke-Native $Web 'bun' @('run', 'test:e2e')
     }
-    'verify-real-stack' { Invoke-Native $Web 'bun' @('run', 'test:real-stack') }
+    # The Makefile target sources .env; PowerShell has no `set -a`, so the one
+    # variable the driver needs is read out of the file and put on the process,
+    # exactly as `bench` below does it. The suite never opens .env itself.
+    'verify-real-stack' {
+        if (-not $env:SENTINELFLOW_DEMO_OPERATOR_PASSWORD) {
+            $envFile = Join-Path $RepoRoot '.env'
+            if (Test-Path $envFile) {
+                $line = Get-Content $envFile |
+                    Where-Object { $_ -match '^SENTINELFLOW_DEMO_OPERATOR_PASSWORD=' } |
+                    Select-Object -First 1
+                if ($line) {
+                    $env:SENTINELFLOW_DEMO_OPERATOR_PASSWORD = $line.Substring($line.IndexOf('=') + 1)
+                }
+            }
+        }
+        Invoke-Native $Web 'bun' @('run', 'test:real-stack')
+    }
 
     'lint' {
         Invoke-Native $Web 'bun' @('run', 'lint')

@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -21,8 +18,21 @@ import { expect, test, type Page } from "@playwright/test";
 
 const API_BASE = process.env["SENTINELFLOW_API_URL"] ?? "http://localhost:8080/api/v1";
 
-/** The seeded demo operators share one password, generated into `.env`. */
-const PASSWORD = demoOperatorPassword();
+/**
+ * The password the seeded demo operators share.
+ *
+ * From the environment only. `make verify-real-stack` and
+ * `.\scripts\dev\sf.ps1 verify-real-stack` put it there out of the git-ignored
+ * `.env`, the same way the `bench` target already does, so a developer with a
+ * working stack does not have to export it a second time.
+ *
+ * **Read here rather than parsed here.** An earlier version opened `.env`
+ * itself, and CodeQL was right about what that is: file contents flowing into
+ * an outbound request (`js/file-access-to-http`). A test has no business
+ * implementing dotenv, and moving the read to the runner removes the flow
+ * instead of arguing about it.
+ */
+const PASSWORD = process.env["SENTINELFLOW_DEMO_OPERATOR_PASSWORD"] ?? "";
 
 interface Operator {
   operatorId: string;
@@ -38,27 +48,6 @@ interface Alert {
   version: number;
   assigneeId: string | null;
   assignee: { operatorId: string; username: string; displayName: string } | null;
-}
-
-/**
- * The demo password, from the environment or from the git-ignored `.env`.
- *
- * `make bootstrap` generates it and compose reads it from the repository root,
- * so a developer who has a working stack already has the value and should not
- * have to export it a second time to run this.
- */
-function demoOperatorPassword(): string {
-  const fromEnv = process.env["SENTINELFLOW_DEMO_OPERATOR_PASSWORD"];
-  if (fromEnv) return fromEnv;
-  try {
-    const dotenv = readFileSync(resolve(import.meta.dirname, "../../../../.env"), "utf8");
-    const line = dotenv
-      .split(/\r?\n/)
-      .find((candidate) => candidate.startsWith("SENTINELFLOW_DEMO_OPERATOR_PASSWORD="));
-    return line ? line.slice(line.indexOf("=") + 1).trim() : "";
-  } catch {
-    return "";
-  }
 }
 
 async function api<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
@@ -187,7 +176,11 @@ async function release(alertId: string, token: string): Promise<void> {
 }
 
 test.describe("operator identity, against the real stack", () => {
-  test.skip(!PASSWORD, "SENTINELFLOW_DEMO_OPERATOR_PASSWORD is not set and .env was not readable");
+  test.skip(
+    !PASSWORD,
+    "SENTINELFLOW_DEMO_OPERATOR_PASSWORD is not set. Run this through `make verify-real-stack` " +
+      "or `.\\scripts\\dev\\sf.ps1 verify-real-stack`, which read it out of .env.",
+  );
 
   let session: Login;
   let token: string;

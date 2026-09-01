@@ -196,6 +196,13 @@ the suite, and the operators are whoever the stack holds.
 | Repeating an assignment that already holds                             | no version change, one `ASSIGNED` row, no second event                |
 | What the database holds afterwards                                     | one `alert_actions` row and one `alert.updated` outbox row, PUBLISHED |
 
+**The credential comes from the runner, not from the suite.** `make verify-real-stack` and its
+PowerShell twin source `.env` and pass `SENTINELFLOW_DEMO_OPERATOR_PASSWORD` through the
+environment, the same way `make bench` already did. The first version read `.env` itself and CodeQL
+flagged it as `js/file-access-to-http` — file contents flowing into an outbound request — which was
+a fair description of a test that had no business implementing dotenv. Run without the variable, the
+suite skips and says which command sets it.
+
 **The suite was checked against itself.** Two assertions were deliberately falsified — a wrong
 assignee id and an off-by-one option count — and both runs failed. A real-stack test that passes on
 the first attempt is worth exactly as much as the evidence that it can fail.

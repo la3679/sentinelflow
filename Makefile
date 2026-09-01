@@ -168,8 +168,13 @@ test-e2e: ## Playwright browser, accessibility and responsive checks
 # Neither is the stack a demo runs on, and three defects that a fully green
 # build was blind to were visible only under compose. This drives the console
 # image compose publishes against the API image compose publishes.
+#
+# .env is sourced the way `bench` sources it, so the demo operator's password
+# reaches the driver through the environment. The suite deliberately does not
+# read the file itself: a test implementing dotenv is file contents flowing into
+# an outbound request, which is what CodeQL's js/file-access-to-http says.
 verify-real-stack: ## Verify operator identity against the running compose stack
-	@cd $(WEB) && $(BUN) run test:real-stack
+	@set -a; . ./.env; set +a; cd $(WEB) && $(BUN) run test:real-stack
 
 ## ---------------------------------------------------------------------------
 ## Quality gates
