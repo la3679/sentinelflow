@@ -9,27 +9,28 @@
 2. Run the verification commands in "Session startup commands".
 3. Confirm branch, HEAD, and remote before editing.
 4. Read **"Required before v1 — carried forward"**. It holds work that is committed rather than
-   optional, and two items no session may ever mark complete on a person's behalf.
+   optional: real operator identity, the README landing-page rewrite that is part of the Phase 9
+   gate, and two items no session may ever mark complete on a person's behalf.
 5. Continue from "Next three actions"; do not restart completed phases.
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-09-01T00:05Z                                                                                                                                                    |
-| Updated by           | Claude                                                                                                                                                               |
-| Overall status       | active — **Phase 8 closed** and its CodeQL triage finished (0 open alerts). **Phase 9 opened**: `make bench`, a measured index, and the README's performance section |
-| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (in progress)                                                                                       |
-| Current task         | **none in progress.** Phase 9 has its benchmark harness and its first measured optimization; the README, diagrams audit and clean-clone check are not started        |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                             |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                 |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                   |
-| Working branch       | `main`                                                                                                                                                               |
-| Local clone verified | **yes**                                                                                                                                                              |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                     |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                 |
-| Open PRs             | none                                                                                                                                                                 |
-| Latest release       | none                                                                                                                                                                 |
+| Field                | Value                                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T00:20Z                                                                                                                                                                                    |
+| Updated by           | Claude                                                                                                                                                                                               |
+| Overall status       | active — **Phase 8 closed** and its CodeQL triage finished (0 open alerts). **Phase 9 opened**: `make bench`, a measured index, and the README's performance section                                 |
+| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (in progress)                                                                                                                       |
+| Current task         | **none in progress; the session stopped deliberately at the user's direction** with the usage window at 89%. Phase 9's next action is the README landing-page rewrite, which is now a gate criterion |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                             |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                 |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                   |
+| Working branch       | `main`                                                                                                                                                                                               |
+| Local clone verified | **yes**                                                                                                                                                                                              |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                     |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                 |
+| Open PRs             | none                                                                                                                                                                                                 |
+| Latest release       | none                                                                                                                                                                                                 |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -2714,6 +2715,9 @@ wish list. A session that reaches Phase 10 with any of these open has not finish
 because it was deliberately deferred with a reason, and a deferral nobody records becomes a thing
 nobody does.
 
+**§2 is the one most likely to be under-read.** It is a quality bar rather than a missing feature,
+and a quality bar with no test behind it is the kind of requirement a session satisfies on paper.
+
 ### 1. Real operator identity, so an alert can be given to a named analyst
 
 **Status: not started. Required before v1. Owner: whichever phase reaches it first, and Phase 10
@@ -2752,7 +2756,55 @@ What "done" means here, and every clause is binding:
 - **Verified against the real stack**, not only against Testcontainers — the lesson of the three
   defects recorded above is that those are not the same system.
 
-### 2. Two human-verification items that no session may mark complete
+### 2. The README must be a public landing page, not a development diary
+
+**Status: not started. Binding, and part of the Phase 9 gate. Recorded 2026-09-01 at the user's
+direction.**
+
+The README is the first and often the only thing an outside reader sees. It must read as a
+**polished, professional, industry-standard front page for a public open-source project**, written
+for recruiters, hiring managers, senior engineers and open-source reviewers encountering
+SentinelFlow for the first time.
+
+**Technical completeness alone does not satisfy this.** A README containing every true fact about
+the system and reading as a build log fails this requirement. That is the specific failure being
+guarded against, because the current file has drifted that way honestly — each phase added its
+evidence to it.
+
+**The work is a full editorial and structural rewrite where needed**, not a trim. Remove:
+
+- development diary content and phase-by-phase implementation history
+- checkpoint and session language
+- pull-request chronology
+- stale TODOs
+- internal agent and Claude workflow details
+- duplicated explanations
+- excessive implementation trivia
+- anything better suited to this file or to `docs/`
+
+**Keep it concise but technically credible.** Prioritise, roughly in this order: a strong project
+summary · the problem it solves · key capabilities · architecture · tech stack · **five useful
+Mermaid diagrams** · screenshots · quick start · verified commands · testing, CI and security ·
+measured performance evidence · the important design decisions · limitations · links to the deeper
+documentation.
+
+**Do not delete useful technical information merely to shorten the file.** Detailed material moves
+into the appropriate document under `docs/` and is linked from the README. Shortening by deletion is
+the failure this clause exists to prevent; shortening by relocation is the work. If a paragraph has
+no home yet, create one rather than dropping it.
+
+**The gate criterion.** Phase 9 is **not complete** until the README has been reviewed explicitly
+from the perspective of an external engineer or recruiter seeing the project for the first time, and
+that review is recorded. `make docs-check` passing is not that review — it checks links and
+placeholders, and a build log with working links passes it.
+
+**Where the material already exists**, so the rewrite relocates rather than rewrites from nothing:
+`PROJECT_STATE.md` for phase history and evidence, `docs/security/THREAT_MODEL.md` for the security
+posture, `docs/performance/BENCHMARK.md` for the measurements, `docs/adr/` for the decisions,
+`docs/operations/RUNBOOKS.md` for operations, and `docs/architecture/` for the data model and the
+main flow.
+
+### 3. Two human-verification items that no session may mark complete
 
 Neither of these can be done by an agent, and **neither may be reported as done, inferred from an
 automated result, or quietly dropped from a gate.** They are listed as outstanding human tasks until
@@ -2774,8 +2826,8 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 8 is closed**, and its CodeQL triage is finished: **0 open alerts**, 2 fixed in code, 10
-dismissed with recorded reasons. **Phase 9 is in progress** — the benchmark harness, the first
+**Phase 8 is closed**, its CodeQL triage is finished — **0 open alerts**, 2 fixed in code, 10
+dismissed with recorded reasons — and **Phase 9 is in progress**. The benchmark harness, the first
 measured optimization and the README's performance section are merged (PR
 [#99](https://github.com/la3679/sentinelflow/pull/99)).
 
@@ -2783,24 +2835,36 @@ measured optimization and the README's performance section are merged (PR
 answer the same question. The gate's first draft recorded "0 results" from the merge refs while
 `refs/heads/main` had 12 alerts. Check `refs/heads/main`.
 
-1. **The README's five Mermaid diagrams and the documentation index audit.** The plan asks for
-   diagrams that match the code, a complete index and no broken links or placeholders. The index
-   gained three entries this session (the threat model, ADR-0017, the benchmark) and the README
-   gained a performance section, so there is more to check rather than less. `make docs-check`
-   passes at 239 links across 49 files; what it cannot check is whether a diagram still describes
-   the system.
+**The session that ended 2026-09-01T00:20Z stopped deliberately, at the user's direction**, with the
+5-hour usage window at 89%. Nothing is half-finished: the working tree was clean, `main` was in
+sync, every workflow was green and no pull request was open. The three actions below are the resume
+point, in order.
 
-2. **The clean-clone verification.** Every README command run from a fresh clone. **`make bootstrap`
-   is the first one**, and it gained a required secret in Phase 8 (`SENTINELFLOW_INGEST_API_KEY`)
-   plus a fix for the bug that made it exit 1 against an existing `.env` — neither has been
-   exercised from an actually-empty clone. `make bench` is new and needs the same treatment.
+1. **The README rewrite. Start here — it is the largest single piece of Phase 9 and it is now a gate
+   criterion.** The full requirement is "Required before v1 — carried forward" §2, and it is binding
+   rather than a preference: the README must read as a polished, professional public landing page
+   for recruiters, hiring managers, senior engineers and open-source reviewers, and **technical
+   completeness alone does not satisfy it**. Expect a full editorial and structural rewrite, not a
+   trim — development diary content, phase history, checkpoint language, PR chronology, agent
+   workflow details and duplicated explanation all come out. **Nothing useful is deleted to shorten
+   the file**; detail moves into `docs/` and is linked. Phase 9 cannot be marked complete until the
+   result has been read from an outside engineer's or recruiter's point of view and that review
+   recorded. Five Mermaid diagrams belong in it, and the material to relocate into already exists —
+   `PROJECT_STATE.md`, `docs/security/THREAT_MODEL.md`, `docs/performance/BENCHMARK.md`,
+   `docs/adr/`, `docs/operations/RUNBOOKS.md`, `docs/architecture/`.
 
-3. **More measured optimizations, or an honest statement that one was enough.** `GET /alerts` now
-   has the worst p99 of the five endpoints (110 ms against a table of six rows plus whatever the
-   benchmark raised), which is worth a plan before it is worth an index. **Do not benchmark against
-   the current local database without reading "Before resuming" below**: it holds 7,260 `FAILED`
-   transactions and 13,455 `degraded` assessments from the h2c defect, and the benchmark itself now
-   adds alert-raising rows on every run.
+2. **The clean-clone verification, once the README is settled** — the two are the same work, because
+   the clean-clone pass checks the commands the rewritten README ends up publishing. **Two traps are
+   already known.** `make bootstrap` gained a required secret in Phase 8
+   (`SENTINELFLOW_INGEST_API_KEY`) and a fix for the bug that made it exit 1 against an existing
+   `.env`; `make bench` is new. **Neither has ever been run from an actually-empty clone.**
+
+3. **Decide whether one measured optimization is enough for the phase, and say so either way.**
+   `GET /alerts` now has the worst p99 of the five endpoints. **Do not benchmark against the current
+   local database without reading "Before resuming" below**: it holds 7,260 `FAILED` transactions
+   and 13,455 `degraded` assessments from the h2c defect, and `make bench` itself now adds
+   alert-raising rows on every run, so the dataset drifts under measurement. That drift is a
+   property of the harness worth fixing or documenting before more numbers are published.
 
 **Still open and owned, from the threat model:** T-04 (`/actuator/prometheus` unauthenticated),
 T-05 (the scoring service has no credential), T-08 (no token revocation, accepted), T-09 (ingestion

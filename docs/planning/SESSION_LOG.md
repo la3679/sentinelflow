@@ -2834,3 +2834,93 @@ No load test, no measured latency, no throughput figure. The rate-limit defaults
 chosen for a demo, labelled as such in ADR-0017 §2, and Phase 9 is what measures.
 
 ---
+
+---
+
+## 2026-09-01 — Phase 9 opened: the benchmark, a measured index, the CodeQL correction, and a stop
+
+| Field           | Value                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-08-31T23:15Z / 2026-09-01T00:20Z                                                                                 |
+| Starting SHA    | `4333b12` on `main`                                                                                                   |
+| Ending SHA      | `8692df9` on `main`, plus this checkpoint                                                                             |
+| Objective       | Open Phase 9 with benchmarks and a measured optimization; stopped deliberately at the user's direction, window at 89% |
+
+### Work completed
+
+**The benchmark harness.** `make bench` and `sf.ps1 bench` drive the running stack over HTTP and
+write `docs/performance/BENCHMARK.md` with the machine, the container runtime and the dataset it ran
+against — a latency figure without those three is not reproducible. It **paces reads under the rate
+allowance rather than raising the limiter to flatter itself**, runs ingestion inside the configured
+burst, and lists what it does not measure.
+
+**One measured optimization.** `GET /transactions` was the slowest of five endpoints by a factor of
+five. The SQL came from PostgreSQL's own statement log rather than reconstruction, and
+`EXPLAIN (ANALYZE, BUFFERS)` showed the cost was **not the sort**: a correlated subquery resolving
+each transaction's latest assessment version ran **34,629 times** for 98% of the buffers, to return
+fifty rows, because nothing indexed `ORDER BY occurred_at DESC, id DESC`. `V12` adds it.
+
+    page query        68.0 ms → 5.0 ms
+    buffer hits       71,256  → 6,155
+    endpoint p50      116 ms  → 32 ms   (page 20)
+
+**The Phase 8 CodeQL claim was wrong, and was corrected.** The gate recorded "CodeQL: 0 results",
+read from the analyses on the **pull-request merge refs**. The run against `refs/heads/main` after
+the merge reported **12 alerts**. A pull-request analysis and a branch analysis do not answer the
+same question. All twelve were triaged: `js/file-system-race` and `java/log-injection` fixed in
+code, `java/spring-disabled-csrf-protection` dismissed as a false positive with its evidence, nine
+`java/unused-parameter` notes dismissed as framework-mandated signatures. **0 open at the end.**
+
+**All three Phase 8 controls were confirmed against the real compose stack**, not only
+Testcontainers: ingestion answers 401 without the key and 202 with it, the login limiter returns 429
+with `Retry-After: 5` after ten attempts, and a 70 KB body is refused 413.
+
+### Two defects the work found in itself
+
+**The benchmark harness swallowed a failed query.** A section asked for a column that does not exist
+and `psql`'s non-zero exit was discarded, so the report rendered an **empty section rather than
+failing** — a measured zero that was not measured. `ON_ERROR_STOP=1` and a `required` flag now make
+it loud. Caught before any number reached a document.
+
+**`MigrationIT` pins the exact migration list and the deliberate indexes**, so it failed on `V12`
+until both were added. That is the guard working, and it is worth knowing before the next migration.
+
+### The requirement recorded at the end, and why it is here
+
+At the user's direction, a binding Phase 9 requirement was written into
+"Required before v1 — carried forward" §2 and into the implementation plan's Phase 9 gate: **the
+README must be a polished, professional, industry-standard public landing page**, fit for
+recruiters, hiring managers, senior engineers and open-source reviewers, and **technical
+completeness alone does not satisfy it**.
+
+It exists because the README has drifted into a development diary honestly — each phase added its
+evidence to it, and nothing ever took anything out. The rewrite is editorial and structural, not a
+trim, and **nothing useful may be deleted merely to shorten it**: detail moves into `docs/` and is
+linked. Phase 9 cannot be marked complete until the result has been read from an outside engineer's
+or recruiter's point of view and that review recorded — `make docs-check` passing is not that
+review, because a build log with working links passes it.
+
+### The exact resume point
+
+**Start with the README rewrite.** It is the largest remaining piece of Phase 9 and it is now a gate
+criterion; the full text of the requirement is `PROJECT_STATE.md` §"Required before v1" §2. Then the
+clean-clone verification, which is the same work — it checks the commands the rewritten README ends
+up publishing, and **neither `make bootstrap` (which gained a required secret in Phase 8) nor
+`make bench` (which is new) has ever been run from an actually-empty clone**. Then a decision on
+whether one measured optimization is enough for the phase.
+
+**One known trap for that third item:** `make bench` adds alert-raising rows on every run, so the
+local dataset drifts under measurement, and that database already carries 7,260 `FAILED`
+transactions and 13,455 `degraded` assessments from the h2c defect.
+
+### State at the stop
+
+Working tree clean, `main` in sync with `origin/main`, no pull request open, all eight workflows
+green, 0 open code-scanning alerts. Nothing was left half-finished.
+
+### What was deliberately not started
+
+The README rewrite, the clean-clone validation, further benchmarking, and any Phase 10 work. The
+session stopped on instruction with the usage window at 89%, not because anything blocked.
+
+---
