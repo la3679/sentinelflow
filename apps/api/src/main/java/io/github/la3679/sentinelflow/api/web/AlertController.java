@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.github.la3679.sentinelflow.api.web;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,6 +11,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -30,9 +33,11 @@ import io.github.la3679.sentinelflow.api.domain.Actor;
 import io.github.la3679.sentinelflow.api.domain.ActorRole;
 import io.github.la3679.sentinelflow.api.domain.AlertPriority;
 import io.github.la3679.sentinelflow.api.domain.AlertStatus;
+import io.github.la3679.sentinelflow.api.operator.OperatorDirectory;
 import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
 import io.github.la3679.sentinelflow.api.security.AuthenticatedOperator;
 import io.github.la3679.sentinelflow.api.web.dto.AlertActionResponse;
+import io.github.la3679.sentinelflow.api.web.dto.AlertAssigneeResponse;
 import io.github.la3679.sentinelflow.api.web.dto.AlertAssignmentRequest;
 import io.github.la3679.sentinelflow.api.web.dto.AlertFeedbackRequest;
 import io.github.la3679.sentinelflow.api.web.dto.AlertFeedbackResponse;
@@ -82,9 +87,11 @@ public class AlertController {
     static final int MAX_PAGE_SIZE = 200;
 
     private final AlertService alerts;
+    private final OperatorDirectory operators;
 
-    public AlertController(AlertService alerts) {
+    public AlertController(AlertService alerts, OperatorDirectory operators) {
         this.alerts = alerts;
+        this.operators = operators;
     }
 
     /**
@@ -108,16 +115,53 @@ public class AlertController {
         // alert and the caller together - see AlertResponse.
         ActorRole role = AuthenticatedOperator.from(token).role();
 
-        return PageResponse.of(
-                alerts.queue(status, priority, assigneeId, PageRequest.of(page, size)),
-                alert -> AlertResponse.of(alert, role));
+        Page<Alert> queue = alerts.queue(status, priority, assigneeId, PageRequest.of(page, size));
+
+        // One query for the whole page, not one per row. A page on which
+        // nothing is assigned costs no query at all - see OperatorDirectory.
+        Map<UUID, AlertAssigneeResponse> assignees = operators.resolve(
+                queue.getContent().stream().map(Alert::getAssigneeId).toList());
+
+        return PageResponse.of(queue, alert -> AlertResponse.of(alert, role, assigneeFrom(assignees, alert)));
     }
 
     /** One alert, for the page an analyst opens. */
     @GetMapping("/{alertId}")
     AlertResponse get(@PathVariable UUID alertId, @AuthenticationPrincipal Jwt token) {
-        return AlertResponse.of(
-                alerts.get(alertId), AuthenticatedOperator.from(token).role());
+        Alert alert = alerts.get(alertId);
+        return AlertResponse.of(alert, AuthenticatedOperator.from(token).role(), assigneeOf(alert));
+    }
+
+    /**
+     * The person one alert is with, or null.
+     *
+     * <p>Goes through the same batching call as the queue rather than a separate single-row lookup,
+     * so there is one description of what "resolve an assignee" means and one place a change to it
+     * lands.
+     */
+    private AlertAssigneeResponse assigneeOf(Alert alert) {
+        UUID assigneeId = alert.getAssigneeId();
+        // The guard is here as well as in assigneeFrom because List.of refuses
+        // a null element outright, before any lookup happens.
+        return assigneeId == null ? null : assigneeFrom(operators.resolve(List.of(assigneeId)), alert);
+    }
+
+    /**
+     * One alert's assignee, out of a map of already-resolved ones.
+     *
+     * <p><strong>The null check is load-bearing rather than defensive tidiness.</strong> An
+     * unassigned alert is the ordinary case on a healthy queue;
+     * {@link OperatorDirectory#resolve(java.util.Collection)} answers a page with nothing assigned
+     * using {@code Map.of()}, and {@code Map.of().get(null)} <em>throws</em> instead of returning
+     * null. Without this line every queue page holding one unassigned alert answered 500.
+     *
+     * <p>Found by {@code AlertQueueIT}, {@code AlertTransitionIT} and {@code LogRedactionIT} at
+     * once - three suites that read the queue without filtering by assignee. The test written for
+     * this change missed it, because it filtered.
+     */
+    private static AlertAssigneeResponse assigneeFrom(Map<UUID, AlertAssigneeResponse> resolved, Alert alert) {
+        UUID assigneeId = alert.getAssigneeId();
+        return assigneeId == null ? null : resolved.get(assigneeId);
     }
 
     /**
@@ -141,7 +185,7 @@ public class AlertController {
         Alert moved = alerts.transition(
                 alertId, request.targetStatus(), request.expectedVersion(), request.note(), actor, correlationId);
 
-        return AlertResponse.of(moved, actor.role());
+        return AlertResponse.of(moved, actor.role(), assigneeOf(moved));
     }
 
     /**
@@ -170,7 +214,7 @@ public class AlertController {
                 actor,
                 CorrelationIdFilter.currentOrNew(httpRequest));
 
-        return AlertResponse.of(assigned, actor.role());
+        return AlertResponse.of(assigned, actor.role(), assigneeOf(assigned));
     }
 
     /**

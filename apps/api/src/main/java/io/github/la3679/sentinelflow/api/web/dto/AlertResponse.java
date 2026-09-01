@@ -36,6 +36,19 @@ import io.github.la3679.sentinelflow.api.persistence.entity.Alert;
  * <p>It is on the queue rows as well as the detail read. One schema, one shape: a list whose
  * elements were a different type from the single read would be a special case every client has to
  * know about, and the value is computed from an in-memory map with no query behind it.
+ *
+ * <h2>{@code assignee} is resolved here rather than by the reader</h2>
+ *
+ * {@code assigneeId} stays, because a client that already stores an identifier should not have to
+ * change to keep working, and because it is the value the assignment endpoint takes back. Beside it
+ * is the person that identifier names, so a queue row can render somebody without every client
+ * loading the operator directory first (ADR-0019).
+ *
+ * <p><strong>Both are null together and neither is null alone</strong>, with one exception worth
+ * knowing: an identifier that resolves to no row publishes an id with a null assignee. That is not a
+ * state the schema can currently reach - {@code alerts.assignee_id} references {@code users} - and
+ * it is representable on purpose, because the honest answer to "who is this" is nothing rather than
+ * a placeholder.
  */
 public record AlertResponse(
         UUID alertId,
@@ -45,6 +58,7 @@ public record AlertResponse(
         AlertStatus status,
         AlertPriority priority,
         UUID assigneeId,
+        AlertAssigneeResponse assignee,
         String summary,
         RiskBand riskBand,
         BigDecimal finalScore,
@@ -56,8 +70,11 @@ public record AlertResponse(
 
     /**
      * @param role the capacity the reader holds, which decides {@code legalTargets}
+     * @param assignee the person {@code assigneeId} names, or null when the alert is unassigned.
+     *     Passed in rather than looked up here, because a DTO that queried would be one query per
+     *     row of a page - the N+1 {@code OperatorDirectory.resolve} exists to avoid.
      */
-    public static AlertResponse of(Alert alert, ActorRole role) {
+    public static AlertResponse of(Alert alert, ActorRole role, AlertAssigneeResponse assignee) {
         return new AlertResponse(
                 alert.getId(),
                 alert.getAlertReference(),
@@ -66,6 +83,7 @@ public record AlertResponse(
                 alert.getStatus(),
                 alert.getPriority(),
                 alert.getAssigneeId(),
+                assignee,
                 alert.getSummary(),
                 alert.getRiskBand(),
                 alert.getFinalScore(),
