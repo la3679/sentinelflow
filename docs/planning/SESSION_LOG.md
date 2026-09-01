@@ -3090,3 +3090,57 @@ Six pull requests merged, #102 through #107, every one with green CI on `main`. 
 was restored to its own volumes, which were never touched.
 
 ---
+
+## 2026-09-01 — Phase 9 closed: the last two criteria, and a panel that had outlived its phase
+
+| Field           | Value                                                                               |
+| --------------- | ----------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-09-01T03:50Z / 2026-09-01T04:40Z                                               |
+| Starting SHA    | `f869788` on `main`                                                                 |
+| Ending SHA      | recorded at the merge of the Phase 9 close                                          |
+| Objective       | Phase 9's two remaining gate criteria: the demo screenshots, and the deployment ADR |
+
+### Work completed
+
+**Three more screenshots**, taking the README from two to five: the investigation workspace, reports
+and system health — every screen the front page described and did not show. All five come from the
+same production bundle the end-to-end suite exercises, so they cannot drift from the build.
+
+**Capturing them found a defect worth more than the deliverable.** The system-health screen, and its
+twin panel on the overview, still said consumer-group lag and dead-letter depth "arrive in Phase 7
+with the metric set, the dashboards and the runbooks". Phase 7 closed on 2026-08-31 having delivered
+exactly that. The copy had gone from cautious to wrong — it told an operator the figures do not exist
+when they do — and publishing the screenshot would have put that on the front page. Both panels now
+say the numbers are measured, live where they are produced, and are deliberately not copied onto a
+screen with no way to act on them. Nothing new is shown and no figure is added.
+
+The end-to-end test guarding that screen asserted the old wording literally, so it failed on the copy
+rather than on the guarantee. It was rewritten to assert what it was written for and renamed to say
+so — 88 passed, axe clean at both viewports.
+
+**[ADR-0018](../adr/0018-deployment-and-the-local-first-strategy.md)** records what had been a habit
+for nine phases: the local Compose stack is the only supported deployment target, there is no hosted
+demo and the README will not link to one, and every published port binds to `127.0.0.1` — stated with
+`docker port` output rather than a reading of `compose.yaml`, because a security claim in a document
+is worth exactly one command. It names five conditions that would have to be true before a hosted
+deployment is reconsidered, so a future session weighs the decision rather than re-deriving it.
+
+### The lesson worth carrying forward
+
+**A phase closing can make a screen wrong.** The copy on those panels was careful and honest when it
+was written, and no test, lint or link check could notice that Phase 7 had since delivered what it
+promised. It took generating an image of the screen to see it. Text that names a future phase is a
+claim with an expiry date, and nothing in this repository watches those expire.
+
+### The exact resume point
+
+**Phase 9 is closed, all eight criteria met.** Phase 10 is the release, and its gating deliverable is
+operator identity — `PROJECT_STATE.md` "Required before v1" §1 holds the binding definition of done,
+and every clause in it is binding. It is the largest remaining piece of work in the project and
+Phase 10 cannot ship with it open.
+
+### State at the stop
+
+Working tree clean, `main` in sync, all CI green.
+
+---
