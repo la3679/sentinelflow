@@ -15,22 +15,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                                                                        |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-09-01T05:55Z                                                                                                                                                                                                                            |
-| Updated by           | Claude                                                                                                                                                                                                                                       |
-| Overall status       | active — **Phase 9 closed, Phase 10 open.** Operator identity is **merged** ([#111](https://github.com/la3679/sentinelflow/pull/111)) with every automated gate green; its real-stack verification, the release artefacts and the tag remain |
-| Current phase        | Phase 10 — release (not started)                                                                                                                                                                                                             |
-| Current task         | **none in progress; the session checkpointed deliberately at the user's direction.** `main` is clean, in sync and green, and no pull request is open. The resume point is action 1 below                                                     |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                     |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                         |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                           |
-| Working branch       | `main`                                                                                                                                                                                                                                       |
-| Local clone verified | **yes**                                                                                                                                                                                                                                      |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                             |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                         |
-| Open PRs             | none                                                                                                                                                                                                                                         |
-| Latest release       | none                                                                                                                                                                                                                                         |
+| Field                | Value                                                                                                                                                                                                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T14:40Z                                                                                                                                                                                                                                                      |
+| Updated by           | Claude                                                                                                                                                                                                                                                                 |
+| Overall status       | active — **Phase 10 nearly closed.** Operator identity is merged and **verified against the real stack** ([#113](https://github.com/la3679/sentinelflow/pull/113)); the changelog has landed. What remains is the `v1.0.0` tag, its release artefacts, and the handoff |
+| Current phase        | Phase 10 — release (in progress)                                                                                                                                                                                                                                       |
+| Current task         | releasing. The changelog, the re-measured evidence and the documentation consistency pass are in flight; the tag is the next action                                                                                                                                    |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                                               |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                                                   |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                                                     |
+| Working branch       | `main`                                                                                                                                                                                                                                                                 |
+| Local clone verified | **yes**                                                                                                                                                                                                                                                                |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                                                       |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                                                   |
+| Open PRs             | none                                                                                                                                                                                                                                                                   |
+| Latest release       | none                                                                                                                                                                                                                                                                   |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -2677,16 +2677,23 @@ checks.
   It is `service_started` now, in the branch that made degradation real. Ordering is still declared,
   so the ordinary case is a warm dependency rather than a first transaction scored against a
   container still importing scikit-learn.
-- **Coverage thresholds are enforced in `apps/api` only** — LINE 0.80, BRANCH 0.70, ratcheted on
+- **Coverage thresholds are enforced in all three applications** — `apps/api` at LINE 0.80,
+  BRANCH 0.70, ratcheted on
   2026-08-27 from 0.70/0.60 after the assessment workflow measured 85.7% and 76.9%; those had been
   ratcheted on 2026-08-26 from 0.50/0.40 after Phase 3 measured 77.6% and 66.1%. `apps/scoring` gained its own
   floor with the feature pipeline — `fail_under = 90`, measured at 95.9%. Both are ratchets: raised
-  only when a change genuinely raises coverage, never lowered to go green. **`apps/web` still has
-  none**; it gets one in Phase 6.
-- **Google Fonts is loaded from a remote host.** Self-host in Phase 6 so the local-first stack has
-  no external runtime dependency.
-- **Screen-reader behaviour is unverified.** axe is not a substitute for a manual pass. Phase 6.
-- **The console still renders from `src/mocks/`.** Replaced in Phase 6, once the API has endpoints.
+  only when a change genuinely raises coverage, never lowered to go green. `apps/web` gained its own
+  in Phase 6 — statements 25, branches 17, measured at 26.79% and 18.61%.
+- **Google Fonts is loaded from a remote host**, in `apps/web/src/routes/__root.tsx`. Still open at
+  v1: a stack that describes itself as local-first has one runtime dependency on a third party, and
+  a browser with no network gets the fallback stack rather than the intended typography. Self-hosting
+  is the fix and nothing in Phases 6 to 10 picked it up. **This is a gap, not a decision.**
+- **Screen-reader behaviour is unverified.** axe is not a substitute for a manual pass. Phase 6 did
+  not close it and no phase can: it is one of the two human-verification items under "Required
+  before v1" §3, and no automated run is evidence that it happened.
+- ~~**The console still renders from `src/mocks/`.**~~ **Resolved in Phase 6.** The directory is
+  gone, `.claude/rules/frontend.md` forbids its return, and every screen reads the API through
+  `src/api/transport.ts`.
 - **CI is not path-filtered**, so every push runs every component. Deliberate (ADR-0002); revisit
   when runtime justifies job-level change detection.
 - **Two Dockerfiles pin an OpenSSL package version by hand** (`apps/scoring`, `apps/web`), to take
@@ -2694,12 +2701,12 @@ checks.
   to check whether the base image has caught up and should be deleted when it has. If a distribution
   rotates the pinned version out of its archive first, the build fails there with a clear message
   and the fix is the same deletion.
-- **`apps/web` lint reports 23 warnings, not the 7 this file used to record.**
-  `eslint-plugin-react-refresh` 0.4.26 to 0.5.4 — an earlier grouped Dependabot bump, already on
-  `main` — flags a TanStack Start route file's `Route` export that `allowConstantExport` used to
-  cover. Zero errors, so nothing is blocked, and it is **not** caused by the ESLint 10 bump, which
-  was the obvious and wrong suspect. The fix is `allowExportNames: ["Route"]` in
-  `eslint.config.js`; Phase 6 owns that file.
+- **`apps/web` lint reports 22 warnings and 0 errors**, measured 2026-09-01.
+  `eslint-plugin-react-refresh` 0.4.26 to 0.5.4 — an earlier grouped Dependabot bump — flags each
+  TanStack Start route file's `Route` export, which `allowConstantExport` used to cover. Nothing is
+  blocked, and it is **not** caused by the ESLint 10 bump, which was the obvious and wrong suspect.
+  The fix is `allowExportNames: ["Route"]` in `eslint.config.js`. It ships open at v1: the warning
+  is cosmetic, and changing a lint configuration is not a change to make beside a release tag.
 - **`RetryStateTracker` measures the failures one process saw.** `attemptCount` and `firstFailedAt`
   in a dead-letter record are captured from the listener's own retry callbacks, so a restart or a
   rebalance mid-retry restarts the clock. They undercount in that case rather than overcounting, and
@@ -2709,21 +2716,28 @@ checks.
   envelope, and ADR-0006 §4 forbids copying unsanitised content onto an operational topic. It is
   logged with its coordinates and counted under `sentinelflow_consumer_undeliverable_total`.
 - **Reprocessing a dead-lettered event and reviving a `FAILED` outbox row are both manual.**
-  ADR-0005 §5 makes each an administrator-only, audited operation, and the endpoint that exposes it
-  is Phase 5 work. Until then `RUNBOOKS.md` describes doing it by hand and says to record who did it.
+  ADR-0005 §5 makes each an administrator-only, audited operation. **No phase ever owned the
+  endpoint** — an earlier version of this line said Phase 5 did, and Phase 5's deliverable list never
+  contained it. `RUNBOOKS.md` carries the manual procedure and says to record who ran it. Named as
+  not-yet-built in the README rather than implied to exist.
 - **`make` is not installed on the reference machine**, so Makefile targets are exercised there
   through `scripts/dev/sf.ps1` or by running the underlying command directly. Both are changed
   together, every time; a Makefile edit without the matching runner edit is a defect.
-- **`AuditLogEntry`, `RegisteredModel`, `AlertAction`, `Role`, `User` and `UserRole` have
-  mappings and no callers.** They are validated against the schema and otherwise untouched, which
-  is most of the remaining coverage gap. Phase 5 reaches them. `ProcessedEvent` left this list in
-  Phase 3 and `RiskAssessment` left it in Phase 4.
+- **`AuditLogEntry` and `RegisteredModel` have mappings and no callers**, measured 2026-09-01.
+  Both are validated against the schema and otherwise untouched, and `audit_log` holds zero rows on
+  a stack that has been running for days: **the table exists and nothing writes it.** What does carry
+  the audit trail is `alert_actions`, which records the actor, the role and the moment of every alert
+  mutation, so no history is missing — but a reader who sees `audit_log` in the schema should know it
+  is unused rather than empty by coincidence. `AlertAction`, `Role`, `User` and `UserRole` left this
+  list when assignment and operator identity reached them; `ProcessedEvent` left it in Phase 3 and
+  `RiskAssessment` in Phase 4.
 - **Nothing verifies that the compose stack's Kafka topics match the AsyncAPI contract.** The
   one-shot `kafka-topics` service creates the five the design names, and it is a second place the
   topic names are written — `EventTopics` and `EventTopicsTests` hold the other. A drift between
   them would show up as a producer retrying `UNKNOWN_TOPIC_OR_PARTITION` behind a healthy stack,
-  which is exactly the symptom that hid for three phases. Worth an assertion when Phase 7 touches
-  the stack's observability.
+  which is exactly the symptom that hid for three phases. Phase 7 did not pick it up and neither did
+  Phases 8 to 10, so it ships open at v1: the drift is caught today by `make smoke` and by the
+  stack refusing to publish, rather than by an assertion that names it.
 
 ## Dependabot
 
@@ -2839,11 +2853,17 @@ and a quality bar with no test behind it is the kind of requirement a session sa
 
 ### 1. Real operator identity, so an alert can be given to a named analyst
 
-**Status: merged as PR [#111](https://github.com/la3679/sentinelflow/pull/111); one clause is not
-yet satisfied.** [ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md)
-records the decision. Every clause below is met except the last one — **"verified against the real
-stack"** — which is action 1 in "Next three actions". Until that is done this item is not closed,
-and the requirement below is kept verbatim because it is the standard the result has to meet.
+**Status: closed 2026-09-01.** Merged as PR
+[#111](https://github.com/la3679/sentinelflow/pull/111), with the last clause — **"verified against
+the real stack"** — satisfied by PR [#113](https://github.com/la3679/sentinelflow/pull/113).
+[ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md) records the decision;
+`make verify-real-stack` is the command, `apps/web/tests/real-stack/` is the suite, and
+[`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md) holds what it checked and what
+running it twice found. The requirement below is kept verbatim because it is the standard the result
+has to keep meeting.
+
+_What follows is the requirement as it was written when the work was deferred, in the present tense
+of that moment. It describes the hole, not the repository as it stands._
 
 Today the console can release an alert and cannot give one to anybody. `assigneeId` is a UUID,
 nothing resolves it to a person, and the screen says so rather than offering a control that cannot
@@ -2950,45 +2970,37 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 9 is closed** with all eight criteria met. **Phase 10 is open**, and its gating deliverable —
-operator identity — is **merged** as PR [#111](https://github.com/la3679/sentinelflow/pull/111),
-with all eighteen required checks green. **It is not finished**: the one required step it has not had
-is named in action 1 below, and until that is done "Required before v1" §1 stays open.
-
-**What #111 does.** An alert can be given to a named analyst. `GET /operators` lists who may hold
-one, `Alert.assignee` carries the person the identifier names, and the login response now publishes
-the operator's own identifier — which is what makes "assign to me" buildable at all.
-[ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md) records the decision. Verified:
-`./mvnw verify` 259 unit and 337 integration, coverage gates met; `bun run verify` clean; 92
-end-to-end tests, up from 88, axe clean.
+**Phase 10's gating deliverable is done.** Operator identity is merged
+([#111](https://github.com/la3679/sentinelflow/pull/111)) and **verified against the real Docker
+Compose stack** ([#113](https://github.com/la3679/sentinelflow/pull/113)), which was the one clause
+"Required before v1" §1 still held open. `make verify-real-stack` is the command; the suite lives in
+`apps/web/tests/real-stack/` and stubs nothing.
 
 **Read this before quoting any CodeQL number.** A pull-request analysis and a branch analysis do not
-answer the same question. The Phase 8 gate's first draft recorded "0 results" from the merge refs
-while `refs/heads/main` had 12 alerts. Check `refs/heads/main`.
+answer the same question, and neither does a result count and an open-alert count. On
+`refs/heads/main` at `27cf15c` the java-kotlin analysis reports `results_count=10` and **0 open
+alerts**: all ten are the Phase 8 dismissals with their arguments recorded. Quote the open count, and
+say that the ten exist.
 
-1. **Verify operator identity against the real stack.** This is the one clause of "Required before
-   v1" §1 that #111 did **not** satisfy, and it is binding:
-   _"verified against the real stack, not only against Testcontainers"_. That clause exists because
-   of three defects a fully green build was blind to — nothing created the Kafka topics, the scoring
-   client negotiated HTTP/2 against an HTTP/1.1-only service, and two PowerShell targets had never
-   worked. The sequence: `make up --build` so the API image carries the new endpoint, sign in as
-   `analyst.one`, call `GET /api/v1/operators` with the token, assign an alert to `analyst.two` and
-   read the alert back to see the resolved name, then open the console at
-   <http://localhost:5173> and do the same through the picker. **§1 also requires a screenshot pass
-   is not evidence** — this is a real-stack check, not a Testcontainers one.
+1. **Tag `v1.0.0` on the verified commit, and check the artefacts arrive.** Every automated v1
+   criterion is met — clean `main`, remote SHA verified, eight workflows green, 0 open code-scanning
+   alerts, the ruleset active with nine required checks and no bypass actors, and an alert can be
+   assigned to a named operator against the real stack. Publishing the release triggers
+   `sbom.yml`'s `attach` job, which uploads four CycloneDX documents and `SHA256SUMS`; **verify they
+   are actually attached** rather than assuming the job ran.
 
-2. **Then the rest of Phase 10's deliverables, none of which is started.** In the plan's order:
-   `CHANGELOG.md` and release notes with features, setup, migrations, security notes, known
-   limitations and evidence links; repository metadata and topics; the `v1.0.0` tag **only if every
-   v1 criterion is genuinely met, otherwise an honest prerelease**; and the final handoff report. The
-   gate is: clean `main` · remote SHA verified · all required CI green · **an alert can be assigned to
-   a named operator** · the tag points at verified code · no false claims anywhere.
+2. **Then close Phase 10 in this file and write the handoff.** The gate is: clean `main` · remote
+   SHA verified · all required CI green · an alert can be assigned to a named operator · the tag
+   points at verified code · no false claims anywhere. Record the exact tagged SHA here once it
+   exists.
 
 3. **Do not let the two human-verification items be ticked off.** A screen-reader pass and a manual
    authenticated walkthrough of the console both need a person, both are listed under "Required
-   before v1" §3, and **no automated run is evidence that either happened**. Phase 10's gate says so
-   explicitly. They are not blockers — the release can state them as outstanding — but they may not
-   be marked done on anybody's behalf.
+   before v1" §3, and **no automated run is evidence that either happened** — including the
+   real-stack browser suite, which drives the console but is not somebody using it. Phase 10's gate
+   says so explicitly. They are not blockers; the release states them as outstanding.
+
+**Do not start the post-v1 roadmap.** It is approval-gated and must never delay or destabilise v1.
 
 **Still open and owned, from the threat model:** T-04 (`/actuator/prometheus` unauthenticated),
 T-05 (the scoring service has no credential), T-08 (no token revocation, accepted), T-09 (ingestion

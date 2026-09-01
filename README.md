@@ -588,7 +588,12 @@ The threat model is STRIDE over four trust boundaries with every control traced 
 - **Screen-reader behaviour is unverified.** axe finds roughly a third of real accessibility
   issues, and every accessibility check here is one of the cheaper two-thirds. A pass with an actual
   screen reader needs a person using one; it has not happened, and nothing here should be read as
-  saying otherwise.
+  saying otherwise. The same is true of a manual authenticated walkthrough: an automated suite
+  drives the console against the running stack, and that is not somebody using it.
+- **The console loads its typeface from Google Fonts.** One remote dependency in a stack that is
+  otherwise local-first; a browser with no network gets the fallback stack instead.
+- **`audit_log` exists in the schema and nothing writes it.** Alert history is carried by
+  `alert_actions`, which records the actor, the role and the moment of every mutation.
 
 ## Design decisions
 
@@ -621,6 +626,7 @@ ones that explain the most:
 | Model and evaluation     | [`docs/ml/MODEL_CARD.md`](docs/ml/MODEL_CARD.md)                                         |
 | Data provenance          | [`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md)                           |
 | Test results             | [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md)                           |
+| Release notes            | [`CHANGELOG.md`](CHANGELOG.md)                                                           |
 | Benchmarks               | [`docs/performance/BENCHMARK.md`](docs/performance/BENCHMARK.md)                         |
 | Observability            | [`docs/operations/OBSERVABILITY.md`](docs/operations/OBSERVABILITY.md)                   |
 | Runbooks                 | [`docs/operations/RUNBOOKS.md`](docs/operations/RUNBOOKS.md)                             |
@@ -634,11 +640,15 @@ ones that explain the most:
 
 ## Status and roadmap
 
-The pipeline, the console, observability and security hardening are built and tested. The current
-work is performance, documentation and a clean-clone verification; after that comes the v1.0.0
-release. Phase-by-phase state, with the evidence behind each gate, is in
-[`PROJECT_STATE.md`](PROJECT_STATE.md) and
+**v1.0.0 is released.** The pipeline, the console, observability, security hardening, performance
+work and the documentation are built, tested and measured; [`CHANGELOG.md`](CHANGELOG.md) is what
+the release contains and what it does not. Phase-by-phase state, with the evidence behind each gate,
+is in [`PROJECT_STATE.md`](PROJECT_STATE.md) and
 [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md).
+
+**Two verification items are outstanding and need a person**: a screen-reader pass, and a manual
+authenticated walkthrough of the console in a browser. Both are named in the release notes rather
+than quietly satisfied by an automated run.
 
 **Named and not yet built**, each deferred deliberately rather than forgotten: endpoints for
 reprocessing a dead-lettered event, reviving a failed outbox row and rescoring a degraded assessment, which today

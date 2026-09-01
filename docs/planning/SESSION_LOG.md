@@ -3222,3 +3222,98 @@ documentation links with none broken. Nothing was left half-written.
 verified against the real stack, which is action 1.
 
 ---
+
+## 2026-09-01 — Phase 10: the real stack answers, and the release is written
+
+| Field           | Value                                                                             |
+| --------------- | --------------------------------------------------------------------------------- |
+| Start / end UTC | 2026-09-01T13:20Z / 2026-09-01T15:00Z                                             |
+| Starting SHA    | `a3691f0` on `main`                                                               |
+| Ending SHA      | `main` past `27cf15c`, with the release documentation on `docs/phase-10-release`  |
+| Objective       | Close "Required before v1" §1's last clause, then Phase 10's release deliverables |
+
+### The clause that was open, and what closing it took
+
+**"Verified against the real stack, not only against Testcontainers."** PR #111 merged with every
+automated gate green and did not satisfy that, because no suite in this repository could: the
+console's end-to-end suite stubs the API in the browser, and the API's integration suite runs
+against Testcontainers. Both had been green on the code that shipped three defects a demo found.
+
+The API half was checked by hand first, against freshly built images — `make up` had to rebuild,
+because the running images predated the merge by two hours and would have answered for code that was
+not the code under test. Sign-in publishes the operator's own identifier; `GET /operators` returns
+the three seeded operators who may hold an alert and neither the auditor nor the `system` principal;
+an assignment resolves to a person, writes one `alert_actions` row, and publishes one `alert.updated`
+outbox row; a repeat writes neither. Assigning an auditor, `system`, or an unknown identifier is
+refused 422; an auditor assigning is refused 403; a stale version is refused 409 carrying both
+version numbers.
+
+**Then it was made repeatable**, because a verification nobody can rerun is a claim.
+`apps/web/tests/real-stack/` drives the console image compose publishes against the API image
+compose publishes, `make verify-real-stack` and its PowerShell twin run it, and
+`docs/testing/TEST_RESULTS.md` records what it covers.
+
+### Three things the verification found that the verification was not looking for
+
+**Running the suite twice failed the second run.** `/auth/login` is rate-limited to ten attempts a
+minute per caller (ADR-0017 §2) and the first version signed in on demand, spending the allowance
+partway through its last test. That is the limiter working correctly and the suite behaving badly:
+it now holds one session per operator and honours `Retry-After`. **A test that has only ever been
+run once is a test whose interaction with the system it tests is unknown.**
+
+**CodeQL blocked the merge, and was right.** The suite opened `.env` to read the demo operator's
+password and posted it in a login request — `js/file-access-to-http`, an accurate description of the
+data flow. The fix was to delete the flow rather than argue about it: the runners source `.env` the
+way `make bench` already did, and the suite takes the credential from the environment like every
+other configured value. **A test implementing dotenv was the actual defect**; the alert just named it.
+
+**The branch protection blocked on an unresolved conversation**, not on a failing check, and
+`gh pr merge` reports only "the base branch policy prohibits the merge". `gh api -X PUT .../merge`
+says which rule: "A conversation must be resolved before this pull request can be merged." Worth
+knowing, because the two messages send you to different places.
+
+### The re-measurement, and two corrections it forced
+
+Every suite was re-run on `27cf15c` with the whole stack up, because the published table was still
+Phase 8's and had drifted — 322 integration tests where the merged code has 337, 88 end-to-end where
+it has 92.
+
+**"CodeQL: 0 results" was imprecise.** The java-kotlin analysis of `refs/heads/main` reports
+`results_count=10`, and all ten are the alerts Phase 8 dismissed with recorded arguments. Open alerts
+are 0. Both numbers are true and they are not the same number; a reader comparing the API to the
+table would have concluded one of them was wrong.
+
+**The console's branch coverage is sitting exactly on its floor** — 17.00% against a gate of 17,
+down from the 18.61% the gate was set below in Phase 6. The assignment work added branches the unit
+layer does not cover; the end-to-end suites cover that behaviour instead. The ratchet did its job by
+making the erosion visible, and the next untested branch fails the build.
+
+### The documentation consistency pass
+
+Seven entries in "Known issues and technical debt" described a repository that no longer existed:
+`src/mocks/` was still said to render the console, `apps/web` was said to have no coverage gate, two
+entries pointed at Phase 6 to fix them and Phase 6 had closed, and six entities were listed as having
+no callers when four had acquired them. Each was checked against the code rather than reasoned about.
+
+**Two of them turned out to be real and still open**, which is why the pass was worth doing: the
+console loads its typeface from Google Fonts, so a stack that calls itself local-first has one
+runtime dependency on a third party; and `audit_log` exists in the schema with zero rows on a stack
+that has been running for days, because nothing writes it. Alert history is carried by
+`alert_actions`, so nothing is missing — but a reader seeing the table should know it is unused
+rather than coincidentally empty. Both are now in the changelog's known limitations.
+
+### State at the stop
+
+`CHANGELOG.md` carries the v1.0.0 release notes with features, setup, migrations, security notes,
+known limitations and evidence links. Repository metadata was already correct — description, thirteen
+topics, Apache-2.0, public — and needs nothing. The ruleset is active on the default branch with nine
+required status checks, no bypass actors, and deletion and non-fast-forward both blocked.
+
+**The tag does not exist yet.** It is the next action, and it must point at the merge of this
+documentation branch.
+
+**Neither human-verification item was done and neither may be reported as done.** The real-stack
+suite drives a browser; that is not a person using a screen reader, and it is not a person signing in
+and walking the console.
+
+---

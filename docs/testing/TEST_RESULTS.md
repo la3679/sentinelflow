@@ -27,24 +27,41 @@ On Windows without `make`, every target is available as `.\scripts\dev\sf.ps1 <t
 
 ## Current verified results
 
-**2026-08-31**, on the commit that closed Phase 8, on JDK 25.0.4.1+1:
+**2026-09-01**, on `27cf15c` — the last commit that changed code before `v1.0.0` — on
+JDK 25.0.4.1+1, with the full Docker Compose stack running. The tag itself sits on the
+documentation commit that follows, which changes no behaviour these numbers describe.
 
-| Suite                      | Command                                 | Result                                                   |
-| -------------------------- | --------------------------------------- | -------------------------------------------------------- |
-| API — full verify          | `./mvnw verify` in `apps/api`           | **259 unit + 322 integration passed**, 0 failures        |
-| API — coverage             | JaCoCo, both suites                     | **gates met** — LINE 0.80, BRANCH 0.70                   |
-| Scoring — unit             | `uv run pytest` in `apps/scoring`       | **187 passed** in 139.59 s                               |
-| Scoring — lint and types   | `ruff check` · `ruff format` · `mypy`   | **PASS** — no issues over 46 source files                |
-| Console — unit             | `bun run test` in `apps/web`            | **41 passed**                                            |
-| Console — browser and a11y | `bun run test:e2e` in `apps/web`        | **88 passed** — axe clean, eight routes, two viewports   |
-| Contracts                  | `bun scripts/dev/check-contracts.mjs`   | **PASS** — two OpenAPI documents and the AsyncAPI one    |
-| Documentation              | `bun scripts/dev/check-docs.mjs`        | **PASS** — 234 links across 49 files, 0 broken           |
-| Formatting                 | `bun run format:check`                  | **PASS**                                                 |
-| Bootstrap                  | `bash scripts/dev/bootstrap.sh --check` | **complete**                                             |
-| Static analysis            | CodeQL on `refs/heads/main`             | **0 results**, CodeQL 2.26.4, `security-and-quality`     |
-| Container scanning         | Trivy in `ci-containers.yml`            | **clean** on all three images, fixable HIGH and CRITICAL |
-| Secret scanning            | gitleaks in `security-scan.yml`         | **clean** over full history                              |
-| Everything on `main`       | eight workflows                         | **all green**                                            |
+| Suite                      | Command                                  | Result                                                   |
+| -------------------------- | ---------------------------------------- | -------------------------------------------------------- |
+| API — full verify          | `./mvnw verify` in `apps/api`            | **259 unit + 337 integration passed**, 0 failures        |
+| API — coverage             | JaCoCo, both suites                      | **LINE 0.9017, BRANCH 0.8030** — gates 0.80 / 0.70       |
+| Scoring — unit             | `uv run pytest` in `apps/scoring`        | **187 passed** in 41.89 s                                |
+| Scoring — coverage         | `uv run pytest --cov`                    | **96.97%** — gate 90%                                    |
+| Scoring — lint and types   | `ruff check` · `ruff format` · `mypy`    | **PASS** — no issues over 46 source files                |
+| Console — unit             | `bun run test` in `apps/web`             | **41 passed**                                            |
+| Console — coverage         | `bun run test:coverage`                  | **26.37% statements, 17.00% branches** — gates 25 / 17   |
+| Console — browser and a11y | `bun run test:e2e` in `apps/web`         | **92 passed** — axe clean, eight routes, two viewports   |
+| Console — real stack       | `make verify-real-stack`                 | **5 passed** against the running compose stack           |
+| Contracts                  | `bun scripts/dev/check-contracts.mjs`    | **PASS** — two OpenAPI documents and the AsyncAPI one    |
+| Documentation              | `bun scripts/dev/check-docs.mjs`         | **PASS** — 305 links across 55 files, 0 broken           |
+| Formatting                 | `bun run format:check`                   | **PASS**                                                 |
+| Smoke                      | `.\scripts\dev\sf.ps1 smoke`             | **23 passed, 0 failed** against the running stack        |
+| Static analysis            | CodeQL on `refs/heads/main` at `27cf15c` | **0 open alerts**; 10 dismissed with reasons, see below  |
+| Container scanning         | Trivy in `ci-containers.yml`             | **clean** on all three images, fixable HIGH and CRITICAL |
+| Secret scanning            | gitleaks in `security-scan.yml`          | **clean** over full history                              |
+| Everything on `main`       | eight workflows at `27cf15c`             | **all green**                                            |
+
+**"0 open alerts" is not "0 results".** The java-kotlin analysis of `refs/heads/main` reports
+`results_count=10`, and all ten are the alerts dismissed in Phase 8 with their arguments recorded —
+one `java/spring-disabled-csrf-protection` and nine `java/unused-parameter`. A reader comparing the
+API's number to this table would otherwise conclude one of them was wrong. The reasons are in
+[`docs/security/THREAT_MODEL.md`](../security/THREAT_MODEL.md).
+
+**The console's branch coverage sits exactly on its floor**, at 17.00% against a gate of 17. It was
+18.61% when the gate was set in Phase 6 and the assignment work added branches without adding unit
+tests for them — the end-to-end suites cover that behaviour instead. The ratchet did its job by
+making the erosion visible; the next console change that adds an untested branch fails the build,
+which is the intended consequence rather than a surprise.
 
 The API's integration suites run against **real PostgreSQL 18.6 and real Kafka 4.2.1** in
 Testcontainers, on the GitHub runner as well as locally. H2 is never accepted as evidence, and
@@ -223,13 +240,14 @@ carry between tests.
 
 Kept because a number's date is part of the number.
 
-| Date       | What it measured                                       | Headline                                                                |
-| ---------- | ------------------------------------------------------ | ----------------------------------------------------------------------- |
-| 2026-08-31 | Phase 7 close — drills, runbooks, alerting rules       | 233 unit + 309 integration; 13/13 Prometheus rules parsed and evaluated |
-| 2026-08-29 | Phase 6 close — the console against the real API       | 226 unit + 290 integration; 82 Playwright tests, axe clean              |
-| 2026-08-28 | Phase 5 close — the reporting endpoints under contract | 189 unit + 250 integration; 89.7% lines, 79.5% branches; smoke 23/23    |
-| 2026-08-27 | The assessment workflow, joined and persisted          | 147 unit + 172 integration; 85.7% lines; scoring 171 passed at 97.36%   |
-| 2026-08-26 | Phase 3 close — ingestion, the outbox and Kafka        | 57 unit + 116 integration; 80.5% lines, 70.0% branches                  |
+| Date       | What it measured                                       | Headline                                                                  |
+| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------------- |
+| 2026-08-31 | Phase 8 close — the threat model, CodeQL and the SBOM  | 259 unit + 322 integration; 88 Playwright tests; CodeQL triaged to 0 open |
+| 2026-08-31 | Phase 7 close — drills, runbooks, alerting rules       | 233 unit + 309 integration; 13/13 Prometheus rules parsed and evaluated   |
+| 2026-08-29 | Phase 6 close — the console against the real API       | 226 unit + 290 integration; 82 Playwright tests, axe clean                |
+| 2026-08-28 | Phase 5 close — the reporting endpoints under contract | 189 unit + 250 integration; 89.7% lines, 79.5% branches; smoke 23/23      |
+| 2026-08-27 | The assessment workflow, joined and persisted          | 147 unit + 172 integration; 85.7% lines; scoring 171 passed at 97.36%     |
+| 2026-08-26 | Phase 3 close — ingestion, the outbox and Kafka        | 57 unit + 116 integration; 80.5% lines, 70.0% branches                    |
 
 ## What the suites do not cover
 
