@@ -298,8 +298,6 @@ and still reads as a build log has not passed this gate.
 
 ## Phase 10 — Release · M5
 
-## Phase 10 — Release · M5
-
 **Deliverables**
 
 - All pull requests merged safely; `main` CI green
