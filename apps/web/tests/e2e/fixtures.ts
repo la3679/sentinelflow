@@ -21,6 +21,35 @@ export const OPERATOR = { username: "analyst.one", password: "a-demo-password" }
 /** Matches whatever origin the bundle was built to call. */
 export const API_GLOB = "**/api/v1/**";
 
+/** Who the stub signs in as, so "assign to me" has somebody to be. */
+export const SIGNED_IN_OPERATOR_ID = "44444444-4444-4444-a444-444444444444";
+
+/** Another operator, so the picker has a choice that is not the caller. */
+export const OTHER_OPERATOR_ID = "55555555-5555-4555-a555-555555555555";
+export const OTHER_OPERATOR_NAME = "B. Analyst";
+
+/**
+ * The operator directory, in the contract's shape.
+ *
+ * An auditor is deliberately absent: `GET /operators` lists only operators who
+ * may hold an alert, and a stub that returned one would be describing an API
+ * that does not exist.
+ */
+const OPERATORS = [
+  {
+    operatorId: SIGNED_IN_OPERATOR_ID,
+    username: "analyst.one",
+    displayName: "A. Analyst",
+    roles: ["ANALYST"],
+  },
+  {
+    operatorId: OTHER_OPERATOR_ID,
+    username: "analyst.two",
+    displayName: OTHER_OPERATOR_NAME,
+    roles: ["ANALYST"],
+  },
+];
+
 const TOKEN_BODY = {
   // Not a real JWT and not accepted by anything: three base64url segments with
   // no signature over them. The console treats a token as an opaque string, so
@@ -28,6 +57,8 @@ const TOKEN_BODY = {
   token: "header.payload.not-a-signature",
   tokenType: "Bearer",
   expiresAt: "2099-01-01T00:00:00Z",
+  operatorId: SIGNED_IN_OPERATOR_ID,
+  displayName: "A. Analyst",
   roles: ["ANALYST"],
 };
 
@@ -107,6 +138,7 @@ export const test = base.extend<Fixtures>({
       status: "NEW",
       priority: "URGENT",
       assigneeId: null as string | null,
+      assignee: null as { operatorId: string; username: string; displayName: string } | null,
       summary: "HIGH risk 82 on TXN-000042 — R_VELOCITY_10M",
       riskBand: "HIGH",
       finalScore: 82,
@@ -263,7 +295,15 @@ export const test = base.extend<Fixtures>({
         alertReference: `ALT-${String(index + 2).padStart(4, "0")}`,
         status: ["NEW", "IN_REVIEW", "ESCALATED", "NEW", "IN_REVIEW", "NEW", "CLOSED"][index],
         priority,
-        assigneeId: index % 2 === 0 ? null : "55555555-5555-4555-a555-555555555555",
+        assigneeId: index % 2 === 0 ? null : OTHER_OPERATOR_ID,
+        assignee:
+          index % 2 === 0
+            ? null
+            : {
+                operatorId: OTHER_OPERATOR_ID,
+                username: "analyst.two",
+                displayName: OTHER_OPERATOR_NAME,
+              },
         riskBand: priority === "URGENT" ? "CRITICAL" : priority === "LOW" ? "MEDIUM" : "HIGH",
         finalScore: 92 - index * 4,
         summary: `${priority === "URGENT" ? "CRITICAL" : "HIGH"} risk ${92 - index * 4} on TXN-0000${index + 43} — ${
@@ -282,6 +322,16 @@ export const test = base.extend<Fixtures>({
         path,
         authorization: await request.headerValue("authorization"),
       });
+
+      if (path.endsWith("/operators") || path.includes("/operators?")) {
+        await route.fulfill(
+          json({
+            content: OPERATORS,
+            page: { page: 0, size: 200, totalElements: OPERATORS.length, totalPages: 1 },
+          }),
+        );
+        return;
+      }
 
       if (path.endsWith("/auth/login")) {
         if (loginRefused) {
@@ -320,6 +370,20 @@ export const test = base.extend<Fixtures>({
         alert.status = body.targetStatus ?? alert.status;
         alert.version += 1;
         alert.legalTargets = ["ESCALATED", "CONFIRMED_SUSPICIOUS", "DISMISSED_FALSE_POSITIVE"];
+        await route.fulfill(json(alert));
+        return;
+      }
+
+      if (path.endsWith(`/alerts/${ALERT_ID}/assignment`)) {
+        // One operation for both directions, as the contract says: a null
+        // assigneeId releases the alert rather than assigning it to nobody. The
+        // stub resolves the identifier the way the API does, so the console is
+        // exercised against the shape it will actually receive.
+        const body = JSON.parse(request.postData() ?? "{}") as { assigneeId?: string | null };
+        const assigneeId = body.assigneeId ?? null;
+        alert.assigneeId = assigneeId;
+        alert.assignee = OPERATORS.find((operator) => operator.operatorId === assigneeId) ?? null;
+        alert.version += 1;
         await route.fulfill(json(alert));
         return;
       }

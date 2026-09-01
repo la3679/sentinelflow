@@ -17,6 +17,8 @@ const A_SESSION: SignedInPayload = {
   token: "a.jwt.value",
   tokenType: "Bearer",
   expiresAt: "2026-08-28T20:00:00Z",
+  operatorId: "11111111-1111-4111-a111-111111111111",
+  displayName: "A. Analyst",
   roles: ["ANALYST"],
 };
 
@@ -42,8 +44,15 @@ describe("the operator session", () => {
   it("never keeps the password: there is nowhere in the state to put one", () => {
     const state = reducer(undefined, signedIn(A_SESSION));
 
+    // An allow-list rather than a "does not contain password" check, so a field
+    // added to the session has to be added here deliberately. operatorId and
+    // displayName arrived with ADR-0019: both come from the login response, and
+    // neither is a credential - the operator's own identifier is already the
+    // token's subject, and the name is what the API publishes for it.
     expect(Object.keys(state).sort()).toEqual([
+      "displayName",
       "expiresAt",
+      "operatorId",
       "roles",
       "status",
       "token",

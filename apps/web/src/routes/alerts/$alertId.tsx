@@ -18,6 +18,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ALERT_ACTION_LABELS,
@@ -28,7 +35,7 @@ import {
   PROCESSING_STATUS_LABELS,
   ROLE_LABELS,
 } from "@/domain/labels";
-import type { Alert, AlertStatus } from "@/domain/types";
+import type { Alert, AlertStatus, Operator } from "@/domain/types";
 import {
   useAddAlertNoteMutation,
   useAssignAlertMutation,
@@ -36,6 +43,7 @@ import {
   useGetAlertQuery,
   useGetTransactionAssessmentQuery,
   useGetTransactionQuery,
+  useListOperatorsQuery,
   useTransitionAlertMutation,
 } from "@/api/sentinelApi";
 import type { SentinelError } from "@/api/transport";
@@ -105,7 +113,15 @@ function AlertDetailPage() {
  * version the re-read produced, rather than saying "conflict" and leaving an
  * analyst to work out what happened to the note they were holding.
  */
-type Intent = { kind: "transition"; targetStatus: AlertStatus } | { kind: "release" };
+type Intent =
+  | { kind: "transition"; targetStatus: AlertStatus }
+  | { kind: "release" }
+  | { kind: "assign"; assigneeId: string; displayName: string };
+
+/** A role as a person reads it. The picker says what the directory publishes. */
+function roleLabel(role: string): string {
+  return ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role;
+}
 
 function isConflict(error: unknown): error is SentinelError {
   return typeof error === "object" && error !== null && (error as SentinelError).status === 409;
@@ -121,6 +137,10 @@ function AlertWorkspace({ alert, onReread }: { alert: Alert; onReread: () => voi
   const history = useGetAlertHistoryQuery({ alertId: alert.alertId });
 
   const [assignAlert, assignState] = useAssignAlertMutation();
+  const operators = useListOperatorsQuery();
+
+  /** Who the picker currently has selected. Empty until an operator chooses. */
+  const [picked, setPicked] = useState<string>("");
   const [transitionAlert, transitionState] = useTransitionAlertMutation();
   const [addNote, noteState] = useAddAlertNoteMutation();
 
@@ -170,6 +190,16 @@ function AlertWorkspace({ alert, onReread }: { alert: Alert; onReread: () => voi
       assignAlert({
         alertId: alert.alertId,
         assigneeId: null,
+        expectedVersion: alert.version,
+      }).unwrap(),
+    );
+  };
+
+  const assign = (assigneeId: string, displayName: string): void => {
+    void attempt({ kind: "assign", assigneeId, displayName }, () =>
+      assignAlert({
+        alertId: alert.alertId,
+        assigneeId,
         expectedVersion: alert.version,
       }).unwrap(),
     );
@@ -341,21 +371,52 @@ function AlertWorkspace({ alert, onReread }: { alert: Alert; onReread: () => voi
               Assignment
             </p>
             <p className="text-sm">
-              {alert.assigneeId ? (
+              {alert.assignee ? (
                 <>
-                  Held by <span className="tabular text-xs">{alert.assigneeId}</span>
+                  Held by <strong>{alert.assignee.displayName}</strong>{" "}
+                  <span className="tabular text-xs text-muted-foreground">
+                    {alert.assignee.username}
+                  </span>
+                </>
+              ) : alert.assigneeId ? (
+                /*
+                  An identifier the API could not resolve. Not a state the schema
+                  can currently reach, and rendered rather than hidden: showing
+                  the raw identifier is the honest answer, and inventing a name
+                  for it would be worse than admitting there is none.
+                */
+                <>
+                  Held by an operator this API cannot name{" "}
+                  <span className="tabular text-xs">{alert.assigneeId}</span>
                 </>
               ) : (
                 "Unassigned."
               )}
             </p>
-            {/*
-              Release is the only assignment this console can make. Giving the
-              alert to somebody needs their identifier, and the API resolves no
-              name to one and sends the operator none of their own - recorded as
-              an open decision in docs/frontend/API_MIGRATION_AUDIT.md rather
-              than papered over with a picker that would answer 422.
-            */}
+
+            {mutable ? (
+              <AssigneePicker
+                operators={operators.data?.content ?? []}
+                loading={operators.isLoading}
+                failed={operators.isError}
+                onRetry={() => void operators.refetch()}
+                value={picked}
+                onChange={setPicked}
+                onAssign={assign}
+                onAssignToMe={
+                  session.operatorId
+                    ? () => assign(session.operatorId!, session.displayName ?? "you")
+                    : null
+                }
+                currentAssigneeId={alert.assigneeId}
+                busy={assignState.isLoading}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                This role reads alerts and does not assign them.
+              </p>
+            )}
+
             <Button
               type="button"
               variant="outline"
@@ -364,10 +425,6 @@ function AlertWorkspace({ alert, onReread }: { alert: Alert; onReread: () => voi
             >
               Release to the queue
             </Button>
-            <p className="text-xs text-muted-foreground">
-              Assigning to a named analyst is not available yet: the API identifies an assignee by
-              identifier and publishes nothing that resolves one to a person.
-            </p>
             {assignState.isError && !isConflict(assignState.error) ? (
               <p role="alert" className="text-xs text-destructive">
                 {errorMessage(assignState.error)}
@@ -533,7 +590,11 @@ function ConflictNotice({
       <p className="text-sm">
         It is now <strong>{ALERT_STATUS_LABELS[alert.status]}</strong>, at version{" "}
         <span className="tabular">{alert.version}</span>
-        {alert.assigneeId ? ", and it is assigned." : ", and it is unassigned."}
+        {alert.assignee
+          ? `, and it is with ${alert.assignee.displayName}.`
+          : alert.assigneeId
+            ? ", and it is assigned."
+            : ", and it is unassigned."}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         {intent.kind === "transition" && stillLegal ? (
@@ -547,14 +608,130 @@ function ConflictNotice({
           </Button>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {intent.kind === "transition"
-              ? `Moving it to ${ALERT_STATUS_LABELS[intent.targetStatus]} is no longer one of the moves available from here.`
-              : "Read the current state before releasing it."}
+            {intent.kind === "assign"
+              ? `Assigning it to ${intent.displayName} was not applied. Read what it says above and choose again if you still want to.`
+              : intent.kind === "transition"
+                ? `Moving it to ${ALERT_STATUS_LABELS[intent.targetStatus]} is no longer one of the moves available from here.`
+                : "Read the current state before releasing it."}
           </p>
         )}
         <Button type="button" variant="ghost" onClick={onDismiss}>
           Dismiss
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The picker that turns "assign this alert" into a name instead of a UUID.
+ *
+ * <h2>Four states, because it is a data view</h2>
+ *
+ * `.claude/rules/frontend.md` requires loading, empty, error-with-retry and
+ * bounded of every data view, and this is one — it reads `GET /operators`.
+ * Bounded is the API's doing: it caps the page and refuses more, so this cannot
+ * grow into an unbounded list however many operators exist.
+ *
+ * **Empty is a real state and not an impossible one.** A deployment whose
+ * operators are all auditors, or all disabled, has nobody to assign to, and the
+ * honest answer is to say so rather than to render a control with nothing
+ * behind it.
+ *
+ * <h2>What it does not decide</h2>
+ *
+ * Nothing here authorizes anything. The directory lists who the API would
+ * accept, and the API checks again on the way in — an assignment this picker
+ * never offered is refused by the server, and `OperatorDirectoryIT` proves it.
+ * Offering only what the server accepts is a courtesy to the operator, not a
+ * security boundary.
+ *
+ * The operator already holding the alert is left out of the list, because
+ * assigning somebody to work they already have is not a move: the API treats it
+ * as a no-op and writes nothing, so offering it would be a control that appears
+ * to do something and does not.
+ */
+function AssigneePicker({
+  operators,
+  loading,
+  failed,
+  onRetry,
+  value,
+  onChange,
+  onAssign,
+  onAssignToMe,
+  currentAssigneeId,
+  busy,
+}: {
+  operators: Operator[];
+  loading: boolean;
+  failed: boolean;
+  onRetry: () => void;
+  value: string;
+  onChange: (value: string) => void;
+  onAssign: (assigneeId: string, displayName: string) => void;
+  onAssignToMe: (() => void) | null;
+  currentAssigneeId: string | null;
+  busy: boolean;
+}) {
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Loading the operator directory…</p>;
+  }
+
+  if (failed) {
+    return (
+      <div className="space-y-2">
+        <p role="alert" className="text-sm text-destructive">
+          The operator directory could not be read, so there is nobody to choose from.
+        </p>
+        <Button type="button" variant="outline" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  const choices = operators.filter((operator) => operator.operatorId !== currentAssigneeId);
+
+  if (choices.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        There is nobody else to assign this to. The directory lists only active operators who hold a
+        role that can work an alert.
+      </p>
+    );
+  }
+
+  const picked = choices.find((operator) => operator.operatorId === value);
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="assign-to">Assign to</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger id="assign-to" className="w-full max-w-xs">
+            <SelectValue placeholder="Choose an operator" />
+          </SelectTrigger>
+          <SelectContent>
+            {choices.map((operator) => (
+              <SelectItem key={operator.operatorId} value={operator.operatorId}>
+                {operator.displayName} — {operator.roles.map(roleLabel).join(", ")}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          disabled={!picked || busy}
+          onClick={() => picked && onAssign(picked.operatorId, picked.displayName)}
+        >
+          Assign
+        </Button>
+        {onAssignToMe ? (
+          <Button type="button" variant="outline" disabled={busy} onClick={onAssignToMe}>
+            Assign to me
+          </Button>
+        ) : null}
       </div>
     </div>
   );

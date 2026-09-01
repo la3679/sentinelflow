@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 
-import { ALERT_ID, ALERT_REFERENCE, expect, test } from "./fixtures";
+import { ALERT_ID, ALERT_REFERENCE, expect, OTHER_OPERATOR_NAME, test } from "./fixtures";
 
 /** Every route the console is expected to render, and whether it needs a session. */
 const ROUTES = [
@@ -279,6 +279,54 @@ test.describe("the screens that describe the platform", () => {
     ).toBeVisible();
     await expect(page.getByText(/the policy that runs/i)).toBeVisible();
     await expect(page.getByRole("cell", { name: "70" })).toBeVisible();
+  });
+
+  test("an analyst gives an alert to a named operator and sees it assigned", async ({
+    page,
+    api,
+    signIn,
+  }) => {
+    void api;
+    await signIn(page, `/alerts/${ALERT_ID}`);
+
+    // The state this journey exists to leave behind: before ADR-0019 this
+    // screen could only release an alert, because the API published an
+    // identifier and nothing that resolved it to a person.
+    await expect(page.getByText(/unassigned/i).first()).toBeVisible();
+
+    await page.getByLabel(/assign to/i).click();
+    await page.getByRole("option", { name: new RegExp(OTHER_OPERATOR_NAME, "i") }).click();
+    await page.getByRole("button", { name: /^assign$/i }).click();
+
+    // A person, not a UUID, and read back from what the API answered rather
+    // than from what the console hoped it would. The name is its own element,
+    // so it is asserted on its own rather than through a regex that would have
+    // to span two.
+    await expect(page.getByText("Held by")).toBeVisible();
+    await expect(page.getByText(OTHER_OPERATOR_NAME, { exact: true })).toBeVisible();
+
+    // And the queue agrees, because the row renders the same resolved assignee
+    // from the same field rather than deciding for itself what to show.
+    //
+    // Navigated in the app rather than with page.goto: the token lives in the
+    // tab's memory and nowhere else, so a full load signs the operator out
+    // (ADR-0012 §3). That is the console's documented behaviour and this test
+    // would otherwise be asserting against the sign-in screen.
+    await page.getByRole("link", { name: /back to queue/i }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/alert queue/i);
+    await expect(page.getByText(OTHER_OPERATOR_NAME).first()).toBeVisible();
+  });
+
+  test("an analyst takes an alert themselves", async ({ page, api, signIn }) => {
+    void api;
+    await signIn(page, `/alerts/${ALERT_ID}`);
+
+    // "Assign to me" is only buildable because the login response now carries
+    // the operator's own identifier. It did not before, and the screen said so.
+    await page.getByRole("button", { name: /assign to me/i }).click();
+
+    await expect(page.getByText("Held by")).toBeVisible();
+    await expect(page.getByText("A. Analyst", { exact: true })).toBeVisible();
   });
 
   test("the health screen says where the numbers it does not show are, rather than inventing them", async ({

@@ -68,6 +68,8 @@ const A_TOKEN = {
   token: "a.jwt.value",
   tokenType: "Bearer",
   expiresAt: "2026-08-28T20:00:00Z",
+  operatorId: "11111111-1111-4111-a111-111111111111",
+  displayName: "A. Analyst",
   roles: ["ANALYST"] as const,
 };
 

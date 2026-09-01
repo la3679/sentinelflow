@@ -197,6 +197,14 @@ export interface Alert {
    */
   assigneeId: string | null;
   /**
+   * The person `assigneeId` names, or null when the alert is unassigned.
+   *
+   * Both are null together. An identifier that resolved to nothing publishes the
+   * id with a null assignee, which is the honest answer rather than a
+   * placeholder — so a screen renders from this and falls back to the id.
+   */
+  assignee: AlertAssignee | null;
+  /**
    * Built from the band, the score, the transaction reference and the leading
    * reason **code** — never a reason's generated description, which may name a
    * device handle and is right on a detail page and wrong on a queue row.
@@ -263,10 +271,34 @@ export interface AlertSummaryReport {
   byRiskBand: Record<RiskBand, number>;
 }
 
-export interface TokenResponse {
-  token: string;
-  tokenType: string;
-  expiresAt: string;
+/**
+ * The person an alert is with.
+ *
+ * Resolved by the API rather than here, so a queue row can render somebody
+ * without this console loading the operator directory before it draws a row —
+ * and so that a client and the API cannot disagree about an identifier that
+ * resolves to nothing.
+ *
+ * `username` travels beside `displayName` because a display name is not unique
+ * and a username is.
+ */
+export interface AlertAssignee {
+  operatorId: string;
+  username: string;
+  displayName: string;
+}
+
+/**
+ * An operator an alert may be given to.
+ *
+ * From `GET /operators`, which lists the active operators holding a role that
+ * can work an alert. **The roles here authorize nothing**: they are for saying
+ * "administrator" beside a name. Every authorization decision is the API's.
+ */
+export interface Operator {
+  operatorId: string;
+  username: string;
+  displayName: string;
   roles: Role[];
 }
 

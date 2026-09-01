@@ -39,6 +39,16 @@ export interface SessionState {
   expiresAt: string | null;
   /** What the operator typed. The API's `sub` is a UUID, which is not a thing to show a person. */
   username: string | null;
+  /**
+   * The operator's own identifier, from the login response.
+   *
+   * Held so "assign this to me" can be offered. **It is not a credential and not
+   * an authorization** — the API decides every assignment from the token, and
+   * this only lets a screen name the caller without asking who they are again.
+   */
+  operatorId: string | null;
+  /** The operator's name, as the API publishes it. */
+  displayName: string | null;
   roles: Role[];
 }
 
@@ -47,6 +57,8 @@ export interface SignedInPayload {
   token: string;
   tokenType: string;
   expiresAt: string;
+  operatorId: string;
+  displayName: string;
   roles: Role[];
 }
 
@@ -56,6 +68,8 @@ const SIGNED_OUT: SessionState = {
   tokenType: null,
   expiresAt: null,
   username: null,
+  operatorId: null,
+  displayName: null,
   roles: [],
 };
 
@@ -69,6 +83,8 @@ export const sessionSlice = createSlice({
       state.tokenType = action.payload.tokenType;
       state.expiresAt = action.payload.expiresAt;
       state.username = action.payload.username;
+      state.operatorId = action.payload.operatorId;
+      state.displayName = action.payload.displayName;
       state.roles = action.payload.roles;
     },
     /** Deliberate. The operator asked to leave. */
