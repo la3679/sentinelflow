@@ -189,6 +189,29 @@ function Invoke-Help {
     Write-Host 'On Linux, macOS, WSL or Git Bash the same targets are available as: make <target>'
 }
 
+# Every secret .env must carry, and how many random bytes each gets.
+#
+# One list rather than two, because the two this file used to keep - a check
+# that knew about two secrets and a generator that wrote the same two - drifted
+# behind the shell script as Phase 8 added SENTINELFLOW_INGEST_API_KEY. A
+# Windows user following the README's PowerShell path on a fresh clone got an
+# .env that compose refused outright: "required variable
+# SENTINELFLOW_INGEST_API_KEY is missing a value". Found by the Phase 9
+# clean-clone verification.
+#
+# 48 bytes for the two that have a minimum length: the API refuses a signing key
+# under 32 characters and IngestionProperties refuses an ingest key under 32
+# (ADR-0017 section 1), and base64 of 24 bytes is exactly 32 - generated right at
+# a limit is generated wrong. The same reasoning, and the same numbers, as
+# scripts/dev/bootstrap.sh.
+$RequiredSecrets = [ordered] @{
+    'POSTGRES_PASSWORD'                   = 24
+    'GRAFANA_ADMIN_PASSWORD'              = 24
+    'SENTINELFLOW_JWT_SECRET'             = 48
+    'SENTINELFLOW_DEMO_OPERATOR_PASSWORD' = 24
+    'SENTINELFLOW_INGEST_API_KEY'         = 48
+}
+
 function Invoke-Bootstrap {
     Write-Host 'SentinelFlow bootstrap'
     Write-Host ''
@@ -279,7 +302,7 @@ function Invoke-Bootstrap {
         # @(...) around the pipeline: Where-Object returns a scalar rather than
         # an array when exactly one item matches, and Set-StrictMode then rejects
         # .Count on it.
-        $missing = @(@('POSTGRES_PASSWORD', 'GRAFANA_ADMIN_PASSWORD') |
+        $missing = @($RequiredSecrets.Keys | Sort-Object |
             Where-Object { -not $values.ContainsKey($_) -or [string]::IsNullOrWhiteSpace($values[$_]) })
         if ($missing.Count -gt 0) {
             Write-Fail ".env exists but these required secrets are empty: $($missing -join ', ')"
@@ -287,7 +310,7 @@ function Invoke-Bootstrap {
             $failures++
         }
         else {
-            Write-Ok '.env exists with both required secrets set - left untouched'
+            Write-Ok '.env exists with every required secret set - left untouched'
         }
     }
     elseif ($failures -gt 0) {
@@ -298,14 +321,22 @@ function Invoke-Bootstrap {
         # A cryptographic RNG, not Get-Random: Get-Random is seeded from a
         # predictable source and must never be used to generate a secret.
         function New-Secret {
-            $bytes = New-Object byte[] 24
+            param([int] $Bytes = 24)
+            $buffer = New-Object byte[] $Bytes
             $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
-            try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-            return [Convert]::ToBase64String($bytes)
+            try { $rng.GetBytes($buffer) } finally { $rng.Dispose() }
+            return [Convert]::ToBase64String($buffer)
         }
         $content = Get-Content $exampleFile -Raw
-        $content = $content -replace '(?m)^POSTGRES_PASSWORD=$', "POSTGRES_PASSWORD=$(New-Secret)"
-        $content = $content -replace '(?m)^GRAFANA_ADMIN_PASSWORD=$', "GRAFANA_ADMIN_PASSWORD=$(New-Secret)"
+        foreach ($name in $RequiredSecrets.Keys) {
+            $secret = New-Secret -Bytes $RequiredSecrets[$name]
+            $replaced = $content -replace "(?m)^$name=`$", "$name=$secret"
+            if ($replaced -eq $content) {
+                Write-Fail "could not set $name in .env - .env.example has no empty '$name=' line"
+                $failures++
+            }
+            $content = $replaced
+        }
         Set-Content -Path $envFile -Value $content -Encoding utf8 -NoNewline
         Write-Ok '.env generated from .env.example with fresh local secrets'
         Write-Host '        It is git-ignored. Do not commit it, and do not reuse these values anywhere else.'
