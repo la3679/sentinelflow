@@ -172,6 +172,7 @@ function Invoke-Help {
         'test-scoring'     = 'Tests for the scoring service'
         'test-integration' = 'Testcontainers PostgreSQL suites (requires Docker)'
         'test-e2e'         = 'Playwright browser, accessibility and responsive checks'
+        'verify-real-stack' = 'Verify operator identity against the running compose stack'
         'lint'             = 'Lint every application'
         'format'           = 'Format everything in place'
         'format-check'     = 'Check formatting without changing anything'
@@ -1043,6 +1044,23 @@ switch ($Target) {
     'test-e2e' {
         Invoke-Native $Web 'bun' @('run', 'build')
         Invoke-Native $Web 'bun' @('run', 'test:e2e')
+    }
+    # The Makefile target sources .env; PowerShell has no `set -a`, so the one
+    # variable the driver needs is read out of the file and put on the process,
+    # exactly as `bench` below does it. The suite never opens .env itself.
+    'verify-real-stack' {
+        if (-not $env:SENTINELFLOW_DEMO_OPERATOR_PASSWORD) {
+            $envFile = Join-Path $RepoRoot '.env'
+            if (Test-Path $envFile) {
+                $line = Get-Content $envFile |
+                    Where-Object { $_ -match '^SENTINELFLOW_DEMO_OPERATOR_PASSWORD=' } |
+                    Select-Object -First 1
+                if ($line) {
+                    $env:SENTINELFLOW_DEMO_OPERATOR_PASSWORD = $line.Substring($line.IndexOf('=') + 1)
+                }
+            }
+        }
+        Invoke-Native $Web 'bun' @('run', 'test:real-stack')
     }
 
     'lint' {

@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:real-stack": "playwright test --config=playwright.real-stack.config.ts",
     "test:e2e:ui": "playwright test --ui",
     "verify": "bun run lint && bun run typecheck && bun run test && bun run build",
     "verify:full": "bun run verify && bun run test:e2e"

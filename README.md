@@ -370,6 +370,7 @@ make build             # build all three applications
 make test              # every standard suite
 make test-integration  # Testcontainers PostgreSQL + Kafka
 make test-e2e          # Playwright, accessibility, responsive
+make verify-real-stack # the console and API against the running compose stack
 make lint / format-check / security / smoke / docs-check / contracts-check
 make bench             # benchmark the running stack, write the report
 make seed / replay / reset-demo

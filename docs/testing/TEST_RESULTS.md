@@ -14,6 +14,7 @@ evidence".
 make test              # every standard suite
 make test-integration  # Testcontainers PostgreSQL 18.6 and Kafka 4.2.1
 make test-e2e          # Playwright, accessibility, responsive
+make verify-real-stack # against a running stack, nothing stubbed
 make lint              # eslint · ruff · mypy · spotless
 make format-check
 make contracts-check
@@ -162,6 +163,62 @@ log line truncates at 100 characters.
 The bearer token and the password never appeared, which is the other half of the result. A test
 that excuses the loggers it cannot satisfy is testing its own exclusions.
 
+## Operator identity, against the real stack
+
+**2026-09-01.** Assignment is the one workflow this repository verifies against the Docker Compose
+stack as well as against the suites, because "an alert can be given to a named analyst" is a v1
+release criterion and the suites that cover it are the two that cannot see the stack: the console's
+end-to-end suite stubs the API in the browser, and the API's integration suite runs against
+Testcontainers.
+
+```bash
+make up                 # or .\scripts\dev\sf.ps1 up
+make verify-real-stack  # or .\scripts\dev\sf.ps1 verify-real-stack
+```
+
+`apps/web/tests/real-stack/` drives the console image Compose publishes, which calls the API image
+Compose publishes, which reads the PostgreSQL it publishes. Nothing is stubbed, nothing is seeded by
+the suite, and the operators are whoever the stack holds.
+
+| What was checked                                                       | Result                                                                |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `make verify-real-stack`, freshly built images                         | **5 passed** in 6.7 s, and the same 5 through `sf.ps1`                |
+| Sign-in through the console's own form, against the real API           | lands on the alert, token in memory only                              |
+| `GET /api/v1/operators` with a real bearer token                       | the 3 seeded operators who may hold an alert, paged, `size>200` 422   |
+| Who is _not_ listed                                                    | `auditor.one` and the `system` principal                              |
+| The picker's options                                                   | equal to what the API returned — no invented user, no hardcoded id    |
+| Assigning through the picker                                           | `Held by Analyst Two`, and the server read back independently agrees  |
+| The queue row after it                                                 | the same resolved person, not a UUID                                  |
+| A lost race: another operator takes the alert while the screen is open | conflict notice naming the new holder; nothing overwritten            |
+| Assigning to an auditor, to `system`, or to an unknown id              | **422** each, `problems/invalid-assignee`                             |
+| An auditor attempting to assign                                        | **403**, `problems/insufficient-role`                                 |
+| A stale `expectedVersion`                                              | **409** carrying `expectedVersion` and `currentVersion`               |
+| Repeating an assignment that already holds                             | no version change, one `ASSIGNED` row, no second event                |
+| What the database holds afterwards                                     | one `alert_actions` row and one `alert.updated` outbox row, PUBLISHED |
+
+**The credential comes from the runner, not from the suite.** `make verify-real-stack` and its
+PowerShell twin source `.env` and pass `SENTINELFLOW_DEMO_OPERATOR_PASSWORD` through the
+environment, the same way `make bench` already did. The first version read `.env` itself and CodeQL
+flagged it as `js/file-access-to-http` — file contents flowing into an outbound request — which was
+a fair description of a test that had no business implementing dotenv. Run without the variable, the
+suite skips and says which command sets it.
+
+**The suite was checked against itself.** Two assertions were deliberately falsified — a wrong
+assignee id and an off-by-one option count — and both runs failed. A real-stack test that passes on
+the first attempt is worth exactly as much as the evidence that it can fail.
+
+### What running it twice found
+
+**`/auth/login` is rate-limited to ten attempts a minute per caller** (ADR-0017 §2), and the first
+version of this suite signed in on demand: a full run spent the allowance partway through its last
+test and got a `429`. That is the limiter working correctly and the suite behaving badly. It now
+holds one session per operator for the whole run and honours `Retry-After` when refused, which is
+what a well-behaved client does with the header the API already sends.
+
+Each console sign-in still costs a real login, and it has to: the token lives in the tab's memory
+and nowhere else ([ADR-0012](../adr/0012-operator-authentication.md) §3), so there is nothing to
+carry between tests.
+
 ## Earlier runs
 
 Kept because a number's date is part of the number.
@@ -182,6 +239,11 @@ nothing created the Kafka topics, the scoring client negotiated HTTP/2 against a
 service, and two PowerShell targets had never worked. Each is fixed, and
 [`docs/operations/RUNBOOKS.md`](../operations/RUNBOOKS.md) carries the diagnostic sequence for the
 second one.
+
+`make verify-real-stack` closes that gap for **assignment only**. Ingestion, scoring, the outbox,
+replay and the reporting endpoints are still covered by the suites and by `make smoke`, and neither
+of those drives a browser against the published images. A fourth defect of the same family would
+still be found by running the stack rather than by a green build.
 
 Performance is measured separately and reported with its method in
 [`docs/performance/BENCHMARK.md`](../performance/BENCHMARK.md). No latency, throughput or
