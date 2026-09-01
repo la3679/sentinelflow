@@ -3317,3 +3317,75 @@ suite drives a browser; that is not a person using a screen reader, and it is no
 and walking the console.
 
 ---
+
+## 2026-09-01 — Phase 10 closed: v1.0.0, and the step that had never run
+
+| Field           | Value                                                     |
+| --------------- | --------------------------------------------------------- |
+| Start / end UTC | 2026-09-01T15:00Z / 2026-09-01T15:45Z                     |
+| Starting SHA    | `147a6c9` on `main`                                       |
+| Ending SHA      | `main` at `7c2b1b7`; `v1.0.0` tagged on `147a6c9`         |
+| Objective       | Tag the release, attach its artefacts, and close Phase 10 |
+
+### The release
+
+**`v1.0.0` is published on `147a6c9`.** The tag was cut only after that commit had been re-verified
+rather than assumed: the full suites re-run with the Compose stack up, the stack rebuilt from that
+tree and `make verify-real-stack` run against it, all eight workflows green on it, 0 open
+code-scanning alerts, the ruleset active with no bypass actors, and no pull request open. The
+annotated tag object `68cf6ff` dereferences to `147a6c9`, checked through the API rather than
+inferred from `git tag`.
+
+Repository metadata needed nothing — description, thirteen topics, Apache-2.0, public, all already
+correct. The homepage URL stays empty, because there is no hosted demo and a placeholder URL is a
+prohibited shortcut.
+
+### The defect the release found, and why fixing `main` was not enough
+
+**`sbom.yml`'s attach job had never run, and failed the first time it did.** It fires only on a
+`release` event, so publishing v1.0.0 was its first execution. It downloads the SBOM bundle, never
+checks out the source, and `gh release upload` exited with `fatal: not a git repository`. Four
+CycloneDX documents and a checksum file had been built correctly by the three jobs before it and
+went nowhere.
+
+**A release event runs its workflows from the tag's own commit.** The failed run says so —
+`head_sha=147a6c9`, `head_branch=v1.0.0` — which means adding `--repo` to `main` and republishing
+would have run the broken copy again. That is the part worth carrying forward: **for a release
+event, `main` is not the source of the workflow.**
+
+So the second fix made the step re-runnable: `workflow_dispatch` now takes an optional `release_tag`,
+and given one the attach job uploads to that existing release from whatever `main` says today. The
+artefacts were attached that way. **A step that can only ever run once, at the moment it matters, has
+no way back when it is wrong** — and this one is the single step in the repository whose first
+execution is the real one, because there is no release to attach to on a pull request.
+
+The workflow's own header had predicted this shape and made the SBOM jobs run on pull requests for
+exactly that reason. The attach job was the one it could not cover, and nobody noticed that the
+argument stopped there.
+
+### The artefacts were checked, not assumed
+
+Five files on the release. Downloaded, `sha256sum -c` OK for all four SBOMs, and each parses as
+CycloneDX 1.7 — 262 components for the API image, 118 for scoring, 71 for the console, 354 for the
+source tree. A green job and an attached artefact are different claims.
+
+One push-triggered SBOM run was cancelled by its own concurrency group when the dispatch started on
+the same ref, and was re-run to completion so that "eight workflows green on `main`" is true rather
+than nearly true.
+
+### What was not done, and may not be reported as done
+
+**A screen-reader pass and a manual authenticated walkthrough of the console.** Both need a person.
+`make verify-real-stack` drives the console through its own sign-in form against the running stack,
+and that is an automated browser check — it is not somebody using the console, and it is not somebody
+using a screen reader. The release notes, the changelog, the README and the Phase 10 gate all say so
+in those words.
+
+### State at the stop
+
+All ten phases closed. `main` clean, in sync, green, no pull request open, 0 open code-scanning
+alerts. `v1.0.0` released with its artefacts verified. **No work is queued**, and the post-v1
+roadmap is approval-gated: a session resuming here should confirm the state and stop, not invent
+something to do.
+
+---

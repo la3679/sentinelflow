@@ -8,29 +8,30 @@
 1. Read this file completely.
 2. Run the verification commands in "Session startup commands".
 3. Confirm branch, HEAD, and remote before editing.
-4. Read **"Required before v1 — carried forward"**. It holds work that is committed rather than
-   optional: real operator identity, the README landing-page standard the rewrite now has to keep
-   meeting, and two items no session may ever mark complete on a person's behalf.
-5. Continue from "Next three actions"; do not restart completed phases.
+4. Read **"Required before v1 — carried forward"**. Sections 1 and 2 are closed; §3 holds the two
+   items no session may ever mark complete on a person's behalf, and the README landing-page
+   standard in §2 is one the file has to keep meeting every time it changes.
+5. Read "Next three actions". **`v1.0.0` is released and no phase is open**, so there is no work
+   queued; do not restart completed phases and do not start the approval-gated post-v1 roadmap.
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-09-01T14:40Z                                                                                                                                                                                                                                                      |
-| Updated by           | Claude                                                                                                                                                                                                                                                                 |
-| Overall status       | active — **Phase 10 nearly closed.** Operator identity is merged and **verified against the real stack** ([#113](https://github.com/la3679/sentinelflow/pull/113)); the changelog has landed. What remains is the `v1.0.0` tag, its release artefacts, and the handoff |
-| Current phase        | Phase 10 — release (in progress)                                                                                                                                                                                                                                       |
-| Current task         | releasing. The changelog, the re-measured evidence and the documentation consistency pass are in flight; the tag is the next action                                                                                                                                    |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                                               |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                                                   |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                                                     |
-| Working branch       | `main`                                                                                                                                                                                                                                                                 |
-| Local clone verified | **yes**                                                                                                                                                                                                                                                                |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                                                       |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                                                   |
-| Open PRs             | none                                                                                                                                                                                                                                                                   |
-| Latest release       | none                                                                                                                                                                                                                                                                   |
+| Field                | Value                                                                                                                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T15:35Z                                                                                                                                                                                                |
+| Updated by           | Claude                                                                                                                                                                                                           |
+| Overall status       | **released.** All ten phases are closed and **`v1.0.0` is published**, tagged on `147a6c9` with its artefacts attached and verified. Two verification items remain outstanding for a person and are not blockers |
+| Current phase        | Phase 10 — release (**closed**). No phase is open                                                                                                                                                                |
+| Current task         | **none.** The release is done and verified. Post-v1 roadmap work is approval-gated and must not be started without the user asking                                                                               |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                         |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                             |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                               |
+| Working branch       | `main`                                                                                                                                                                                                           |
+| Local clone verified | **yes**                                                                                                                                                                                                          |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                 |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                             |
+| Open PRs             | none                                                                                                                                                                                                             |
+| Latest release       | **[v1.0.0](https://github.com/la3679/sentinelflow/releases/tag/v1.0.0)**, 2026-09-01, on `147a6c9` — five artefacts attached, checksums verified                                                                 |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -85,7 +86,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 7 — observability and resilience**
 - [x] **Phase 8 — security and quality hardening**
 - [x] **Phase 9 — performance and documentation**
-- [ ] **Phase 10 — release** ← in progress: operator identity merged ([#111](https://github.com/la3679/sentinelflow/pull/111)); its real-stack verification, the changelog and release notes, repository metadata and the tag all remain
+- [x] **Phase 10 — release** — `v1.0.0` published on `147a6c9`
 
 ## Completed — Phase 1
 
@@ -1567,6 +1568,82 @@ asserts they are equal.
   payment switch decided something; this system scores and never decides. `AlertPriority: P1–P4`
   against the API's `LOW | MEDIUM | HIGH | URGENT`.
 
+## Acceptance criteria status — Phase 10 gate
+
+**Closed on 2026-09-01.** Every criterion is met, and each row says what the evidence covers **and
+what it does not**. Two items the gate explicitly does not cover are recorded at the end and remain
+outstanding for a person.
+
+**`v1.0.0` is released**, at
+[`147a6c9`](https://github.com/la3679/sentinelflow/commit/147a6c9258dd4ca05896425b77eda822c46a7f14).
+The annotated tag object `68cf6ff` dereferences to that commit, which was `main` when it was cut and
+which every measurement below was taken on.
+
+| Criterion                                          | Status  | Evidence, and what it does not cover                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| All pull requests merged safely; `main` CI green   | **met** | [#113](https://github.com/la3679/sentinelflow/pull/113) through [#116](https://github.com/la3679/sentinelflow/pull/116) merged with every required check green; no pull request open. Eight workflows green at `main` HEAD. **Not covered:** one push-triggered SBOM run was cancelled by its own concurrency group when a dispatch started on the same ref, and was re-run to completion. |
+| `main` ruleset active                              | **met** | `main protection` (`21493410`), `active`, on `~DEFAULT_BRANCH`, **no bypass actors**, deletion and non-fast-forward blocked, pull requests required with thread resolution, nine required status checks. **Not covered:** CodeQL, dependency review and the SBOM jobs are **not** required contexts — they run and are read, but they do not block a merge.                                |
+| Real operator identity, verified on the real stack | **met** | "Required before v1" §1, every clause. `make verify-real-stack` — 5 passed against the running Compose stack with nothing stubbed, through both the Makefile and the PowerShell surface. **Not covered:** it drives a browser; it is not a person using the console.                                                                                                                       |
+| `v1.0.0` if every criterion is genuinely met       | **met** | Tagged on `147a6c9` after the full suites, the smoke check and the real-stack verification were re-run on it with the stack up, all eight workflows were green on it, and code scanning reported 0 open alerts. **Not covered:** no prerelease was needed, because nothing required one.                                                                                                   |
+| Changelog and release notes                        | **met** | [`CHANGELOG.md`](CHANGELOG.md) carries features, setup, migrations, security notes, known limitations and evidence links; the GitHub release carries the same material for a reader who arrives at the tag. **Not covered:** there is no upgrade path, because there is no earlier release.                                                                                                |
+| Repository metadata and topics                     | **met** | Description, thirteen topics, Apache-2.0, public, issues enabled — verified 2026-09-01 and already correct, so nothing was changed. **Not covered:** the homepage URL is deliberately empty. There is no hosted demo and a placeholder URL is a prohibited shortcut.                                                                                                                       |
+| Release artefacts                                  | **met** | Four CycloneDX 1.7 SBOMs and `SHA256SUMS` attached to the release — 262, 118, 71 and 354 components. **Downloaded and checked rather than assumed:** `sha256sum -c` returns OK for all four, and each parses as CycloneDX. **Not covered:** the SBOMs enumerate components; they are not a vulnerability report.                                                                           |
+| Final handoff report                               | **met** | "Where this leaves the repository" below.                                                                                                                                                                                                                                                                                                                                                  |
+
+### The defect the release itself found
+
+**The attach job had never run, and failed the first time it did.** It fires only on a `release`
+event, so publishing v1.0.0 was its first execution: it downloads the SBOM bundle, never checks out
+the source, and `gh release upload` exited with `fatal: not a git repository`. Four SBOMs and a
+checksum file were built correctly and went nowhere.
+
+**Fixing `main` was not enough, and the reason is worth keeping.** A release event runs its workflows
+**from the tag's own commit** — the failed run records `head_sha=147a6c9`, `head_branch=v1.0.0` —
+so republishing would have run the broken copy again. `workflow_dispatch` now takes a `release_tag`,
+which makes the step re-runnable against a release that already exists
+([#116](https://github.com/la3679/sentinelflow/pull/116)). That is what the job should always have
+been: **a step that can only ever run once, at the moment it matters, has no way back when it is
+wrong.**
+
+The workflow's own header had predicted the shape of this — "a workflow whose first run is the merge
+that needs it is a workflow nobody has run" — and had made the SBOM jobs run on pull requests for
+that reason. The attach job could not be given the same treatment, because there is no release to
+attach to on a pull request.
+
+### Two things this gate does not cover, and no phase may claim
+
+Both need a person, both are listed under "Required before v1" §3, and **no automated result is
+evidence that either happened**:
+
+- **A screen-reader pass.** axe runs across every route at two viewports and finds roughly a third of
+  real accessibility issues.
+- **A manual authenticated walkthrough of the console in a browser.** Every screen's endpoints have
+  been called with a real token, and `make verify-real-stack` drives the console against the running
+  stack through the sign-in form. **Neither is somebody using it**, and the release notes say so
+  rather than letting the automated suite stand in.
+
+### Where this leaves the repository — the handoff
+
+**What is released.** `v1.0.0` at `147a6c9`: ingestion behind an API key with an atomic outbox
+write, a relay to Kafka with effectively-once consumption, rule-and-model scoring that degrades
+rather than fails, an alert lifecycle with optimistic concurrency, assignment to a named analyst, a
+bounded reporting export, a seven-screen console against the real API, and the observability stack
+beside it. `CHANGELOG.md` is the authoritative description.
+
+**What `main` carries beyond the tag.** Two workflow fixes ([#115](https://github.com/la3679/sentinelflow/pull/115),
+[#116](https://github.com/la3679/sentinelflow/pull/116)), neither of which touches the released
+software. The tag is not moved to include them.
+
+**What is open, and owned.** Four threat-model items — T-04, T-05, T-08, T-09 — each argued rather
+than overlooked. Three operator actions with a manual runbook procedure and no endpoint. A console
+that loads its typeface from a remote host. An `audit_log` table nothing writes. The console's branch
+coverage sitting exactly on its gate. No assertion that the Compose stack's topics match the
+AsyncAPI contract. All of these are in "Known issues and technical debt" with what is known about
+each.
+
+**What must not happen next.** The post-v1 roadmap is approval-gated. Nothing on it may be started
+without the user asking, and nothing on it may destabilise what is now released.
+
 ## Acceptance criteria status — Phase 9 gate
 
 **Closed on 2026-09-01.** All eight criteria are met. The criteria are
@@ -2970,41 +3047,34 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 10's gating deliverable is done.** Operator identity is merged
-([#111](https://github.com/la3679/sentinelflow/pull/111)) and **verified against the real Docker
-Compose stack** ([#113](https://github.com/la3679/sentinelflow/pull/113)), which was the one clause
-"Required before v1" §1 still held open. `make verify-real-stack` is the command; the suite lives in
-`apps/web/tests/real-stack/` and stubs nothing.
+**There is no next action, and that is the finding rather than an omission.** `v1.0.0` is released
+on `147a6c9`, all ten phases are closed, `main` is clean and green with no pull request open, and the
+post-v1 roadmap is approval-gated. A session resuming here should **not** invent work.
+
+**If you are resuming and want to confirm the state rather than take it on trust**, in this order:
+
+1. `git fetch --all --prune`, then confirm `main` and `origin/main` match and the tree is clean.
+2. `gh release view v1.0.0` — five artefacts, and
+   `gh api repos/la3679/sentinelflow/git/tags/68cf6ff` dereferences to `147a6c9`.
+3. `make up` then `make verify-real-stack` — five tests, nothing stubbed. This is the check that
+   would catch a regression the suites cannot see.
+
+**The only work that is genuinely outstanding needs a person**, and no session may tick either off:
+a screen-reader pass, and a manual authenticated walkthrough of the console in a browser. Both are
+"Required before v1" §3. The release states them as outstanding rather than satisfied.
 
 **Read this before quoting any CodeQL number.** A pull-request analysis and a branch analysis do not
 answer the same question, and neither does a result count and an open-alert count. On
-`refs/heads/main` at `27cf15c` the java-kotlin analysis reports `results_count=10` and **0 open
-alerts**: all ten are the Phase 8 dismissals with their arguments recorded. Quote the open count, and
-say that the ten exist.
-
-1. **Tag `v1.0.0` on the verified commit, and check the artefacts arrive.** Every automated v1
-   criterion is met — clean `main`, remote SHA verified, eight workflows green, 0 open code-scanning
-   alerts, the ruleset active with nine required checks and no bypass actors, and an alert can be
-   assigned to a named operator against the real stack. Publishing the release triggers
-   `sbom.yml`'s `attach` job, which uploads four CycloneDX documents and `SHA256SUMS`; **verify they
-   are actually attached** rather than assuming the job ran.
-
-2. **Then close Phase 10 in this file and write the handoff.** The gate is: clean `main` · remote
-   SHA verified · all required CI green · an alert can be assigned to a named operator · the tag
-   points at verified code · no false claims anywhere. Record the exact tagged SHA here once it
-   exists.
-
-3. **Do not let the two human-verification items be ticked off.** A screen-reader pass and a manual
-   authenticated walkthrough of the console both need a person, both are listed under "Required
-   before v1" §3, and **no automated run is evidence that either happened** — including the
-   real-stack browser suite, which drives the console but is not somebody using it. Phase 10's gate
-   says so explicitly. They are not blockers; the release states them as outstanding.
-
-**Do not start the post-v1 roadmap.** It is approval-gated and must never delay or destabilise v1.
+`refs/heads/main` the java-kotlin analysis reports `results_count=10` and **0 open alerts**: all ten
+are the Phase 8 dismissals with their arguments recorded. Quote the open count, and say the ten
+exist.
 
 **Still open and owned, from the threat model:** T-04 (`/actuator/prometheus` unauthenticated),
 T-05 (the scoring service has no credential), T-08 (no token revocation, accepted), T-09 (ingestion
 is one shared key, not a per-caller identity).
+
+**Do not start the post-v1 roadmap.** It is approval-gated and must never destabilise what is
+released.
 
 ### Five things this session learned the hard way, worth carrying forward
 

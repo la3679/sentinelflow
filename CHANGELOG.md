@@ -6,6 +6,21 @@ versioned with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Every figure here came from a run that happened, on the date recorded beside it.
 [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md) holds the commands and the evidence.
 
+## Unreleased
+
+### Fixed
+
+- **Release artefacts are attached by the release workflow again, and the step is re-runnable.**
+  `sbom.yml`'s attach job runs only on a release, so its first execution was the v1.0.0 release and
+  it failed there: it downloads the SBOM bundle and never checks out the source, so `gh release
+upload` had no repository to infer. A release event also runs its workflows from the tag's own
+  commit, which means a broken attach step cannot be repaired for a release that already exists by
+  fixing `main` and republishing. `workflow_dispatch` now takes an optional `release_tag`, so the
+  step can be re-run against an existing release. v1.0.0's five artefacts were attached that way and
+  their checksums verified.
+
+  Neither change touches the released software. `v1.0.0` continues to point at `147a6c9`.
+
 ## [1.0.0] — 2026-09-01
 
 The first release. Everything below is new, so this entry describes the system rather than a diff
