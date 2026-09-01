@@ -229,6 +229,14 @@ The migration is four pieces of work, not one, and only the first is what `AGENT
      response carries the operator's roles but not their own identifier — so not even "assign to
      me" can be built. Release, which sends `null`, is the only assignment this console can make,
      and it is the only one offered.
+
+     **Closed in Phase 10** by [ADR-0019](../adr/0019-resolving-an-assignee-to-a-person.md), and the
+     three sentences above are kept as written because they are the record of what was wrong. All
+     three causes were real and all three were fixed together: `GET /operators` lists who may be
+     given an alert, `Alert.assignee` carries the person the identifier names, and the login
+     response now publishes the operator's own identifier. The finding was accurate that assignment
+     was not one missing control but three missing answers.
+
    - **Nothing goes from a transaction to its alert.** `GET /alerts` filters on status, priority
      and assignee, and there is no lookup by transaction. The transaction page says so rather than
      offering a link it would have to guess at. The route that exists is alert to transaction.
