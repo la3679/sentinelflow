@@ -405,13 +405,17 @@ apps/api/        Spring Boot — ingestion, outbox, consumer, rules, alerts, aud
 apps/scoring/    FastAPI — features, inference, model registry
 apps/web/        React operations console
 contracts/       OpenAPI, AsyncAPI, and the event schemas — authoritative
-data/            Synthetic generation profiles and exported datasets
 infra/           Prometheus rules, Grafana dashboards, container configuration
 scripts/         Bootstrap, smoke, benchmark, and developer scripts
 docs/            ADRs, architecture, ML, operations, security, testing, performance
 compose.yaml     The whole local stack
 Makefile         The command surface (PowerShell equivalent in scripts/dev/sf.ps1)
 ```
+
+`data/generated/` appears once the stack has run: it holds seeded and exported datasets, which are
+reproducible from a recorded seed and therefore not committed
+([`docs/data/DATA_PROVENANCE.md`](docs/data/DATA_PROVENANCE.md)). The generation profiles themselves
+live in the API's `application.yaml`.
 
 ## Data and model methodology
 
