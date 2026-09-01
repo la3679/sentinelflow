@@ -15,22 +15,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-09-01T02:05Z                                                                                                                                                                               |
-| Updated by           | Claude                                                                                                                                                                                          |
-| Overall status       | active — **Phase 9 in progress.** The README landing-page rewrite is done and its external-reader review is recorded, which closes the largest gate criterion. Clean-clone verification is next |
-| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (in progress)                                                                                                                  |
-| Current task         | **none in progress.** The README rewrite and its three relocation documents are merged. The next action is the clean-clone verification, which has two known traps recorded below               |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                        |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                            |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                              |
-| Working branch       | `main`                                                                                                                                                                                          |
-| Local clone verified | **yes**                                                                                                                                                                                         |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                            |
-| Open PRs             | none                                                                                                                                                                                            |
-| Latest release       | none                                                                                                                                                                                            |
+| Field                | Value                                                                                                                                                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T03:40Z                                                                                                                                                                                                                 |
+| Updated by           | Claude                                                                                                                                                                                                                            |
+| Overall status       | active — **Phase 9, six of eight criteria met.** README rewritten and reviewed, clean-clone verification done and the four defects it found fixed, and the optimization question decided. Screenshots and one ADR remain          |
+| Current phase        | Phase 9 — performance, documentation, and clean-clone validation (in progress)                                                                                                                                                    |
+| Current task         | **none in progress.** Six pull requests merged this session, [#102](https://github.com/la3679/sentinelflow/pull/102) to [#107](https://github.com/la3679/sentinelflow/pull/107). The next actions are Phase 9's last two criteria |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                          |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                              |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                |
+| Working branch       | `main`                                                                                                                                                                                                                            |
+| Local clone verified | **yes**                                                                                                                                                                                                                           |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                  |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                              |
+| Open PRs             | none                                                                                                                                                                                                                              |
+| Latest release       | none                                                                                                                                                                                                                              |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -84,7 +84,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 6 — operations frontend**
 - [x] **Phase 7 — observability and resilience**
 - [x] **Phase 8 — security and quality hardening**
-- [ ] **Phase 9 — performance and documentation** ← in progress: benchmark harness, the first measured optimization, and the README landing-page rewrite merged; clean-clone verification next
+- [ ] **Phase 9 — performance and documentation** ← in progress: benchmarks, the measured optimization, the README rewrite and the clean-clone verification are done; the demo screenshots and the deployment ADR remain
 - [ ] Phase 10 — release
 
 ## Completed — Phase 1
@@ -1572,16 +1572,64 @@ asserts they are equal.
 **In progress.** The criteria are `docs/planning/IMPLEMENTATION_PLAN.md`'s. Each row says what the
 evidence covers **and what it does not**.
 
-| Criterion                                                 | Status          | Evidence, and what it does not cover                                                                                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Benchmarks with a documented reference environment        | **met**         | `make bench` writes `docs/performance/BENCHMARK.md` with the machine, the container runtime and the row counts it ran against. **Not covered:** one machine, once, with the whole stack competing for the same cores; no sustained throughput, no cold start, no console.                                                                                                                   |
-| Measured optimization with before/after query plans       | **met, once**   | `V12__transactions_listing_index.sql`, 68.0 ms to 5.0 ms and 71,256 buffers to 6,155, with both plans in the migration. **Not covered:** whether one optimization is enough for the phase is still an open decision, and `GET /alerts` now has the worst p99 of the five endpoints.                                                                                                         |
-| A polished, professional, industry-standard public README | **met**         | Full editorial and structural rewrite; the external-reader review is recorded below. Diary content, the phase table, the four dated test blocks, PR chronology and the agent workflow details are gone from the front page and relocated rather than deleted. Five Mermaid diagrams, all parsed against mermaid 11.17.2. **Not covered:** the review's own limits, stated at the end of it. |
-| Complete documentation index                              | **met**         | The README's index resolves to every area, and three documents from the required set in §24 of the build prompt now exist that did not: `docs/testing/TEST_RESULTS.md`, `docs/operations/OBSERVABILITY.md`, `docs/operations/TROUBLESHOOTING.md`. **Not covered:** the required set has further names still unfilled.                                                                       |
-| Clean-clone verification of every README command          | **not started** | The next action. Two traps are known: `make bootstrap` gained `SENTINELFLOW_INGEST_API_KEY` in Phase 8, and `make bench` is new. Neither has been run from an actually-empty clone.                                                                                                                                                                                                         |
-| Demo walkthrough and screenshots                          | **partial**     | Two screenshots, generated from the production bundle by the end-to-end suite so they cannot drift from the build. **Not covered:** the investigation workspace, reports and system health are described in the README and not shown.                                                                                                                                                       |
-| Link, badge, and screenshot audit                         | **met**         | `bun scripts/dev/check-docs.mjs` — 274 relative links across 53 Markdown files, 0 broken, no placeholders, on 2026-09-01. Badges reduced from seven to five, each pointing at a workflow that exists. **Not covered:** the checker resolves relative links only; external URLs are not fetched.                                                                                             |
-| An ADR for the deployment and local-first strategy        | **not started** | Number allocated when it is written.                                                                                                                                                                                                                                                                                                                                                        |
+| Criterion                                                 | Status          | Evidence, and what it does not cover                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Benchmarks with a documented reference environment        | **met**         | `make bench` writes `docs/performance/BENCHMARK.md` with the machine, the container runtime and the row counts it ran against. **Not covered:** one machine, once, with the whole stack competing for the same cores; no sustained throughput, no cold start, no console.                                                                                                                                                                                                                                                                         |
+| Measured optimization with before/after query plans       | **met**         | `V12__transactions_listing_index.sql`, 68.0 ms to 5.0 ms and 71,256 buffers to 6,155, with both plans in the migration. **One is enough, and that is now a decision rather than a gap** — see "Is one measured optimization enough" below. **Not covered:** no load test, and no profile of where the read tail goes.                                                                                                                                                                                                                             |
+| A polished, professional, industry-standard public README | **met**         | Full editorial and structural rewrite; the external-reader review is recorded below. Diary content, the phase table, the four dated test blocks, PR chronology and the agent workflow details are gone from the front page and relocated rather than deleted. Five Mermaid diagrams, all parsed against mermaid 11.17.2. **Not covered:** the review's own limits, stated at the end of it.                                                                                                                                                       |
+| Complete documentation index                              | **met**         | The README's index resolves to every area, and three documents from the required set in §24 of the build prompt now exist that did not: `docs/testing/TEST_RESULTS.md`, `docs/operations/OBSERVABILITY.md`, `docs/operations/TROUBLESHOOTING.md`. **Not covered:** the required set has further names still unfilled.                                                                                                                                                                                                                             |
+| Clean-clone verification of every README command          | **met**         | Run 2026-09-01 from a clone into an empty directory with empty Docker volumes. Both known traps cleared, and it found **four defects nothing else could have** — PRs [#104](https://github.com/la3679/sentinelflow/pull/104) to [#107](https://github.com/la3679/sentinelflow/pull/107). Full record in [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md). **Not covered:** `make` itself is not installed here, so each target's underlying script was run and the README's PowerShell surface was run for `bootstrap` and `smoke`. |
+| Demo walkthrough and screenshots                          | **partial**     | Two screenshots, generated from the production bundle by the end-to-end suite so they cannot drift from the build. **Not covered:** the investigation workspace, reports and system health are described in the README and not shown.                                                                                                                                                                                                                                                                                                             |
+| Link, badge, and screenshot audit                         | **met**         | `bun scripts/dev/check-docs.mjs` — 274 relative links across 53 Markdown files, 0 broken, no placeholders, on 2026-09-01. Badges reduced from seven to five, each pointing at a workflow that exists. **Not covered:** the checker resolves relative links only; external URLs are not fetched, and the two screenshots were not regenerated.                                                                                                                                                                                                     |
+| An ADR for the deployment and local-first strategy        | **not started** | Number allocated when it is written.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+### Is one measured optimization enough for Phase 9? Yes, and here is why
+
+**Decided 2026-09-01.** The question was left open when `V12` landed, because `GET /alerts` came out
+of that run with the worst p99 of the five endpoints and an unexamined worst number is an invitation
+to optimise the wrong thing. Three benchmark runs now exist, and they answer it.
+
+| Run                     | Dataset             | `GET /alerts` p50 | p95      | p99           |
+| ----------------------- | ------------------- | ----------------- | -------- | ------------- |
+| 2026-08-31, published   | 20,947 transactions | 21.94 ms          | 36.85 ms | **110.28 ms** |
+| 2026-09-01, clean clone | 2,205 transactions  | 21.98 ms          | 39.42 ms | **98.15 ms**  |
+| 2026-09-01, clean clone | 2,305 transactions  | 19.44 ms          | 31.39 ms | **33.78 ms**  |
+
+**Three facts, and each one on its own is enough to stop.**
+
+1. **`p99` equals `max` in all ten rows of both reports.** With thirty nearest-rank samples the 99th
+   percentile is `ceil(0.99 x 30) = 30`, which is the maximum. "The worst p99 of the five endpoints"
+   therefore means "the slowest single request out of thirty" — a description of one observation,
+   not of a distribution's tail. The report already says percentiles are nearest-rank and not
+   interpolated, for good reasons; the consequence at n=30 is that p99 carries no more information
+   than max, because it _is_ max.
+2. **The same endpoint on two comparable datasets gave 98.15 ms and 33.78 ms**, an hour apart on the
+   same machine. A three-fold spread between two runs of the same query against nearly the same rows
+   is the size of the noise, and it is larger than any improvement an index would be credited with.
+3. **It does not scale with the data.** A ninefold difference in dataset size moved the p50 by 2.5
+   ms. That is the signature of a fixed per-request cost — connection acquisition, JIT, a garbage
+   collection landing on one request — and not of a query plan. `GET /transactions` before `V12` was
+   the opposite shape and that is why the index was the right answer there: it got worse as the
+   table grew, its plan showed a correlated subquery running 34,629 times, and `EXPLAIN` named the
+   cost.
+
+**So: one measured optimization, and the phase closes on it.** Adding a second index because an
+endpoint owns the largest number in a table of thirty-sample maxima would be optimising a number
+rather than a system, which is the thing this repository refuses everywhere else.
+
+**What would have to change before this is worth revisiting**, recorded so it is a deferral and not
+an omission:
+
+- **The harness cannot currently distinguish a tail from one slow request.** Thirty samples per
+  endpoint is enough to state a median honestly and not enough for a p99 to mean anything. More
+  samples, or a discarded warm-up, is a harness change with its own trade-off — the run already
+  paces itself to stay under the rate limiter, so more samples means a longer run.
+- **Nothing has profiled where the ~100 ms outlier goes.** Until something does, "optimise
+  `GET /alerts`" has no target. The candidates named above are guesses, and they are labelled as
+  guesses.
+- **No load test exists.** Sustained throughput is bounded by the rate limiter by design and the
+  benchmark deliberately stays under it, so nothing here says what the pipeline does under pressure.
+  That is a known and stated gap, not something this decision closes.
 
 ### The README review, from an outside reader's point of view
 
@@ -2898,11 +2946,21 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 9 is in progress and its largest criterion is met.** The README is now a landing page
-rather than a development diary, the external-reader review is recorded under "Acceptance criteria
-status — Phase 9 gate", and the detail it stopped carrying moved into three documents that did not
-exist before: `docs/testing/TEST_RESULTS.md`, `docs/operations/OBSERVABILITY.md` and
-`docs/operations/TROUBLESHOOTING.md`.
+**Phase 9 has six of its eight criteria met.** The README is a landing page with its external-reader
+review recorded, the clean-clone verification is done, and whether one measured optimization is
+enough is now a decision with evidence behind it rather than an open question. Both remaining items
+are small and named below.
+
+**The clean-clone run is the thing to read first if you are resuming.** It found **four defects that
+no existing check could have caught**, all merged: the PowerShell bootstrap generated two of five
+secrets, so a Windows first-run produced an `.env` compose refuses outright
+([#107](https://github.com/la3679/sentinelflow/pull/107)); `SCENARIO=poison-event make replay` exits
+127 in Git Bash on a path-conversion bug the smoke script already guarded against
+([#105](https://github.com/la3679/sentinelflow/pull/105)); `make bench` misreported its own dataset
+([#104](https://github.com/la3679/sentinelflow/pull/104)); and `make bench` left the tree failing
+`make format-check` ([#106](https://github.com/la3679/sentinelflow/pull/106)). Every one of them
+lives in the gap between a working tree that already exists and a stranger's first command. The full
+record is in [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
 
 **Read this before quoting any CodeQL number.** A pull-request analysis and a branch analysis do not
 answer the same question. The Phase 8 gate's first draft recorded "0 results" from the merge refs
@@ -2910,28 +2968,26 @@ while `refs/heads/main` had 12 alerts. Check `refs/heads/main`.
 
 The three actions below are the resume point, in order.
 
-1. **The clean-clone verification. Start here.** Clone the repository into an empty directory and
-   run every command the rewritten README publishes, in the order it publishes them. **Two traps are
-   already known and neither has ever been exercised from an actually-empty clone:** `make bootstrap`
-   gained a required secret in Phase 8 (`SENTINELFLOW_INGEST_API_KEY`) along with a fix for the bug
-   that made it exit 1 against an existing `.env`, and `make bench` is new. **Two numbers are
-   deliberately missing from the README until this run produces them** — the `make smoke` check
-   count, dropped because the last measurement predates the endpoints Phase 8 added, and any claim
-   that the quick start works end to end on a machine that has never built this project.
-   `bun install` on a deep Windows path is the third thing to watch, and the README already warns
-   about it.
+1. **Finish Phase 9's two open criteria, then close the phase.** Both are in the gate table above.
+   The **demo walkthrough and screenshots**: two exist, generated from the production bundle by
+   `apps/web/tests/e2e/screenshots.spec.ts` so they cannot drift, and the investigation workspace,
+   reports and system health are described in the README and not shown. The **ADR for the deployment
+   and local-first strategy**: not written, number allocated when it is. Neither is large, and the
+   phase gate cannot close with either open.
 
-2. **Decide whether one measured optimization is enough for the phase, and say so either way.**
-   `GET /alerts` now has the worst p99 of the five endpoints. **Do not benchmark against the current
-   local database without reading "Before resuming" below**: it holds 7,260 `FAILED` transactions and
-   13,455 `degraded` assessments from the h2c defect, and `make bench` itself adds alert-raising rows
-   on every run, so the dataset drifts under measurement. That drift is a property of the harness
-   worth fixing or documenting before more numbers are published.
+2. **Decide what Phase 10 does about operator identity, because it cannot ship without it.**
+   "Required before v1" §1 fixes what "done" means and every clause there is binding: a real lookup
+   of the operators the seed already creates, no hardcoded UUIDs and no invented users, server-side
+   authorization still authoritative with a test that proves it, optimistic concurrency handled, and
+   tests at every level including a Playwright journey that assigns an alert and sees it assigned.
+   It is the largest remaining piece of work in the project.
 
-3. **The two Phase 9 deliverables still open**, both small and both listed in the gate table: the
-   demo walkthrough with screenshots beyond the two that exist — the investigation workspace,
-   reports and system health are described in the README and not shown — and the ADR for the
-   deployment and local-first strategy, whose number is allocated when it is written.
+3. **The three operator actions that have no endpoint and no owner.** Reprocessing a dead-lettered
+   event, reviving a `FAILED` outbox row and rescoring a degraded assessment are each described in
+   `docs/operations/RUNBOOKS.md` with a manual procedure and named in the README's roadmap as not
+   built. ADR-0005 §5 fixes what each would have to be — administrator-only and audited. **This is a
+   gap, not a decision**, and whichever phase picks them up should say so rather than inheriting the
+   assumption that one already has.
 
 **Still open and owned, from the threat model:** T-04 (`/actuator/prometheus` unauthenticated),
 T-05 (the scoring service has no credential), T-08 (no token revocation, accepted), T-09 (ingestion
