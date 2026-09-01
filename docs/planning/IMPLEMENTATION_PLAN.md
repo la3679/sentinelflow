@@ -241,13 +241,15 @@ reported `java/sql-injection [high]` at the exact line before that branch was de
 
 ---
 
-## Phase 9 — Performance, documentation, and clean-clone validation · M5 — **NEXT**
+## Phase 9 — Performance, documentation, and clean-clone validation · M5 — **IN PROGRESS**
 
 **Deliverables**
 
-- Load and query benchmarks with a documented reference environment
-- Measured optimizations with before/after query plans
-- Full README with the five required Mermaid diagrams
+- Load and query benchmarks with a documented reference environment — **done**, `make bench` and
+  [`docs/performance/BENCHMARK.md`](../performance/BENCHMARK.md)
+- Measured optimizations with before/after query plans — **one done**, `V12` and PR
+  [#99](https://github.com/la3679/sentinelflow/pull/99); whether one is enough is still open
+- **A polished, professional, industry-standard public README** — see "The README requirement" below
 - Complete documentation index
 - Clean-clone verification of every README command
 - Demo walkthrough and screenshots
@@ -255,10 +257,46 @@ reported `java/sql-injection [high]` at the exact line before that branch was de
 - An ADR for the deployment and local-first strategy — number allocated when it is written, for the
   same reason
 
+### The README requirement, and it is binding
+
+**The README is the landing page, not a development diary.** It must read as a polished,
+professional, industry-standard front page for a public open-source project — written for
+recruiters, hiring managers, senior engineers and open-source reviewers seeing SentinelFlow for the
+first time. **Technical completeness alone does not satisfy this**; a README that contains every
+fact and reads as a build log fails the gate.
+
+The work is a **full editorial and structural rewrite where needed**, not a trim. Remove:
+
+- development diary content and phase-by-phase implementation history
+- checkpoint and session language
+- pull-request chronology
+- stale TODOs
+- internal agent and Claude workflow details
+- duplicated explanations
+- excessive implementation trivia
+- anything better suited to `PROJECT_STATE.md` or `docs/`
+
+Keep it **concise but technically credible**, and prioritise, roughly in this order: a strong
+project summary · the problem it solves · key capabilities · architecture · tech stack · **five
+useful Mermaid diagrams** · screenshots · quick start · verified commands · testing, CI and
+security · measured performance evidence · the important design decisions · limitations · links to
+the deeper documentation.
+
+**Do not delete useful technical information merely to shorten the file.** Detailed material moves
+into the appropriate document under `docs/` and is linked from the README. Shortening by deletion
+is the failure mode this clause exists to prevent; shortening by relocation is the work.
+
 **Gate** — every README command works · diagrams match the code · no placeholders or broken links ·
-actual test and performance evidence committed.
+actual test and performance evidence committed · **the README reviewed explicitly from the
+perspective of an external engineer or recruiter seeing the project for the first time, and that
+review recorded.**
+
+Phase 9 is not complete until that last criterion is met. A README that passes `make docs-check`
+and still reads as a build log has not passed this gate.
 
 ---
+
+## Phase 10 — Release · M5
 
 ## Phase 10 — Release · M5
 
