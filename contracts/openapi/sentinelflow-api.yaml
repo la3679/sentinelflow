@@ -625,6 +625,53 @@ paths:
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
+  /operators:
+    get:
+      tags: [alerts]
+      operationId: listOperators
+      summary: The operators an alert may be given to (Phase 10)
+      description: |
+        One page of the operators who may hold an alert: active, and holding a
+        role that can work one. It exists so a console can offer a name instead
+        of asking an analyst to type an identifier (ADR-0019).
+
+        **Two exclusions, for two different reasons.** A disabled account is
+        left out because giving work to somebody who cannot sign in is a queue
+        entry nobody will ever clear. An `AUDITOR` is left out because the role
+        is read-only, so assigning one would create work they are not permitted
+        to do. The `system` principal is excluded by both.
+
+        **This is an affordance and never an authorization.** Everybody listed
+        here would be accepted by `PUT /alerts/{alertId}/assignment` today, and
+        that is a property of the two applying the same rule rather than a
+        promise this endpoint makes. The server checks again on the way in,
+        because a client is free to send an identifier this endpoint never gave
+        it.
+
+        Readable by every authenticated role, including `AUDITOR`: an auditor
+        already sees the assignee of every alert, so withholding the directory
+        would protect nothing.
+
+        Ordered by display name, then by identifier so paging is stable when two
+        operators share a name.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: One page of operators.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /reports/alert-summary:
     get:
       tags: [reports]
@@ -1162,6 +1209,26 @@ components:
             When the token stops working, beside it so a client need not decode
             the token to find out. A client that parsed it for the claim would
             be reading a structure this service is free to change.
+        operatorId:
+          type: string
+          format: uuid
+          description: |
+            Who this token is. The same value the token carries as its subject,
+            published here for the same reason the expiry is: a client should
+            not decode a structure this service is free to change in order to
+            learn who it just signed in as.
+
+            **Its absence was a missing feature rather than a small omission.**
+            Until ADR-0019 a console could authenticate and still not know its
+            own identifier, so "assign this alert to me" was not buildable at
+            all, and the investigation screen said so rather than drawing a
+            control that could not work.
+        displayName:
+          type: string
+          maxLength: 128
+          description: |
+            The operator's name, so a console can say who is signed in without a
+            second request for a row it already implicitly has.
         roles:
           type: array
           description: |
@@ -1179,7 +1246,7 @@ components:
           items:
             type: string
             enum: [ANALYST, ADMINISTRATOR, AUDITOR]
-      required: [token, tokenType, expiresAt, roles]
+      required: [token, tokenType, expiresAt, operatorId, displayName, roles]
       additionalProperties: false
 
     TransactionRequest:
@@ -1338,6 +1405,70 @@ components:
         ]
       additionalProperties: false
 
+    AlertAssignee:
+      type: object
+      description: |
+        The person an alert is with, as a reader of the alert sees them.
+
+        `username` travels beside `displayName` because a display name is not
+        unique and a username is (V1). Two operators sharing a name are
+        distinguishable only by something that cannot repeat.
+
+        **No roles here.** The roles an assignee holds are a property of the
+        operator rather than of this alert, they can change after the assignment
+        was made, and a reader who needs them is asking a question
+        `GET /operators` answers.
+      properties:
+        operatorId: { type: string, format: uuid }
+        username: { type: string, maxLength: 64 }
+        displayName: { type: string, maxLength: 128 }
+      required: [operatorId, username, displayName]
+      additionalProperties: false
+
+    Operator:
+      type: object
+      description: |
+        An operator an alert may be given to.
+
+        **No status field.** Every operator this endpoint returns is active — a
+        disabled one is filtered out by the query rather than returned with a
+        flag for a client to check and forget to check. A field whose value is
+        always the same invites a filter that will silently never fire.
+
+        No credential, no email address, no last-login time. None is needed to
+        put a name in a picker, and each would be a new thing to protect.
+      properties:
+        operatorId: { type: string, format: uuid }
+        username: { type: string, maxLength: 64 }
+        displayName: { type: string, maxLength: 128 }
+        roles:
+          type: array
+          description: |
+            The roles this operator holds, so a console can say "administrator"
+            beside a name.
+
+            **They authorize nothing.** Every authorization decision is made by
+            the server from the token on the request. A client that hid a
+            control based on this field would be making a user-experience choice
+            and not a security one.
+          items:
+            type: string
+            enum: [ANALYST, ADMINISTRATOR, AUDITOR]
+      required: [operatorId, username, displayName, roles]
+      additionalProperties: false
+
+    OperatorPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Operator"
+        page:
+          $ref: "#/components/schemas/PageMeta"
+      required: [content, page]
+      additionalProperties: false
+
     Alert:
       type: object
       properties:
@@ -1350,6 +1481,31 @@ components:
         priority:
           $ref: "#/components/schemas/AlertPriority"
         assigneeId: { type: [string, "null"], format: uuid }
+        assignee:
+          description: |
+            The person `assigneeId` names, resolved by the API, or null when the
+            alert is unassigned.
+
+            **Resolved here so that every client agrees.** A queue row has to
+            render a person; if only the identifier were published, every client
+            would need the operator directory loaded before it could draw one
+            row, and each would decide differently what to show for an assignee
+            it could not resolve.
+
+            **This is not the operator directory.** `GET /operators` answers
+            "who may be given an alert" and excludes anybody who no longer may.
+            This answers "who has this one", and still names an operator whose
+            account has since been disabled — an alert assigned last week to
+            somebody who has left is not unassigned, and quietly forgetting them
+            would be worse than naming them.
+
+            Null exactly when `assigneeId` is null, with one representable
+            exception: an identifier that resolves to no row publishes the id
+            with a null assignee, because the honest answer to "who is this" is
+            nothing rather than a placeholder.
+          oneOf:
+            - $ref: "#/components/schemas/AlertAssignee"
+            - type: "null"
         summary: { type: string, maxLength: 500 }
         riskBand:
           $ref: "#/components/schemas/RiskBand"

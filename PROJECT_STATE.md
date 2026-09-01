@@ -15,22 +15,22 @@
 
 ## Snapshot
 
-| Field                | Value                                                                                                                                                                                                                 |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Last updated UTC     | 2026-09-01T04:35Z                                                                                                                                                                                                     |
-| Updated by           | Claude                                                                                                                                                                                                                |
-| Overall status       | active — **Phase 9 is closed.** All eight criteria met, including the external-reader README review and the clean-clone verification. **Phase 10 — release — is next**, and it cannot ship without operator identity  |
-| Current phase        | Phase 10 — release (not started)                                                                                                                                                                                      |
-| Current task         | **none in progress.** Nine pull requests merged this session, [#102](https://github.com/la3679/sentinelflow/pull/102) to [#110](https://github.com/la3679/sentinelflow/pull/110). Phase 10 opens on operator identity |
-| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                              |
-| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                  |
-| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                    |
-| Working branch       | `main`                                                                                                                                                                                                                |
-| Local clone verified | **yes**                                                                                                                                                                                                               |
-| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                      |
-| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                  |
-| Open PRs             | none                                                                                                                                                                                                                  |
-| Latest release       | none                                                                                                                                                                                                                  |
+| Field                | Value                                                                                                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Last updated UTC     | 2026-09-01T05:30Z                                                                                                                                                                                                                                 |
+| Updated by           | Claude                                                                                                                                                                                                                                            |
+| Overall status       | active — **Phase 9 closed, Phase 10 open.** Operator identity, its gating deliverable, is built and under review as PR [#111](https://github.com/la3679/sentinelflow/pull/111). Real-stack verification, the release artefacts and the tag remain |
+| Current phase        | Phase 10 — release (not started)                                                                                                                                                                                                                  |
+| Current task         | **none in progress; the session checkpointed deliberately at the user's direction.** Nothing is half-written — `feat/operator-identity` is pushed with every suite on it green, and the one required step it has not had is action 1 below        |
+| GitHub repository    | <https://github.com/la3679/sentinelflow>                                                                                                                                                                                                          |
+| Visibility           | **PUBLIC** since 2026-08-25, after both scans passed                                                                                                                                                                                              |
+| Default branch       | `main` — **protected** since 2026-08-25 (ruleset `main protection`, id `21493410`)                                                                                                                                                                |
+| Working branch       | `feat/operator-identity`                                                                                                                                                                                                                          |
+| Local clone verified | **yes**                                                                                                                                                                                                                                           |
+| Local workspace      | a `sentinelflow/` folder inside the user's Documents workspace. The absolute path is recorded in the git-ignored `.claude/runtime/worktree.json`                                                                                                  |
+| Lovable sync branch  | `main` — **generation retired**, see "Lovable" below                                                                                                                                                                                              |
+| Open PRs             | [#111](https://github.com/la3679/sentinelflow/pull/111) — `feat/operator-identity`, awaiting CI                                                                                                                                                   |
+| Latest release       | none                                                                                                                                                                                                                                              |
 
 Local HEAD, remote HEAD, and CI state change every commit and are **not** recorded here. Run
 `scripts/claude/checkpoint` (or `.\scripts\claude\checkpoint.ps1`) to read them from the source of
@@ -85,7 +85,7 @@ last time, and neither explains a `startup_failure` on an unchanged workflow fil
 - [x] **Phase 7 — observability and resilience**
 - [x] **Phase 8 — security and quality hardening**
 - [x] **Phase 9 — performance and documentation**
-- [ ] **Phase 10 — release** ← next. Blocked on nothing, but it cannot ship with operator identity open ("Required before v1" §1)
+- [ ] **Phase 10 — release** ← in progress: operator identity built and under review ([#111](https://github.com/la3679/sentinelflow/pull/111)); real-stack verification, the changelog and release notes, repository metadata and the tag all remain
 
 ## Completed — Phase 1
 
@@ -2839,8 +2839,11 @@ and a quality bar with no test behind it is the kind of requirement a session sa
 
 ### 1. Real operator identity, so an alert can be given to a named analyst
 
-**Status: not started. Required before v1. Owner: whichever phase reaches it first, and Phase 10
-cannot ship without it.**
+**Status: built and under review as PR [#111](https://github.com/la3679/sentinelflow/pull/111);
+one clause is not yet satisfied.** [ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md)
+records the decision. Every clause below is met except the last one — **"verified against the real
+stack"** — which is action 1 in "Next three actions". Until that is done this item is not closed,
+and the requirement below is kept verbatim because it is the standard the result has to meet.
 
 Today the console can release an alert and cannot give one to anybody. `assigneeId` is a UUID,
 nothing resolves it to a person, and the screen says so rather than offering a control that cannot
@@ -2947,48 +2950,46 @@ but they are also not things any session may tick off on a person's behalf.
 
 ## Next three actions
 
-**Phase 9 has six of its eight criteria met.** The README is a landing page with its external-reader
-review recorded, the clean-clone verification is done, and whether one measured optimization is
-enough is now a decision with evidence behind it rather than an open question. Both remaining items
-are small and named below.
+**Phase 9 is closed** with all eight criteria met. **Phase 10 is open**, and its gating deliverable —
+operator identity — is **built and under review as PR
+[#111](https://github.com/la3679/sentinelflow/pull/111)**, not yet merged. Nothing is half-written:
+the branch is pushed, every suite on it is green, and the one required step it has not had is named
+in action 1 below.
 
-**The clean-clone run is the thing to read first if you are resuming.** It found **four defects that
-no existing check could have caught**, all merged: the PowerShell bootstrap generated two of five
-secrets, so a Windows first-run produced an `.env` compose refuses outright
-([#107](https://github.com/la3679/sentinelflow/pull/107)); `SCENARIO=poison-event make replay` exits
-127 in Git Bash on a path-conversion bug the smoke script already guarded against
-([#105](https://github.com/la3679/sentinelflow/pull/105)); `make bench` misreported its own dataset
-([#104](https://github.com/la3679/sentinelflow/pull/104)); and `make bench` left the tree failing
-`make format-check` ([#106](https://github.com/la3679/sentinelflow/pull/106)). Every one of them
-lives in the gap between a working tree that already exists and a stranger's first command. The full
-record is in [`docs/testing/TEST_RESULTS.md`](docs/testing/TEST_RESULTS.md).
+**What #111 does.** An alert can be given to a named analyst. `GET /operators` lists who may hold
+one, `Alert.assignee` carries the person the identifier names, and the login response now publishes
+the operator's own identifier — which is what makes "assign to me" buildable at all.
+[ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md) records the decision. Verified:
+`./mvnw verify` 259 unit and 337 integration, coverage gates met; `bun run verify` clean; 92
+end-to-end tests, up from 88, axe clean.
 
 **Read this before quoting any CodeQL number.** A pull-request analysis and a branch analysis do not
 answer the same question. The Phase 8 gate's first draft recorded "0 results" from the merge refs
 while `refs/heads/main` had 12 alerts. Check `refs/heads/main`.
 
-The three actions below are the resume point, in order.
+1. **Merge #111 once CI is green, then verify operator identity against the real stack.** This is the
+   one clause of "Required before v1" §1 that PR #111 has **not** satisfied, and it is binding:
+   _"verified against the real stack, not only against Testcontainers"_. That clause exists because
+   of three defects a fully green build was blind to — nothing created the Kafka topics, the scoring
+   client negotiated HTTP/2 against an HTTP/1.1-only service, and two PowerShell targets had never
+   worked. The sequence: `make up --build` so the API image carries the new endpoint, sign in as
+   `analyst.one`, call `GET /api/v1/operators` with the token, assign an alert to `analyst.two` and
+   read the alert back to see the resolved name, then open the console at
+   <http://localhost:5173> and do the same through the picker. **§1 also requires a screenshot pass
+   is not evidence** — this is a real-stack check, not a Testcontainers one.
 
-1. **Finish Phase 9's two open criteria, then close the phase.** Both are in the gate table above.
-   The **demo walkthrough and screenshots**: two exist, generated from the production bundle by
-   `apps/web/tests/e2e/screenshots.spec.ts` so they cannot drift, and the investigation workspace,
-   reports and system health are described in the README and not shown. The **ADR for the deployment
-   and local-first strategy**: not written, number allocated when it is. Neither is large, and the
-   phase gate cannot close with either open.
+2. **Then the rest of Phase 10's deliverables, none of which is started.** In the plan's order:
+   `CHANGELOG.md` and release notes with features, setup, migrations, security notes, known
+   limitations and evidence links; repository metadata and topics; the `v1.0.0` tag **only if every
+   v1 criterion is genuinely met, otherwise an honest prerelease**; and the final handoff report. The
+   gate is: clean `main` · remote SHA verified · all required CI green · **an alert can be assigned to
+   a named operator** · the tag points at verified code · no false claims anywhere.
 
-2. **Decide what Phase 10 does about operator identity, because it cannot ship without it.**
-   "Required before v1" §1 fixes what "done" means and every clause there is binding: a real lookup
-   of the operators the seed already creates, no hardcoded UUIDs and no invented users, server-side
-   authorization still authoritative with a test that proves it, optimistic concurrency handled, and
-   tests at every level including a Playwright journey that assigns an alert and sees it assigned.
-   It is the largest remaining piece of work in the project.
-
-3. **The three operator actions that have no endpoint and no owner.** Reprocessing a dead-lettered
-   event, reviving a `FAILED` outbox row and rescoring a degraded assessment are each described in
-   `docs/operations/RUNBOOKS.md` with a manual procedure and named in the README's roadmap as not
-   built. ADR-0005 §5 fixes what each would have to be — administrator-only and audited. **This is a
-   gap, not a decision**, and whichever phase picks them up should say so rather than inheriting the
-   assumption that one already has.
+3. **Do not let the two human-verification items be ticked off.** A screen-reader pass and a manual
+   authenticated walkthrough of the console both need a person, both are listed under "Required
+   before v1" §3, and **no automated run is evidence that either happened**. Phase 10's gate says so
+   explicitly. They are not blockers — the release can state them as outstanding — but they may not
+   be marked done on anybody's behalf.
 
 **Still open and owned, from the threat model:** T-04 (`/actuator/prometheus` unauthenticated),
 T-05 (the scoring service has no credential), T-08 (no token revocation, accepted), T-09 (ingestion

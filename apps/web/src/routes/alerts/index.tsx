@@ -210,13 +210,26 @@ function AlertQueuePage() {
                         <TableCell className="tabular">{formatAgeSince(alert.createdAt)}</TableCell>
                         <TableCell className="max-w-md text-xs">{alert.summary}</TableCell>
                         {/*
-                          The API sends an assignee's identifier and nothing
-                          resolves it to a name, so this column says whether the
-                          alert is held rather than by whom. A UUID in a queue
-                          row is not a person anybody recognises.
+                          The name, because the API resolves it (ADR-0019). This
+                          column used to say "Assigned" and nothing more, because
+                          all it had was a UUID and a UUID in a queue row is not
+                          a person anybody recognises.
+
+                          The middle branch is an identifier that resolved to
+                          nothing - not reachable through the schema today, and
+                          rendered honestly rather than hidden, because a blank
+                          cell would read as unassigned and it is not.
                         */}
                         <TableCell className="text-xs">
-                          {alert.assigneeId ? "Assigned" : "Unassigned"}
+                          {alert.assignee ? (
+                            alert.assignee.displayName
+                          ) : alert.assigneeId ? (
+                            <span className="text-muted-foreground">
+                              Assigned — name unavailable
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Unassigned</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

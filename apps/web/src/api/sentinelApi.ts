@@ -8,6 +8,7 @@ import type {
   AlertStatus,
   AlertSummaryReport,
   ModelMetadata,
+  Operator,
   Page,
   RiskAssessment,
   RiskBand,
@@ -21,11 +22,26 @@ export interface LoginArgs {
   password: string;
 }
 
-/** `TokenResponse` in the contract. `roles` is validated before it reaches the store. */
+/**
+ * `TokenResponse` in the contract. `roles` is validated before it reaches the store.
+ *
+ * **This is the only declaration of it.** There used to be a second, unused, in
+ * `domain/types.ts`, and the two drifted the moment one was updated — the type
+ * error that found it named a property that had just been added to the copy
+ * nothing imported.
+ */
 export interface TokenResponse {
   token: string;
   tokenType: string;
   expiresAt: string;
+  /**
+   * Who this token is — the same value the token carries as its subject, sent
+   * beside it so nothing here decodes a structure the API may change. Its
+   * absence is why "assign this alert to me" was not buildable before ADR-0019.
+   */
+  operatorId: string;
+  /** The operator's name, so a screen can say who is signed in. */
+  displayName: string;
   roles: string[];
 }
 
@@ -113,6 +129,21 @@ export const sentinelApi = createApi({
     getTransactionAssessment: builder.query<RiskAssessment, string>({
       query: (transactionId) =>
         real({ url: `/transactions/${encodeURIComponent(transactionId)}/assessment` }),
+    }),
+    /**
+     * The operators an alert may be given to.
+     *
+     * Read once and cached by RTK Query: the directory changes far more slowly
+     * than a queue does, and a picker that re-fetched on every open would be
+     * asking a question whose answer it already has.
+     *
+     * **Bounded rather than unbounded.** The API caps the page at 200 and
+     * refuses more; asking for that many is asking for the whole directory in
+     * one page, which is honest for four operators and stays honest for four
+     * hundred because the API decides, not this.
+     */
+    listOperators: builder.query<Page<Operator>, void>({
+      query: () => real({ url: `/operators`, params: { size: 200 } }),
     }),
     listAlerts: builder.query<Page<Alert>, AlertListArgs>({
       query: (args) => real({ url: `/alerts`, params: params({ ...args }) }),
@@ -224,6 +255,7 @@ export const {
   useListTransactionsQuery,
   useGetTransactionQuery,
   useGetTransactionAssessmentQuery,
+  useListOperatorsQuery,
   useListAlertsQuery,
   useGetAlertQuery,
   useGetAlertHistoryQuery,

@@ -85,6 +85,8 @@ function LoginPage() {
         token: token.token,
         tokenType: token.tokenType,
         expiresAt: token.expiresAt,
+        operatorId: token.operatorId,
+        displayName: token.displayName,
         roles: knownRoles(token.roles),
       }),
     );

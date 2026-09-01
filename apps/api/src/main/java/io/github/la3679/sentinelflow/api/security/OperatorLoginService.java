@@ -80,7 +80,7 @@ public class OperatorLoginService {
      *     the password is wrong. Deliberately one exception for all three.
      */
     @Transactional(readOnly = true)
-    public TokenIssuer.IssuedToken login(String username, String password) {
+    public LoginResult login(String username, String password) {
         Optional<User> found = users.findByUsername(username);
 
         // The comparison happens on every path, including the ones that have
@@ -112,10 +112,24 @@ public class OperatorLoginService {
 
         meters.counter("sentinelflow.auth.logins", "outcome", "success").increment();
         log.info("Operator {} authenticated with roles {}", user.getUsername(), roles);
-        return tokens.issue(user.getId(), roles, Instant.now());
+        return new LoginResult(tokens.issue(user.getId(), roles, Instant.now()), user.getId(), user.getDisplayName());
     }
 
-    private TokenIssuer.IssuedToken refuse(String username, String reason) {
+    /**
+     * The token, and who it belongs to.
+     *
+     * <p><strong>The identity is here rather than inside {@link TokenIssuer.IssuedToken}</strong>,
+     * because a token issuer's job is to sign claims and a display name is not one. The token
+     * already carries the identifier as its subject; this carries it again in a shape a client can
+     * read without decoding a structure ADR-0012 says not to parse.
+     *
+     * <p>Without this, a console can sign in and still not know who it signed in as - which is
+     * exactly why "assign this alert to me" was not buildable before ADR-0019, and why the
+     * investigation screen said so rather than drawing a button that could not work.
+     */
+    public record LoginResult(TokenIssuer.IssuedToken token, UUID operatorId, String displayName) {}
+
+    private LoginResult refuse(String username, String reason) {
         meters.counter("sentinelflow.auth.logins", "outcome", "failure").increment();
         // The username is the caller's own input and safe to log; the reason is
         // for whoever reads the log and is never in the response.

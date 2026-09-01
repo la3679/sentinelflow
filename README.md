@@ -55,9 +55,11 @@ drift from the build. **Every alert, score and figure in them is synthetic**, se
 end-to-end suite's stub in the contract's own shapes.
 
 Two things in these images are worth noticing because they are deliberate. The investigation screen
-**says it cannot assign an alert to a person** rather than offering a control that would not work,
-and the health screen **says where the pipeline figures actually live** rather than copying a number
-onto a page with nothing to do about it.
+**names the operator an alert is with and offers a picker of the people it may be given to** — the
+directory it reads lists only operators the API would actually accept
+([ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md)) — and the health screen **says where
+the pipeline figures actually live** rather than copying a number onto a page with nothing to do
+about it.
 
 ## Why this project exists
 
@@ -573,9 +575,9 @@ The threat model is STRIDE over four trust boundaries with every control traced 
   withdrawn role keeps working. That is the cost of a stateless token, and it is deliberate.
 - **A reload signs the console out**, because the token lives in the tab's memory and never in
   browser storage. The sign-in screen says so rather than letting an analyst discover it mid-review.
-- **The console cannot assign an alert to a person.** `assigneeId` is a UUID and nothing resolves it
-  to a name, so releasing an alert back to the queue is the only assignment it can make — and the
-  screen says why instead of offering a control that cannot work.
+- **Operators are seeded, not managed.** The directory an assignment picker reads is read-only:
+  nothing in this project invites, disables, or changes the role of an operator, and the four demo
+  operators come from the seed ([ADR-0019 §5](docs/adr/0019-resolving-an-assignee-to-a-person.md)).
 - **Nothing navigates from a transaction to its alert.** The route that exists is alert to
   transaction.
 - **Role handling in the console is a UX affordance, never a security boundary.** Disabling a
@@ -589,22 +591,23 @@ The threat model is STRIDE over four trust boundaries with every control traced 
 
 ## Design decisions
 
-Eighteen ADRs record the decisions that shaped this system, each binding until superseded. The
+Nineteen ADRs record the decisions that shaped this system, each binding until superseded. The
 ones that explain the most:
 
-| Decision                                                                 | What it settles                                                            |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| [ADR-0005](docs/adr/0005-outbox-relay-mechanics.md)                      | Why a polling relay, and what its 500 ms costs                             |
-| [ADR-0006](docs/adr/0006-event-schema-and-versioning.md)                 | Envelope, versioning, and what may never reach a dead-letter topic         |
-| [ADR-0007](docs/adr/0007-money-identifiers-and-schema-migrations.md)     | Money as `NUMERIC`, identifiers, and forward-only migrations               |
-| [ADR-0008](docs/adr/0008-scoring-service-boundary.md)                    | A synchronous call inside the handler, not a second Kafka round trip       |
-| [ADR-0010](docs/adr/0010-model-selection-and-evaluation.md)              | The ship-or-not rule, fixed before anything was measured                   |
-| [ADR-0011](docs/adr/0011-risk-banding-and-the-final-score.md)            | How a rule score and a model score combine into one banded decision        |
-| [ADR-0012](docs/adr/0012-operator-authentication.md)                     | Stateless bearer tokens, the roles, and what that costs                    |
-| [ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) | Bounded polling now; SSE when there is a stream worth carrying             |
-| [ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md)  | What each signal is allowed to be read as saying                           |
-| [ADR-0017](docs/adr/0017-protecting-the-ingestion-surface.md)            | The ingestion credential, the limits, and what they do not solve           |
-| [ADR-0018](docs/adr/0018-deployment-and-the-local-first-strategy.md)     | Local-first, no hosted demo, and what would have to be true to change that |
+| Decision                                                                 | What it settles                                                              |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| [ADR-0005](docs/adr/0005-outbox-relay-mechanics.md)                      | Why a polling relay, and what its 500 ms costs                               |
+| [ADR-0006](docs/adr/0006-event-schema-and-versioning.md)                 | Envelope, versioning, and what may never reach a dead-letter topic           |
+| [ADR-0007](docs/adr/0007-money-identifiers-and-schema-migrations.md)     | Money as `NUMERIC`, identifiers, and forward-only migrations                 |
+| [ADR-0008](docs/adr/0008-scoring-service-boundary.md)                    | A synchronous call inside the handler, not a second Kafka round trip         |
+| [ADR-0010](docs/adr/0010-model-selection-and-evaluation.md)              | The ship-or-not rule, fixed before anything was measured                     |
+| [ADR-0011](docs/adr/0011-risk-banding-and-the-final-score.md)            | How a rule score and a model score combine into one banded decision          |
+| [ADR-0012](docs/adr/0012-operator-authentication.md)                     | Stateless bearer tokens, the roles, and what that costs                      |
+| [ADR-0015](docs/adr/0015-live-updates-polling-and-server-sent-events.md) | Bounded polling now; SSE when there is a stream worth carrying               |
+| [ADR-0016](docs/adr/0016-observability-signals-and-their-boundaries.md)  | What each signal is allowed to be read as saying                             |
+| [ADR-0017](docs/adr/0017-protecting-the-ingestion-surface.md)            | The ingestion credential, the limits, and what they do not solve             |
+| [ADR-0018](docs/adr/0018-deployment-and-the-local-first-strategy.md)     | Local-first, no hosted demo, and what would have to be true to change that   |
+| [ADR-0019](docs/adr/0019-resolving-an-assignee-to-a-person.md)           | How an assignee's identifier resolves to a person, and who may hold an alert |
 
 ## Documentation
 
@@ -636,9 +639,8 @@ release. Phase-by-phase state, with the evidence behind each gate, is in
 [`PROJECT_STATE.md`](PROJECT_STATE.md) and
 [`docs/planning/IMPLEMENTATION_PLAN.md`](docs/planning/IMPLEMENTATION_PLAN.md).
 
-**Named and not yet built**, each deferred deliberately rather than forgotten: operator identity,
-so an alert can be given to a person rather than to a UUID; endpoints for reprocessing a
-dead-lettered event, reviving a failed outbox row and rescoring a degraded assessment, which today
+**Named and not yet built**, each deferred deliberately rather than forgotten: endpoints for
+reprocessing a dead-lettered event, reviving a failed outbox row and rescoring a degraded assessment, which today
 have only a manual procedure in the runbooks; an authenticated, rate-limited HTTP replay endpoint,
 which is API surface rather than a Makefile target and is scheduled as such; and a Server-Sent
 Events stream, once there is a stream worth carrying.
