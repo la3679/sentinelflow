@@ -19,7 +19,7 @@
     "web": "bun run --filter sentinelflow-web"
   },
   "devDependencies": {
-    "@apidevtools/swagger-parser": "^12.1.0",
+    "@apidevtools/swagger-parser": "^13.0.0",
     "@asyncapi/parser": "^3.6.3",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
