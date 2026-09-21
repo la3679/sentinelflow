@@ -82,13 +82,13 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4.3.0
+        uses: docker/setup-buildx-action@v4.4.1
 
       # Built here rather than pulled from a registry, because nothing is
       # pushed to one. The cache is shared with ci-containers.yml by scope, so
       # this is usually a cache hit rather than a second full build.
       - name: Build image
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@v7.4.0
         with:
           context: ${{ matrix.image.context }}
           file: ${{ matrix.image.dockerfile }}
