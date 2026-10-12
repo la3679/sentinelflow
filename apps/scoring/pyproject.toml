@@ -12,7 +12,7 @@ license = "Apache-2.0"
 requires-python = ">=3.13,<3.14"
 
 dependencies = [
-    "fastapi>=0.141.1,<0.142",
+    "fastapi>=0.141.1,<0.144",
     "uvicorn[standard]>=0.52.4,<0.53",
     "pydantic>=2.13.4,<3",
     "pydantic-settings>=2.15.0,<3",
