@@ -12,7 +12,7 @@ license = "Apache-2.0"
 requires-python = ">=3.13,<3.14"
 
 dependencies = [
-    "fastapi>=0.141.1,<0.142",
+    "fastapi>=0.141.1,<0.144",
     "uvicorn[standard]>=0.52.4,<0.53",
     "pydantic>=2.13.4,<3",
     "pydantic-settings>=2.15.0,<3",
@@ -51,7 +51,7 @@ dev = [
     # pytest is configured to turn warnings into errors, so that warning is a
     # failure rather than something to scroll past.
     "httpx2>=2.12.0,<3",
-    "ruff>=0.16.4,<0.17",
+    "ruff>=0.16.4,<0.18",
     # Read by the contract-conformance test, which parses
     # contracts/openapi/sentinelflow-scoring.yaml and asserts the Pydantic models
     # have not drifted from it. It already arrives transitively through uvicorn's
