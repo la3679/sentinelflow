@@ -82,13 +82,13 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4.3.0
+        uses: docker/setup-buildx-action@v4.4.1
 
       # Built here rather than pulled from a registry, because nothing is
       # pushed to one. The cache is shared with ci-containers.yml by scope, so
       # this is usually a cache hit rather than a second full build.
       - name: Build image
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@v7.4.0
         with:
           context: ${{ matrix.image.context }}
           file: ${{ matrix.image.dockerfile }}
@@ -99,7 +99,7 @@ jobs:
 
       # Third-party action pinned to an immutable commit SHA.
       - name: Generate the image SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: sentinelflow-${{ matrix.image.name }}:sbom
           # CycloneDX rather than SPDX. Both are legitimate; CycloneDX is what
@@ -126,7 +126,7 @@ jobs:
           [ "$count" -gt 20 ] || { echo "::error::only $count components; a cataloger is not running"; exit 1; }
 
       - name: Upload
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: sbom-${{ matrix.image.name }}
           path: sbom-${{ matrix.image.name }}.cdx.json
@@ -143,7 +143,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Generate the source SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: cyclonedx-json
@@ -166,7 +166,7 @@ jobs:
           done
 
       - name: Collect the image SBOMs
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           pattern: sbom-*
           merge-multiple: true
@@ -180,7 +180,7 @@ jobs:
           sha256sum -c SHA256SUMS
 
       - name: Upload the release bundle
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: sbom-bundle
           path: |
@@ -200,7 +200,7 @@ jobs:
       contents: write
     steps:
       - name: Collect the bundle
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           name: sbom-bundle
 
